@@ -58,7 +58,7 @@ class UpdateDialogTest {
         composeRule.runOnIdle { assertEquals(0, client.checks.get()) }
 
         composeRule.onNodeWithText("检查更新").performClick()
-        waitForText("发现版本 0.3.0 (3)")
+        waitForText("发现版本 ${client.update.versionName} (${client.update.versionCode})")
         composeRule.runOnIdle { assertEquals(1, client.checks.get()); assertEquals(0, client.downloads.get()) }
 
         composeRule.onNodeWithText("下载 APK").performClick()
@@ -184,14 +184,16 @@ class UpdateDialogTest {
         val downloads = AtomicInteger()
         val verifications = AtomicInteger()
         val downloadedFile = File(application.cacheDir, "updates/MediaCraft-test.apk")
+        private val nextVersionCode = BuildConfig.VERSION_CODE.toLong() + 1
+        private val nextVersionName = "0.$nextVersionCode.0"
         val update = AppUpdate(
-            versionName = "0.3.0",
-            versionCode = 3,
+            versionName = nextVersionName,
+            versionCode = nextVersionCode,
             notes = "修复重复整理并改进更新流程",
-            pageUrl = "https://github.com/404NotFoundYou/MediaCraft/releases/tag/v0.3.0",
+            pageUrl = "https://github.com/404NotFoundYou/MediaCraft/releases/tag/v$nextVersionName",
             asset = ReleaseAsset(
-                name = "MediaCraft-0.3.0.apk",
-                url = "https://github.com/404NotFoundYou/MediaCraft/releases/download/v0.3.0/MediaCraft-0.3.0.apk",
+                name = "MediaCraft-$nextVersionName.apk",
+                url = "https://github.com/404NotFoundYou/MediaCraft/releases/download/v$nextVersionName/MediaCraft-$nextVersionName.apk",
                 size = 3,
             ),
             sha256 = "0".repeat(64),

@@ -22,8 +22,8 @@ android {
         applicationId = "com.mediacraft.app"
         minSdk = 30
         targetSdk = 36
-        versionCode = providers.gradleProperty("appVersionCode").orElse("2").get().toInt()
-        versionName = providers.gradleProperty("appVersionName").orElse("0.2.0").get()
+        versionCode = providers.gradleProperty("appVersionCode").orElse("4").get().toInt()
+        versionName = providers.gradleProperty("appVersionName").orElse("0.4.0").get()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }

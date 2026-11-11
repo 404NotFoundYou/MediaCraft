@@ -13,11 +13,14 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -25,6 +28,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
@@ -81,17 +86,19 @@ class AppFlowTest {
 
     @Test
     fun photoVersionRequiresComparisonAndExplicitReviewBeforeConfirmation() {
-        composeRule.onNodeWithTag("dedup-list").performScrollToNode(hasText("开始扫描"))
+        scrollLibraryToVisible(hasText("开始扫描"))
         composeRule.onNodeWithText("开始扫描").performClick()
 
-        waitForText("疑似同内容 · 照片版本")
+        waitForText("重新扫描")
+        composeRule.onNodeWithTag("dedup-list").performScrollToNode(hasText("疑似同内容 · 照片版本"))
         composeRule.onNodeWithTag("dedup-list").performScrollToNode(hasText(highName))
         composeRule.onNodeWithText(highName).assertExists()
         composeRule.onNodeWithText(lowName).assertExists()
         composeRule.onNodeWithText("像素更高：400 × 300").assertExists()
 
-        composeRule.onNodeWithTag("dedup-list").performScrollToNode(hasText("对比"))
-        composeRule.onNodeWithText("对比").performClick()
+        val fixtureComparison = hasContentDescription("对比", substring = true) and hasContentDescription(highName, substring = true)
+        composeRule.onNodeWithTag("dedup-list").performScrollToNode(fixtureComparison)
+        composeRule.onNode(fixtureComparison).performClick()
         composeRule.onNodeWithText("照片放大对比").assertExists()
         assertDialogContainsFileName(highName)
         assertDialogContainsFileName(lowName)
@@ -99,7 +106,7 @@ class AppFlowTest {
 
         composeRule.onNodeWithTag("dedup-list").performScrollToNode(hasText("复核并处理"))
         composeRule.onNodeWithText("复核并处理").assertIsNotEnabled()
-        val confirmation = hasContentDescription("内容一致", substring = true)
+        val confirmation = hasContentDescription("内容一致", substring = true) and hasContentDescription(highName, substring = true)
         composeRule.onNodeWithTag("dedup-list").performScrollToNode(confirmation)
         composeRule.onNode(confirmation).assertIsOff().performClick()
         composeRule.onNodeWithTag("dedup-list").performScrollToNode(hasText("复核并处理"))
@@ -183,8 +190,19 @@ class AppFlowTest {
 
     private fun selectFixtureAlbum() {
         waitUntilNodeExists(hasText(album), timeoutMillis = 20_000)
+        scrollLibraryToVisible(hasText(album))
         composeRule.onNodeWithText(album).performClick()
         composeRule.waitForIdle()
+        composeRule.onNodeWithText(album).assertIsSelected()
+    }
+
+    private fun scrollLibraryToVisible(matcher: androidx.compose.ui.test.SemanticsMatcher) {
+        composeRule.onNodeWithTag("dedup-list").performScrollToNode(matcher)
+        repeat(8) {
+            if (composeRule.onNode(matcher).isDisplayed()) return
+            composeRule.onNodeWithTag("dedup-list").performTouchInput { swipeUp() }
+        }
+        composeRule.onNode(matcher).assertIsDisplayed()
     }
 
     private fun selectForRename(name: String) {

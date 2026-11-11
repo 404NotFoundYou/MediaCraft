@@ -104,6 +104,8 @@ import com.mediacraft.app.domain.OperationRecord
 import com.mediacraft.app.domain.OperationStatus
 import com.mediacraft.app.domain.OperationType
 import com.mediacraft.app.domain.RenameMode
+import com.mediacraft.app.data.MediaLocationRepository
+import com.mediacraft.app.data.PlaceNameRepository
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.delay
@@ -129,13 +131,30 @@ fun MediaCraftApp(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val updateState by updateViewModel.state.collectAsStateWithLifecycle()
     var comparing by remember { mutableStateOf<DuplicateGroup?>(null) }
+    var detailMedia by remember { mutableStateOf<MediaItem?>(null) }
+    val appContext = LocalContext.current.applicationContext
+    val locationRepository = remember(appContext) { MediaLocationRepository(appContext) }
+    val placeNameRepository = remember(appContext) { PlaceNameRepository(appContext) }
     MaterialTheme(
         colorScheme = MaterialTheme.colorScheme.copy(primary = Green, onPrimary = Color.White, primaryContainer = PaleGreen, onPrimaryContainer = Ink, secondary = Green, secondaryContainer = PaleGreen, onSecondaryContainer = Green, surface = Color(0xFFFAFCF9), onSurface = Ink),
     ) {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Column { Text("MediaCraft", fontWeight = FontWeight.SemiBold); Text("本机影像，轻松整理", style = MaterialTheme.typography.labelSmall, color = Muted) } },
+                    title = {
+                        Column {
+                            Text(
+                                when (state.page) {
+                                    MainPage.DEDUPLICATE -> "图库"
+                                    MainPage.RENAME -> "重命名"
+                                    MainPage.HISTORY -> "活动记录"
+                                    MainPage.SETTINGS -> "设置"
+                                },
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text("MediaCraft · 本机影像", style = MaterialTheme.typography.labelSmall, color = Muted)
+                        }
+                    },
                     actions = {
                         IconButton(updateViewModel::openAndCheck) { Icon(Icons.Default.SystemUpdate, contentDescription = "检查更新", tint = Green) }
                         Icon(Icons.Default.Shield, contentDescription = null, tint = Green)
@@ -158,7 +177,7 @@ fun MediaCraftApp(
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding).background(Color(0xFFFAFCF9))) {
                 when (state.page) {
-                    MainPage.DEDUPLICATE -> DeduplicateScreen(state, viewModel, onRequestPermissions, onCompare = { comparing = it })
+                    MainPage.DEDUPLICATE -> DeduplicateScreen(state, viewModel, onRequestPermissions, onCompare = { comparing = it }, onOpenDetail = { detailMedia = it })
                     MainPage.RENAME -> RenameScreen(state, viewModel)
                     MainPage.HISTORY -> HistoryScreen(state, viewModel)
                     MainPage.SETTINGS -> SettingsScreen(state, viewModel, onRequestPermissions, onPickFolder, onClearFolder)
@@ -169,6 +188,9 @@ fun MediaCraftApp(
         comparing?.let { group ->
             if (group.kind == DuplicateKind.VIDEO_VERSION) VideoComparisonDialog(group, onDismiss = { comparing = null })
             else PhotoComparisonDialog(group, onDismiss = { comparing = null })
+        }
+        detailMedia?.let { media ->
+            MediaDetailDialog(media, locationRepository, placeNameRepository, onDismiss = { detailMedia = null })
         }
         if (state.awaitingSystemAuthorization) {
             AlertDialog(
@@ -188,6 +210,7 @@ private fun DeduplicateScreen(
     viewModel: MediaCraftViewModel,
     onRequestPermissions: (Boolean, Boolean) -> Unit,
     onCompare: (DuplicateGroup) -> Unit,
+    onOpenDetail: (MediaItem) -> Unit,
 ) {
     var category by rememberSaveable { mutableStateOf<DuplicateKind?>(null) }
     var confirmVisible by remember { mutableStateOf(false) }
@@ -196,7 +219,8 @@ private fun DeduplicateScreen(
     val canMutateMedia = !state.operationPending && state.scanScope.folderUri == null
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp).testTag("dedup-list"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            ScreenHeading("整理，从少一份重复开始", "查找重复影像", "完全重复会精确核对；同内容版本需要你复核。")
+            GalleryOverview(state, viewModel, onRequestPermissions, onOpenDetail)
+            ScreenHeading("重复项工作台", "查找重复影像", "完全重复会精确核对；同内容版本需要你复核。")
             PermissionCard(state.permissionCoverage, folderSelected = state.scanScope.folderUri != null) { onRequestPermissions(state.scanScope.photos, state.scanScope.videos) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(state.scanScope.photos, { viewModel.updateScope(photos = !state.scanScope.photos) }, { Text("照片") }, enabled = !state.operationPending)
@@ -251,12 +275,137 @@ private fun DeduplicateScreen(
 }
 
 @Composable
+private fun GalleryOverview(
+    state: MediaCraftUiState,
+    viewModel: MediaCraftViewModel,
+    onRequestPermissions: (Boolean, Boolean) -> Unit,
+    onOpenDetail: (MediaItem) -> Unit,
+) {
+    val photos = state.media.count { it.kind == MediaKind.PHOTO }
+    val videos = state.media.count { it.kind == MediaKind.VIDEO }
+    val previewItems = state.media.take(12)
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("你的影像", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        Text(
+            if (state.media.isEmpty()) "授权后，这里会显示本机照片和视频"
+            else "${state.media.size} 个媒体 · ${state.albums.size} 个相册",
+            style = MaterialTheme.typography.bodySmall,
+            color = Muted,
+        )
+        Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GalleryStat("照片", photos.toString(), Modifier.weight(1f))
+                    GalleryStat("视频", videos.toString(), Modifier.weight(1f))
+                    GalleryStat("重复组", state.groups.size.toString(), Modifier.weight(1f))
+                }
+                if (state.media.isEmpty()) {
+                    Surface(color = PaleGreen, shape = RoundedCornerShape(12.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Shield, contentDescription = null, tint = Green)
+                            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                                Text("先授权你的媒体", fontWeight = FontWeight.Medium)
+                                Text("只读取 Android 已授权的照片和视频", style = MaterialTheme.typography.bodySmall, color = Muted)
+                            }
+                            OutlinedButton({ onRequestPermissions(state.scanScope.photos, state.scanScope.videos) }) { Text("授权") }
+                        }
+                    }
+                } else {
+                    Text("最近媒体", style = MaterialTheme.typography.labelLarge, color = Ink)
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        maxItemsInEachRow = 4,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        previewItems.forEach { media ->
+                            Box(Modifier.size(72.dp).clip(RoundedCornerShape(8.dp)).clickable { onOpenDetail(media) }) {
+                                MediaThumbnail(media, Modifier.fillMaxSize())
+                                if (media.kind == MediaKind.VIDEO) {
+                                    Surface(color = Color.Black.copy(alpha = 0.62f), shape = RoundedCornerShape(5.dp), modifier = Modifier.padding(4.dp).align(Alignment.BottomEnd)) {
+                                        Icon(Icons.Default.PlayCircle, contentDescription = "视频", tint = Color.White, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Button(
+                    onClick = viewModel::startScan,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !state.operationPending && state.permissionCoverage != PermissionCoverage.DENIED && (state.scanScope.photos || state.scanScope.videos),
+                ) {
+                    Icon(Icons.Default.Search, contentDescription = null)
+                    Spacer(Modifier.size(8.dp))
+                    Text(if (state.groups.isEmpty()) "扫描重复项" else "重新扫描重复项")
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AssistChip(onClick = { viewModel.updateScope(photos = true, videos = false) }, label = { Text("照片") }, leadingIcon = { Icon(Icons.Default.Image, null) })
+            AssistChip(onClick = { viewModel.updateScope(photos = false, videos = true) }, label = { Text("视频") }, leadingIcon = { Icon(Icons.Default.PlayCircle, null) })
+            AssistChip(onClick = { viewModel.updateScope(photos = true, videos = true) }, label = { Text("全部媒体") })
+        }
+    }
+}
+
+@Composable
+private fun GalleryStat(label: String, value: String, modifier: Modifier = Modifier) {
+    Surface(color = PaleGreen, shape = RoundedCornerShape(10.dp), modifier = modifier) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 9.dp)) {
+            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = Green)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = Muted)
+        }
+    }
+}
+
+@Composable
+private fun MediaDetailDialog(
+    media: MediaItem,
+    locationRepository: MediaLocationRepository,
+    placeNameRepository: PlaceNameRepository,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { Button(onDismiss) { Text("关闭详情") } },
+        title = { Text("媒体详情") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                MediaThumbnail(media, Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)))
+                Text(media.displayName, fontWeight = FontWeight.SemiBold)
+                Text(media.relativePath, style = MaterialTheme.typography.bodySmall, color = Muted)
+                HorizontalDivider()
+                Text("尺寸  ${media.width} × ${media.height}", style = MaterialTheme.typography.bodySmall)
+                Text("文件大小  ${formatBytes(media.size)}", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    if (media.dateTakenMillis > 0) "拍摄时间  ${DateFormat.getDateTimeInstance().format(Date(media.dateTakenMillis))}"
+                    else "添加时间  ${DateFormat.getDateTimeInstance().format(Date(media.dateAddedMillis))}（未记录拍摄时间）",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                media.video?.let { video ->
+                    Text("视频参数  ${video.codec ?: "编码未知"} · ${video.frameRate?.let { "%.1f fps".format(it) } ?: "帧率未知"}", style = MaterialTheme.typography.bodySmall)
+                    Text("动态范围  ${video.dynamicRange ?: "未知"} · 音轨 ${video.audioSignature ?: "未知"}", style = MaterialTheme.typography.bodySmall)
+                }
+                MediaLocationSection(media, locationRepository, placeNameRepository)
+                Text("详情页用于查看内容和元数据；重复项处理仍需进入人工复核流程。", style = MaterialTheme.typography.bodySmall, color = Muted)
+            }
+        },
+    )
+}
+
+@Composable
 private fun DuplicateGroupCard(group: DuplicateGroup, review: GroupReview, viewModel: MediaCraftViewModel, onCompare: (DuplicateGroup) -> Unit, enabled: Boolean) {
     Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(kindLabel(group.kind), fontWeight = FontWeight.SemiBold)
-                if (group.kind != DuplicateKind.EXACT) AssistChip({ onCompare(group) }, { Text("对比") }, leadingIcon = { Icon(Icons.Default.Compare, null) })
+                if (group.kind != DuplicateKind.EXACT) AssistChip(
+                    { onCompare(group) },
+                    { Text("对比") },
+                    leadingIcon = { Icon(Icons.Default.Compare, null) },
+                    modifier = Modifier.semantics { contentDescription = "对比 ${group.items.joinToString { it.displayName }}" },
+                )
             }
             Surface(color = if (group.recommendedId == null) Color(0xFFFFF5E8) else PaleGreen, shape = RoundedCornerShape(8.dp)) {
                 Column(Modifier.fillMaxWidth().padding(10.dp)) {
@@ -677,7 +826,7 @@ private fun SettingsScreen(
             Card(colors = CardDefaults.cardColors(containerColor = PaleGreen)) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("隐私与安全", fontWeight = FontWeight.SemiBold)
-                    Text("扫描和摘要计算均在本机完成，不上传照片或视频。应用只读取 Android 授权范围内的媒体。", style = MaterialTheme.typography.bodySmall)
+                    Text("扫描和摘要计算均在本机完成，不上传照片或视频。应用只读取 Android 授权范围内的媒体。地名查询可能由系统联网发送坐标；加载在线地图会向 OpenStreetMap 发送坐标。", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
