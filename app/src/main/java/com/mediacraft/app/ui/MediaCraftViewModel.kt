@@ -3,6 +3,7 @@ package com.mediacraft.app.ui
 import android.app.Application
 import android.content.IntentSender
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
@@ -38,7 +39,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-enum class MainPage { DEDUPLICATE, RENAME, HISTORY }
+enum class MainPage { DEDUPLICATE, RENAME, HISTORY, SETTINGS }
 enum class PermissionCoverage { FULL, PARTIAL, DENIED }
 
 data class GroupReview(
@@ -80,12 +81,15 @@ class MediaCraftViewModel(
     private val mediaRepository: MediaRepository,
     private val operationRepository: OperationRepository,
 ) : AndroidViewModel(application) {
+    private val preferences = application.getSharedPreferences(PREFERENCES_NAME, 0)
+    private val persistedFolderUri = preferences.getString(FOLDER_URI_KEY, null)
     private val restoredAuthorization = restorePendingAuthorization(savedStateHandle)
     private val mutableState = MutableStateFlow(
         MediaCraftUiState(
             operationPending = restoredAuthorization != null,
             awaitingSystemAuthorization = restoredAuthorization != null,
             message = restoredAuthorization?.let { "系统确认仍在等待结果；若确认界面已消失，请取消等待并核对实际状态。" },
+            scanScope = ScanScope(folderUri = persistedFolderUri),
         ),
     )
     private val mutableRecords = MutableStateFlow<List<OperationRecord>>(emptyList())
@@ -121,6 +125,13 @@ class MediaCraftViewModel(
         val context = getApplication<Application>()
         val scope = mutableState.value.scanScope
         val coverage = when {
+            scope.folderUri != null -> {
+                val folderUri = runCatching { Uri.parse(scope.folderUri) }.getOrNull()
+                val granted = folderUri != null && context.contentResolver.persistedUriPermissions.any {
+                    it.uri == folderUri && it.isReadPermission
+                }
+                if (granted) PermissionCoverage.FULL else PermissionCoverage.DENIED
+            }
             Build.VERSION.SDK_INT >= 34 -> {
                 val images = ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
                 val videos = ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
@@ -177,6 +188,27 @@ class MediaCraftViewModel(
                 selectedRenameIds = state.selectedRenameIds.intersect(visibleIds),
                 renamePlan = null,
                 renamePlanLocked = false,
+                message = null,
+            )
+        }
+        refreshPermissionCoverage()
+    }
+
+    fun setFolderUri(uri: String?) {
+        if (mutableState.value.operationPending) return
+        scanJob?.cancel()
+        if (uri == null) preferences.edit().remove(FOLDER_URI_KEY).apply()
+        else preferences.edit().putString(FOLDER_URI_KEY, uri).apply()
+        update { state ->
+            state.copy(
+                scanScope = state.scanScope.copy(folderUri = uri, album = null),
+                groups = emptyList(),
+                reviews = emptyMap(),
+                scanProgress = null,
+                selectedRenameIds = emptySet(),
+                renamePlan = null,
+                renamePlanLocked = false,
+                issues = emptyList(),
                 message = null,
             )
         }
@@ -498,6 +530,8 @@ class MediaCraftViewModel(
     }
 
     internal companion object {
+        private const val PREFERENCES_NAME = "mediacraft_preferences"
+        private const val FOLDER_URI_KEY = "scan_folder_uri"
         const val PENDING_ID_KEY = "pending_authorization_id"
         const val PENDING_TYPE_KEY = "pending_authorization_type"
         const val PENDING_URIS_KEY = "pending_authorization_uris"

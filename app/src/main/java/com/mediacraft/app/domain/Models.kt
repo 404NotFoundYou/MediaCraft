@@ -37,7 +37,13 @@ data class MediaItem(
             normalizedMediaName(relativePath.replace('\\', '/').trim('/'))
 }
 
-data class ScanScope(val photos: Boolean = true, val videos: Boolean = true, val album: String? = null)
+data class ScanScope(
+    val photos: Boolean = true,
+    val videos: Boolean = true,
+    val album: String? = null,
+    /** Persisted SAF tree URI. When set, scanning is limited to this folder tree. */
+    val folderUri: String? = null,
+)
 data class MediaIssue(val mediaId: String?, val message: String)
 data class MediaListing(val items: List<MediaItem>, val issues: List<MediaIssue> = emptyList())
 data class ScanProgress(val phase: String, val processed: Int, val total: Int, val skipped: Int = 0)

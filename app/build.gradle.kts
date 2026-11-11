@@ -42,6 +42,8 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // 正式 APK 面向真机发布，明确声明 ARM64 ABI；debug 仍保留默认 ABI 以支持模拟器测试。
+            ndk { abiFilters += "arm64-v8a" }
             if (releaseSigningFile.isFile) signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

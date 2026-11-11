@@ -14,6 +14,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.CancellationSignal
 import android.provider.MediaStore
+import android.provider.DocumentsContract
 import androidx.exifinterface.media.ExifInterface
 import com.mediacraft.app.domain.ContentFingerprint
 import com.mediacraft.app.domain.FrameFingerprint
@@ -39,8 +40,12 @@ class MediaRepository(context: Context) : MediaSource {
     override suspend fun list(scope: ScanScope): MediaListing = withContext(Dispatchers.IO) {
         val items = mutableListOf<MediaItem>()
         val issues = mutableListOf<MediaIssue>()
-        if (scope.photos) queryCollection(MediaKind.PHOTO, scope.album, items, issues)
-        if (scope.videos) queryCollection(MediaKind.VIDEO, scope.album, items, issues)
+        if (scope.folderUri != null) {
+            queryTree(scope, items, issues)
+        } else {
+            if (scope.photos) queryCollection(MediaKind.PHOTO, scope.album, items, issues)
+            if (scope.videos) queryCollection(MediaKind.VIDEO, scope.album, items, issues)
+        }
         MediaListing(items.distinctBy(MediaItem::id), issues)
     }
 
@@ -166,6 +171,94 @@ class MediaRepository(context: Context) : MediaSource {
             issues += MediaIssue(null, "${if (kind == MediaKind.PHOTO) "照片" else "视频"}列表不可访问：${error.userMessage()}")
         }
     }
+
+    private suspend fun queryTree(
+        scope: ScanScope,
+        items: MutableList<MediaItem>,
+        issues: MutableList<MediaIssue>,
+    ) {
+        val treeUri = runCatching { Uri.parse(scope.folderUri) }.getOrNull()
+            ?: run {
+                issues += MediaIssue(scope.folderUri, "选择的文件夹地址无效")
+                return
+            }
+        val rootDocumentId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
+            ?: run {
+                issues += MediaIssue(scope.folderUri, "无法读取选择的文件夹")
+                return
+            }
+        val rootName = documentName(treeUri, rootDocumentId).orEmpty().ifBlank { "已选文件夹" }
+        val pending = ArrayDeque<Pair<String, String>>()
+        pending += rootDocumentId to "$rootName/"
+        try {
+            while (pending.isNotEmpty()) {
+                coroutineContext.ensureActive()
+                val (parentId, parentPath) = pending.removeFirst()
+                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
+                resolver.query(
+                    childrenUri,
+                    TREE_PROJECTION,
+                    null,
+                    null,
+                    "${DocumentsContract.Document.COLUMN_DISPLAY_NAME} ASC",
+                )?.use { cursor ->
+                    val idIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                    val nameIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                    val mimeIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                    val sizeIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE)
+                    val modifiedIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                    while (cursor.moveToNext()) {
+                        coroutineContext.ensureActive()
+                        val documentId = cursor.getString(idIndex)
+                        val name = cursor.getString(nameIndex).orEmpty()
+                        val mime = cursor.getString(mimeIndex).orEmpty()
+                        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                            pending += documentId to (parentPath + name + "/")
+                            continue
+                        }
+                        val kind = when {
+                            scope.photos && mime.startsWith("image/", ignoreCase = true) -> MediaKind.PHOTO
+                            scope.videos && mime.startsWith("video/", ignoreCase = true) -> MediaKind.VIDEO
+                            else -> null
+                        } ?: continue
+                        val modified = cursor.getLong(modifiedIndex).coerceAtLeast(0L)
+                        items += MediaItem(
+                            id = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId).toString(),
+                            displayName = name,
+                            kind = kind,
+                            mimeType = mime,
+                            relativePath = parentPath,
+                            size = cursor.getLong(sizeIndex).coerceAtLeast(0L),
+                            width = 0,
+                            height = 0,
+                            dateTakenMillis = modified,
+                            dateAddedMillis = modified,
+                            dateModifiedSeconds = modified / 1000L,
+                        )
+                    }
+                }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (security: SecurityException) {
+            issues += MediaIssue(scope.folderUri, "文件夹授权已失效，请重新选择：${security.userMessage()}")
+        } catch (error: Exception) {
+            issues += MediaIssue(scope.folderUri, "读取文件夹失败：${error.userMessage()}")
+        }
+    }
+
+    private fun documentName(treeUri: Uri, documentId: String): String? = runCatching {
+        val documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+        resolver.query(
+            documentUri,
+            arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+    }.getOrNull()
 
     private fun queryOne(uri: Uri, kind: MediaKind, includeTrashed: Boolean): MediaItem? {
         val args = Bundle().apply {
@@ -504,6 +597,13 @@ class MediaRepository(context: Context) : MediaSource {
             MediaStore.MediaColumns.GENERATION_MODIFIED,
             MediaStore.MediaColumns.DURATION,
             MediaStore.MediaColumns.IS_FAVORITE,
+        )
+        private val TREE_PROJECTION = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
         )
     }
 }

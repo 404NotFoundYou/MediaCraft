@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Compare
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PlayCircle
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.BottomAppBar
@@ -121,6 +123,8 @@ fun MediaCraftApp(
     viewModel: MediaCraftViewModel,
     updateViewModel: UpdateViewModel,
     onRequestPermissions: (photos: Boolean, videos: Boolean) -> Unit,
+    onPickFolder: () -> Unit,
+    onClearFolder: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val updateState by updateViewModel.state.collectAsStateWithLifecycle()
@@ -145,8 +149,8 @@ fun MediaCraftApp(
                         NavigationBarItem(
                             selected = state.page == page,
                             onClick = { viewModel.selectPage(page) },
-                            icon = { Icon(when (page) { MainPage.DEDUPLICATE -> Icons.Default.Search; MainPage.RENAME -> Icons.Default.TextFields; MainPage.HISTORY -> Icons.Default.History }, null) },
-                            label = { Text(when (page) { MainPage.DEDUPLICATE -> "去重"; MainPage.RENAME -> "重命名"; MainPage.HISTORY -> "记录" }) },
+                            icon = { Icon(when (page) { MainPage.DEDUPLICATE -> Icons.Default.Search; MainPage.RENAME -> Icons.Default.TextFields; MainPage.HISTORY -> Icons.Default.History; MainPage.SETTINGS -> Icons.Default.Settings }, null) },
+                            label = { Text(when (page) { MainPage.DEDUPLICATE -> "去重"; MainPage.RENAME -> "重命名"; MainPage.HISTORY -> "记录"; MainPage.SETTINGS -> "设置" }) },
                         )
                     }
                 }
@@ -157,6 +161,7 @@ fun MediaCraftApp(
                     MainPage.DEDUPLICATE -> DeduplicateScreen(state, viewModel, onRequestPermissions, onCompare = { comparing = it })
                     MainPage.RENAME -> RenameScreen(state, viewModel)
                     MainPage.HISTORY -> HistoryScreen(state, viewModel)
+                    MainPage.SETTINGS -> SettingsScreen(state, viewModel, onRequestPermissions, onPickFolder, onClearFolder)
                 }
                 state.busyMessage?.let { BusyOverlay(it) }
             }
@@ -188,10 +193,11 @@ private fun DeduplicateScreen(
     var confirmVisible by remember { mutableStateOf(false) }
     val selected = viewModel.selectedTrashGroups()
     val visibleGroups = state.groups.filter { category == null || it.kind == category }
+    val canMutateMedia = !state.operationPending && state.scanScope.folderUri == null
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp).testTag("dedup-list"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             ScreenHeading("整理，从少一份重复开始", "查找重复影像", "完全重复会精确核对；同内容版本需要你复核。")
-            PermissionCard(state.permissionCoverage) { onRequestPermissions(state.scanScope.photos, state.scanScope.videos) }
+            PermissionCard(state.permissionCoverage, folderSelected = state.scanScope.folderUri != null) { onRequestPermissions(state.scanScope.photos, state.scanScope.videos) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(state.scanScope.photos, { viewModel.updateScope(photos = !state.scanScope.photos) }, { Text("照片") }, enabled = !state.operationPending)
                 FilterChip(state.scanScope.videos, { viewModel.updateScope(videos = !state.scanScope.videos) }, { Text("视频") }, enabled = !state.operationPending)
@@ -222,7 +228,7 @@ private fun DeduplicateScreen(
                 }
             }
             items(visibleGroups, key = { it.id }) { group ->
-                DuplicateGroupCard(group, state.reviews[group.id] ?: GroupReview(), viewModel, onCompare, enabled = !state.operationPending)
+                DuplicateGroupCard(group, state.reviews[group.id] ?: GroupReview(), viewModel, onCompare, enabled = canMutateMedia)
             }
             item {
                 val count = selected.sumOf { (group, _) -> group.items.size - 1 }
@@ -230,8 +236,11 @@ private fun DeduplicateScreen(
                 Card(colors = CardDefaults.cardColors(containerColor = PaleGreen)) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                         Column { Text("待移入回收站", style = MaterialTheme.typography.labelMedium); Text("$count 个 · ${formatBytes(bytes)}", fontWeight = FontWeight.SemiBold) }
-                        Button({ confirmVisible = true }, enabled = count > 0 && !state.operationPending) { Text("复核并处理") }
+                        Button({ confirmVisible = true }, enabled = count > 0 && canMutateMedia) { Text("复核并处理") }
                     }
+                }
+                if (state.scanScope.folderUri != null) {
+                    Text("指定文件夹扫描当前支持安全预览和对比；修改或移入回收站请切换回全局相册授权。", style = MaterialTheme.typography.bodySmall, color = Muted)
                 }
                 Text("推荐不会自动删除。移入回收站后不立即宣称释放空间。", style = MaterialTheme.typography.bodySmall, color = Muted)
                 Spacer(Modifier.height(16.dp))
@@ -298,16 +307,17 @@ private fun RenameScreen(state: MediaCraftUiState, viewModel: MediaCraftViewMode
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp).testTag("rename-list"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { ScreenHeading("给照片和视频，一个好找的名字", "批量重命名", "选择真实媒体，预览锁定后再授权执行。") }
         if (state.permissionCoverage == PermissionCoverage.DENIED) item { MessageCard("需要媒体读取权限才能选择文件") }
+        if (state.scanScope.folderUri != null) item { MessageCard("指定文件夹扫描当前仅支持去重预览，重命名请切换回全局相册授权") }
         item {
             Text("选择文件 · ${state.selectedRenameIds.size} 项", fontWeight = FontWeight.SemiBold)
             if (state.media.size > 200) Text("单次最多执行 200 项；列表不会自动截断。", style = MaterialTheme.typography.bodySmall, color = Color(0xFF945C12))
         }
         items(visibleMedia, key = { "select-${it.id}" }) { media ->
-            Row(Modifier.fillMaxWidth().clickable(enabled = !state.operationPending) { viewModel.toggleRenameSelection(media.id) }.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clickable(enabled = !state.operationPending && state.scanScope.folderUri == null) { viewModel.toggleRenameSelection(media.id) }.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(
                     checked = media.id in state.selectedRenameIds,
                     onCheckedChange = { viewModel.toggleRenameSelection(media.id) },
-                    enabled = !state.operationPending,
+                    enabled = !state.operationPending && state.scanScope.folderUri == null,
                     modifier = Modifier.semantics { contentDescription = "选择 ${media.displayName}" },
                 )
                 MediaThumbnail(media, Modifier.size(48.dp).clip(RoundedCornerShape(7.dp)))
@@ -329,7 +339,7 @@ private fun RenameScreen(state: MediaCraftUiState, viewModel: MediaCraftViewMode
                 }
                 OutlinedTextField(state.renameOptions.template, { viewModel.updateRenameOptions(template = it) }, label = { Text("模板") }, supportingText = { Text("支持 {date}、{seq:1}–{seq:6}、{original}") }, modifier = Modifier.fillMaxWidth(), enabled = !state.operationPending)
             } else Text("将生成 MC_ + 10 位随机字符，预览后名称锁定。", style = MaterialTheme.typography.bodySmall, color = Muted)
-            Button(viewModel::createRenamePreview, Modifier.fillMaxWidth(), enabled = !state.operationPending && state.selectedRenameIds.isNotEmpty()) { Text(if (state.renamePlanLocked) "重新生成预览" else "生成名称预览") }
+            Button(viewModel::createRenamePreview, Modifier.fillMaxWidth(), enabled = !state.operationPending && state.scanScope.folderUri == null && state.selectedRenameIds.isNotEmpty()) { Text(if (state.renamePlanLocked) "重新生成预览" else "生成名称预览") }
         }
         state.renamePlan?.let { plan ->
             item { Text("名称预览${if (state.renamePlanLocked) " · 已锁定" else ""}", fontWeight = FontWeight.SemiBold); plan.error?.let { MessageCard(it) } }
@@ -389,11 +399,12 @@ private fun OperationRecordCard(record: OperationRecord, viewModel: MediaCraftVi
 }
 
 @Composable
-private fun PermissionCard(coverage: PermissionCoverage, onRequest: () -> Unit) {
-    val (title, detail) = when (coverage) {
-        PermissionCoverage.FULL -> "已获得完整媒体权限" to "可扫描已选照片和视频类型。"
-        PermissionCoverage.PARTIAL -> "仅能访问部分媒体" to "结果只覆盖当前授权项目。可重新选择更多媒体。"
-        PermissionCoverage.DENIED -> "需要媒体访问权限" to "MediaCraft 只在本机读取你授权的照片和视频。"
+private fun PermissionCard(coverage: PermissionCoverage, folderSelected: Boolean = false, onRequest: () -> Unit) {
+    val (title, detail) = when {
+        folderSelected && coverage == PermissionCoverage.FULL -> "已获得文件夹访问权限" to "将递归扫描所选文件夹中的照片和视频。"
+        coverage == PermissionCoverage.FULL -> "已获得完整媒体权限" to "可扫描已选照片和视频类型。"
+        coverage == PermissionCoverage.PARTIAL -> "仅能访问部分媒体" to "结果只覆盖当前授权项目。可重新选择更多媒体。"
+        else -> "需要媒体访问权限" to "MediaCraft 只在本机读取你授权的照片和视频。"
     }
     Card(colors = CardDefaults.cardColors(containerColor = if (coverage == PermissionCoverage.FULL) PaleGreen else Color(0xFFFFF5E8))) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -599,6 +610,78 @@ private fun TrashConfirmationDialog(selected: List<Pair<DuplicateGroup, GroupRev
             }
         },
     )
+}
+
+@Composable
+private fun SettingsScreen(
+    state: MediaCraftUiState,
+    viewModel: MediaCraftViewModel,
+    onRequestPermissions: (Boolean, Boolean) -> Unit,
+    onPickFolder: () -> Unit,
+    onClearFolder: () -> Unit,
+) {
+    LazyColumn(
+        Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            ScreenHeading("管理访问范围", "设置", "先授权媒体访问，再选择全局相册或指定文件夹进行去重。")
+            PermissionCard(state.permissionCoverage, folderSelected = state.scanScope.folderUri != null) { onRequestPermissions(state.scanScope.photos, state.scanScope.videos) }
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("扫描范围", fontWeight = FontWeight.SemiBold)
+                    Text("媒体类型", style = MaterialTheme.typography.labelMedium, color = Muted)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = state.scanScope.photos,
+                            onClick = { viewModel.updateScope(photos = !state.scanScope.photos) },
+                            label = { Text("照片") },
+                            enabled = !state.operationPending,
+                        )
+                        FilterChip(
+                            selected = state.scanScope.videos,
+                            onClick = { viewModel.updateScope(videos = !state.scanScope.videos) },
+                            label = { Text("视频") },
+                            enabled = !state.operationPending,
+                        )
+                    }
+                    Text("扫描来源", style = MaterialTheme.typography.labelMedium, color = Muted)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(onClick = onPickFolder, enabled = !state.operationPending) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null)
+                            Spacer(Modifier.size(6.dp))
+                            Text("选择文件夹")
+                        }
+                        if (state.scanScope.folderUri != null) {
+                            TextButton(onClick = onClearFolder, enabled = !state.operationPending) { Text("恢复全局") }
+                        }
+                    }
+                    Text(
+                        when {
+                            state.scanScope.folderUri != null -> "当前：已选文件夹（包含子文件夹）"
+                            state.scanScope.album != null -> "当前相册：${state.scanScope.album}"
+                            else -> "当前：所有已授权媒体文件夹"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Muted,
+                    )
+                    if (state.scanScope.folderUri == null) {
+                        AlbumPicker(state.albums, state.scanScope.album, enabled = !state.operationPending) { viewModel.updateScope(album = it) }
+                    }
+                }
+            }
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = PaleGreen)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("隐私与安全", fontWeight = FontWeight.SemiBold)
+                    Text("扫描和摘要计算均在本机完成，不上传照片或视频。应用只读取 Android 授权范围内的媒体。", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
 }
 
 @Composable private fun ScreenHeading(eyebrow: String, title: String, subtitle: String) = Column(Modifier.padding(vertical = 16.dp)) { Text(eyebrow, style = MaterialTheme.typography.labelMedium, color = Green); Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold); Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Muted) }

@@ -70,6 +70,14 @@ class MainActivity : ComponentActivity() {
         viewModel.refreshPermissionCoverage()
     }
 
+    private val folderLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            viewModel.setFolderUri(uri.toString())
+        }
+    }
+
     private val authorizationLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
         viewModel.onAuthorizationResult(result.resultCode == RESULT_OK)
     }
@@ -112,6 +120,8 @@ class MainActivity : ComponentActivity() {
                 viewModel = viewModel,
                 updateViewModel = updateViewModel,
                 onRequestPermissions = { photos, videos -> permissionLauncher.launch(requiredPermissions(photos, videos)) },
+                onPickFolder = { folderLauncher.launch(null) },
+                onClearFolder = { viewModel.setFolderUri(null) },
             )
         }
     }
