@@ -1,0 +1,95 @@
+package com.mediacraft.app
+
+import android.Manifest
+import android.app.Application
+import android.os.Build
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewmodel.CreationExtras
+import com.mediacraft.app.data.MediaRepository
+import com.mediacraft.app.data.OperationRepository
+import com.mediacraft.app.domain.DuplicateScanner
+import com.mediacraft.app.domain.RenamePlanner
+import com.mediacraft.app.ui.MediaCraftApp
+import com.mediacraft.app.ui.MediaCraftViewModel
+import com.mediacraft.app.ui.UiEvent
+import kotlinx.coroutines.launch
+
+class MainActivity : ComponentActivity() {
+    private val mediaRepository by lazy { MediaRepository(applicationContext) }
+    private val operationRepository by lazy { OperationRepository(applicationContext, mediaRepository) }
+
+    private val viewModel: MediaCraftViewModel by viewModels {
+        object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
+                return MediaCraftViewModel(
+                    application = application as Application,
+                    savedStateHandle = extras.createSavedStateHandle(),
+                    scanner = DuplicateScanner(mediaRepository),
+                    renamePlanner = RenamePlanner(),
+                    mediaRepository = mediaRepository,
+                    operationRepository = operationRepository,
+                ) as T
+            }
+        }
+    }
+
+    private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        viewModel.refreshPermissionCoverage()
+    }
+
+    private val authorizationLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        viewModel.onAuthorizationResult(result.resultCode == RESULT_OK)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        lifecycle.addObserver(LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshPermissionCoverage()
+        })
+        lifecycleScope.launch {
+            viewModel.events.collect { event ->
+                when (event) {
+                    is UiEvent.RequestAuthorization -> {
+                        runCatching {
+                            val request = IntentSenderRequest.Builder(viewModel.authorizationIntent(event.operation)).build()
+                            authorizationLauncher.launch(request)
+                        }.onFailure {
+                            viewModel.onAuthorizationLaunchFailed(it)
+                        }
+                    }
+                }
+            }
+        }
+        setContent {
+            MediaCraftApp(
+                viewModel = viewModel,
+                onRequestPermissions = { photos, videos -> permissionLauncher.launch(requiredPermissions(photos, videos)) },
+            )
+        }
+    }
+
+    private fun requiredPermissions(photos: Boolean, videos: Boolean): Array<String> = when {
+        Build.VERSION.SDK_INT >= 34 -> buildList {
+            if (photos) add(Manifest.permission.READ_MEDIA_IMAGES)
+            if (videos) add(Manifest.permission.READ_MEDIA_VIDEO)
+            add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+        }.toTypedArray()
+        Build.VERSION.SDK_INT >= 33 -> buildList {
+            if (photos) add(Manifest.permission.READ_MEDIA_IMAGES)
+            if (videos) add(Manifest.permission.READ_MEDIA_VIDEO)
+        }.toTypedArray()
+        else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    }
+}
