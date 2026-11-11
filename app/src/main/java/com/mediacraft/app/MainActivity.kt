@@ -89,7 +89,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lifecycle.addObserver(LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshPermissionCoverage()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshPermissionCoverage()
+                viewModel.refreshMedia()
+            }
         })
         lifecycleScope.launch {
             viewModel.events.collect { event ->

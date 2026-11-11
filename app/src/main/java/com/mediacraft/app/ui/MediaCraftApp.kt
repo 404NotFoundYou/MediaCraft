@@ -3,10 +3,13 @@ package com.mediacraft.app.ui
 import android.graphics.ImageDecoder
 import android.net.Uri
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -14,6 +17,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,6 +43,8 @@ import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.BottomAppBar
@@ -46,6 +54,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -75,6 +87,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -87,6 +100,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
@@ -114,10 +129,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlin.math.max
 
-private val Green = Color(0xFF24694E)
-private val PaleGreen = Color(0xFFEAF3ED)
-private val Ink = Color(0xFF20352D)
-private val Muted = Color(0xFF66796F)
+internal val Green = Color(0xFF24694E)
+internal val PaleGreen = Color(0xFFDCEEE3)
+internal val Ink = Color(0xFF20352D)
+internal val Muted = Color(0xFF74827B)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -135,54 +150,35 @@ fun MediaCraftApp(
     val appContext = LocalContext.current.applicationContext
     val locationRepository = remember(appContext) { MediaLocationRepository(appContext) }
     val placeNameRepository = remember(appContext) { PlaceNameRepository(appContext) }
+    LaunchedEffect(Unit) { viewModel.refreshPermissionCoverage() }
+    LaunchedEffect(state.page, state.permissionCoverage, state.scanScope) {
+        if (state.permissionCoverage != PermissionCoverage.DENIED) viewModel.refreshMedia()
+    }
     MaterialTheme(
-        colorScheme = MaterialTheme.colorScheme.copy(primary = Green, onPrimary = Color.White, primaryContainer = PaleGreen, onPrimaryContainer = Ink, secondary = Green, secondaryContainer = PaleGreen, onSecondaryContainer = Green, surface = Color(0xFFFAFCF9), onSurface = Ink),
+        colorScheme = lightColorScheme(primary = Green, onPrimary = Color.White, primaryContainer = PaleGreen, onPrimaryContainer = Ink, secondary = Green, secondaryContainer = PaleGreen, onSecondaryContainer = Green, background = Color(0xFFF4F7F4), surface = Color.White, onSurface = Ink, onSurfaceVariant = Muted, outline = Color(0xFFE1E9E3), outlineVariant = Color(0xFFE1E9E3)),
+        shapes = Shapes(small = RoundedCornerShape(10.dp), medium = RoundedCornerShape(20.dp), large = RoundedCornerShape(24.dp)),
     ) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(
-                                when (state.page) {
-                                    MainPage.DEDUPLICATE -> "图库"
-                                    MainPage.RENAME -> "重命名"
-                                    MainPage.HISTORY -> "活动记录"
-                                    MainPage.SETTINGS -> "设置"
-                                },
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text("MediaCraft · 本机影像", style = MaterialTheme.typography.labelSmall, color = Muted)
+        BoxWithConstraints(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFFEEF5F0), Color(0xFFF8FAF8))))) {
+            val wide = maxWidth > 900.dp
+            Row(Modifier.fillMaxSize()) {
+                if (wide) AppSidebar(state.page, viewModel::selectPage)
+                Scaffold(
+                    modifier = Modifier.weight(1f),
+                    containerColor = Color.Transparent,
+                    topBar = { AppHeader(state.page, viewModel::selectPage, updateViewModel::openAndCheck) },
+                    bottomBar = { if (!wide) FloatingNavigation(state.page, viewModel::selectPage) },
+                ) { padding ->
+                    Box(Modifier.fillMaxSize().padding(padding)) {
+                        when (state.page) {
+                            MainPage.GALLERY -> GalleryScreen(state, viewModel, onRequestPermissions, onOpenDetail = { detailMedia = it })
+                            MainPage.DEDUPLICATE -> DeduplicateScreen(state, viewModel, onRequestPermissions, onCompare = { comparing = it })
+                            MainPage.RENAME -> PrototypeRenameScreen(state, viewModel)
+                            MainPage.HISTORY -> PrototypeHistoryScreen(state, viewModel)
+                            MainPage.SETTINGS -> PrototypeSettingsScreen(state, viewModel, onRequestPermissions, onPickFolder, onClearFolder)
                         }
-                    },
-                    actions = {
-                        IconButton(updateViewModel::openAndCheck) { Icon(Icons.Default.SystemUpdate, contentDescription = "检查更新", tint = Green) }
-                        Icon(Icons.Default.Shield, contentDescription = null, tint = Green)
-                        Text("媒体本机处理", style = MaterialTheme.typography.labelSmall, color = Green, modifier = Modifier.padding(end = 12.dp))
-                    },
-                )
-            },
-            bottomBar = {
-                BottomAppBar(containerColor = Color.White) {
-                    MainPage.entries.forEach { page ->
-                        NavigationBarItem(
-                            selected = state.page == page,
-                            onClick = { viewModel.selectPage(page) },
-                            icon = { Icon(when (page) { MainPage.DEDUPLICATE -> Icons.Default.Search; MainPage.RENAME -> Icons.Default.TextFields; MainPage.HISTORY -> Icons.Default.History; MainPage.SETTINGS -> Icons.Default.Settings }, null) },
-                            label = { Text(when (page) { MainPage.DEDUPLICATE -> "去重"; MainPage.RENAME -> "重命名"; MainPage.HISTORY -> "记录"; MainPage.SETTINGS -> "设置" }) },
-                        )
+                        state.busyMessage?.let { BusyOverlay(it) }
                     }
                 }
-            },
-        ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding).background(Color(0xFFFAFCF9))) {
-                when (state.page) {
-                    MainPage.DEDUPLICATE -> DeduplicateScreen(state, viewModel, onRequestPermissions, onCompare = { comparing = it }, onOpenDetail = { detailMedia = it })
-                    MainPage.RENAME -> RenameScreen(state, viewModel)
-                    MainPage.HISTORY -> HistoryScreen(state, viewModel)
-                    MainPage.SETTINGS -> SettingsScreen(state, viewModel, onRequestPermissions, onPickFolder, onClearFolder)
-                }
-                state.busyMessage?.let { BusyOverlay(it) }
             }
         }
         comparing?.let { group ->
@@ -190,7 +186,7 @@ fun MediaCraftApp(
             else PhotoComparisonDialog(group, onDismiss = { comparing = null })
         }
         detailMedia?.let { media ->
-            MediaDetailDialog(media, locationRepository, placeNameRepository, onDismiss = { detailMedia = null })
+            MediaDetailSheet(media, state.groups.count { group -> group.items.any { it.id == media.id } }, locationRepository, placeNameRepository, onDismiss = { detailMedia = null }, onReviewDuplicates = { detailMedia = null; viewModel.selectPage(MainPage.DEDUPLICATE) })
         }
         if (state.awaitingSystemAuthorization) {
             AlertDialog(
@@ -205,22 +201,107 @@ fun MediaCraftApp(
 }
 
 @Composable
+private fun AppHeader(page: MainPage, onSelect: (MainPage) -> Unit, onCheckUpdate: () -> Unit) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text("MEDIACRAFT · LOCAL GALLERY", color = Green, fontSize = 10.sp, letterSpacing = 0.8.sp, fontWeight = FontWeight.ExtraBold)
+            Text(pageLabel(page), color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp))
+        }
+        Box {
+            Surface(shape = RoundedCornerShape(13.dp), color = Color.White, border = BorderStroke(1.dp, Color(0xFFE1E9E3))) {
+                IconButton({ menuExpanded = true }, Modifier.size(42.dp)) { Icon(Icons.Default.MoreHoriz, "更多", tint = Green) }
+            }
+            DropdownMenu(menuExpanded, { menuExpanded = false }) {
+                DropdownMenuItem(text = { Text("活动记录") }, leadingIcon = { Icon(Icons.Default.History, null) }, onClick = { menuExpanded = false; onSelect(MainPage.HISTORY) })
+                DropdownMenuItem(text = { Text("检查更新") }, leadingIcon = { Icon(Icons.Default.SystemUpdate, null) }, onClick = { menuExpanded = false; onCheckUpdate() })
+            }
+        }
+        Surface(onClick = { onSelect(MainPage.SETTINGS) }, shape = RoundedCornerShape(13.dp), color = Green, modifier = Modifier.size(42.dp)) {
+            Box(contentAlignment = Alignment.Center) { Text("MC", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
+        }
+    }
+}
+
+@Composable
+private fun FloatingNavigation(selected: MainPage, onSelect: (MainPage) -> Unit) {
+    Surface(Modifier.navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 12.dp), shape = RoundedCornerShape(18.dp), color = Color.White.copy(alpha = 0.96f), border = BorderStroke(1.dp, Color(0xFFE1E9E3)), shadowElevation = 8.dp) {
+        Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            listOf(MainPage.GALLERY, MainPage.DEDUPLICATE, MainPage.RENAME, MainPage.SETTINGS).forEach { page ->
+                Surface(onClick = { onSelect(page) }, color = if (page == selected) PaleGreen else Color.Transparent, shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f).testTag("nav-${page.name.lowercase()}")) {
+                    Column(Modifier.padding(vertical = 7.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Icon(pageIcon(page), null, tint = if (page == selected) Green else Muted, modifier = Modifier.size(20.dp))
+                        Text(pageLabel(page), fontSize = 11.sp, color = if (page == selected) Green else Muted, fontWeight = if (page == selected) FontWeight.Bold else FontWeight.Normal)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppSidebar(selected: MainPage, onSelect: (MainPage) -> Unit) {
+    Surface(Modifier.width(250.dp).fillMaxSize(), color = Color.White.copy(alpha = 0.72f)) {
+        Column(Modifier.statusBarsPadding().padding(horizontal = 18.dp, vertical = 26.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+            Row(Modifier.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+                Surface(shape = RoundedCornerShape(12.dp), color = Green, modifier = Modifier.size(36.dp)) { Box(contentAlignment = Alignment.Center) { Text("✦", color = Color.White, fontSize = 20.sp) } }
+                Column { Text("MediaCraft", fontWeight = FontWeight.Bold, fontSize = 17.sp); Text("本机影像 · 安全整理", color = Muted, fontSize = 11.sp) }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                MainPage.entries.forEach { page ->
+                    Surface(onClick = { onSelect(page) }, shape = RoundedCornerShape(12.dp), color = if (selected == page) PaleGreen else Color.Transparent) {
+                        Row(Modifier.fillMaxWidth().padding(13.dp), horizontalArrangement = Arrangement.spacedBy(11.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(pageIcon(page), null, tint = Green, modifier = Modifier.size(22.dp))
+                            Text(pageLabel(page), color = if (selected == page) Green else Muted, fontSize = 14.sp, fontWeight = if (selected == page) FontWeight.Bold else FontWeight.Normal)
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Surface(color = Color(0xFFEFF7F1), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, Color(0xFFD8EADC))) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("▣ 本机处理", color = Green, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("扫描和摘要计算均在本机完成，不上传照片或视频。", color = Muted, fontSize = 12.sp, lineHeight = 19.sp)
+                }
+            }
+        }
+    }
+}
+
+private fun pageLabel(page: MainPage) = when (page) {
+    MainPage.GALLERY -> "图库"
+    MainPage.DEDUPLICATE -> "重复项"
+    MainPage.RENAME -> "重命名"
+    MainPage.HISTORY -> "活动记录"
+    MainPage.SETTINGS -> "设置"
+}
+
+private fun pageIcon(page: MainPage) = when (page) {
+    MainPage.GALLERY -> Icons.Default.PhotoLibrary
+    MainPage.DEDUPLICATE -> Icons.Default.Compare
+    MainPage.RENAME -> Icons.Default.TextFields
+    MainPage.HISTORY -> Icons.Default.History
+    MainPage.SETTINGS -> Icons.Default.Settings
+}
+
+@Composable
 private fun DeduplicateScreen(
     state: MediaCraftUiState,
     viewModel: MediaCraftViewModel,
     onRequestPermissions: (Boolean, Boolean) -> Unit,
     onCompare: (DuplicateGroup) -> Unit,
-    onOpenDetail: (MediaItem) -> Unit,
 ) {
     var category by rememberSaveable { mutableStateOf<DuplicateKind?>(null) }
     var confirmVisible by remember { mutableStateOf(false) }
     val selected = viewModel.selectedTrashGroups()
     val visibleGroups = state.groups.filter { category == null || it.kind == category }
     val canMutateMedia = !state.operationPending && state.scanScope.folderUri == null
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp).testTag("dedup-list"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp).testTag("dedup-list"), contentPadding = PaddingValues(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            GalleryOverview(state, viewModel, onRequestPermissions, onOpenDetail)
-            ScreenHeading("重复项工作台", "查找重复影像", "完全重复会精确核对；同内容版本需要你复核。")
+            ScreenHeading("重复项工作台", "重复项", "确定性重复与疑似同内容版本分开展示")
+            Surface(color = Color.White, shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, Color(0xFFE1E9E3)), shadowElevation = 1.dp) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("扫描范围", fontSize = 17.sp, fontWeight = FontWeight.Bold)
             PermissionCard(state.permissionCoverage, folderSelected = state.scanScope.folderUri != null) { onRequestPermissions(state.scanScope.photos, state.scanScope.videos) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(state.scanScope.photos, { viewModel.updateScope(photos = !state.scanScope.photos) }, { Text("照片") }, enabled = !state.operationPending)
@@ -235,6 +316,8 @@ private fun DeduplicateScreen(
             } else {
                 Button(viewModel::startScan, Modifier.fillMaxWidth(), enabled = !state.operationPending && state.permissionCoverage != PermissionCoverage.DENIED && (state.scanScope.photos || state.scanScope.videos)) {
                     Icon(Icons.Default.Search, null); Spacer(Modifier.size(8.dp)); Text(if (state.groups.isEmpty()) "开始扫描" else "重新扫描")
+                }
+            }
                 }
             }
             state.message?.let { MessageCard(it) }
@@ -272,126 +355,6 @@ private fun DeduplicateScreen(
         }
     }
     if (confirmVisible) TrashConfirmationDialog(selected, onDismiss = { confirmVisible = false }, onConfirm = { confirmVisible = false; viewModel.prepareTrash() })
-}
-
-@Composable
-private fun GalleryOverview(
-    state: MediaCraftUiState,
-    viewModel: MediaCraftViewModel,
-    onRequestPermissions: (Boolean, Boolean) -> Unit,
-    onOpenDetail: (MediaItem) -> Unit,
-) {
-    val photos = state.media.count { it.kind == MediaKind.PHOTO }
-    val videos = state.media.count { it.kind == MediaKind.VIDEO }
-    val previewItems = state.media.take(12)
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("你的影像", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        Text(
-            if (state.media.isEmpty()) "授权后，这里会显示本机照片和视频"
-            else "${state.media.size} 个媒体 · ${state.albums.size} 个相册",
-            style = MaterialTheme.typography.bodySmall,
-            color = Muted,
-        )
-        Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GalleryStat("照片", photos.toString(), Modifier.weight(1f))
-                    GalleryStat("视频", videos.toString(), Modifier.weight(1f))
-                    GalleryStat("重复组", state.groups.size.toString(), Modifier.weight(1f))
-                }
-                if (state.media.isEmpty()) {
-                    Surface(color = PaleGreen, shape = RoundedCornerShape(12.dp)) {
-                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Shield, contentDescription = null, tint = Green)
-                            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                                Text("先授权你的媒体", fontWeight = FontWeight.Medium)
-                                Text("只读取 Android 已授权的照片和视频", style = MaterialTheme.typography.bodySmall, color = Muted)
-                            }
-                            OutlinedButton({ onRequestPermissions(state.scanScope.photos, state.scanScope.videos) }) { Text("授权") }
-                        }
-                    }
-                } else {
-                    Text("最近媒体", style = MaterialTheme.typography.labelLarge, color = Ink)
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        maxItemsInEachRow = 4,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        previewItems.forEach { media ->
-                            Box(Modifier.size(72.dp).clip(RoundedCornerShape(8.dp)).clickable { onOpenDetail(media) }) {
-                                MediaThumbnail(media, Modifier.fillMaxSize())
-                                if (media.kind == MediaKind.VIDEO) {
-                                    Surface(color = Color.Black.copy(alpha = 0.62f), shape = RoundedCornerShape(5.dp), modifier = Modifier.padding(4.dp).align(Alignment.BottomEnd)) {
-                                        Icon(Icons.Default.PlayCircle, contentDescription = "视频", tint = Color.White, modifier = Modifier.size(16.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Button(
-                    onClick = viewModel::startScan,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !state.operationPending && state.permissionCoverage != PermissionCoverage.DENIED && (state.scanScope.photos || state.scanScope.videos),
-                ) {
-                    Icon(Icons.Default.Search, contentDescription = null)
-                    Spacer(Modifier.size(8.dp))
-                    Text(if (state.groups.isEmpty()) "扫描重复项" else "重新扫描重复项")
-                }
-            }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AssistChip(onClick = { viewModel.updateScope(photos = true, videos = false) }, label = { Text("照片") }, leadingIcon = { Icon(Icons.Default.Image, null) })
-            AssistChip(onClick = { viewModel.updateScope(photos = false, videos = true) }, label = { Text("视频") }, leadingIcon = { Icon(Icons.Default.PlayCircle, null) })
-            AssistChip(onClick = { viewModel.updateScope(photos = true, videos = true) }, label = { Text("全部媒体") })
-        }
-    }
-}
-
-@Composable
-private fun GalleryStat(label: String, value: String, modifier: Modifier = Modifier) {
-    Surface(color = PaleGreen, shape = RoundedCornerShape(10.dp), modifier = modifier) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 9.dp)) {
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = Green)
-            Text(label, style = MaterialTheme.typography.labelSmall, color = Muted)
-        }
-    }
-}
-
-@Composable
-private fun MediaDetailDialog(
-    media: MediaItem,
-    locationRepository: MediaLocationRepository,
-    placeNameRepository: PlaceNameRepository,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { Button(onDismiss) { Text("关闭详情") } },
-        title = { Text("媒体详情") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                MediaThumbnail(media, Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)))
-                Text(media.displayName, fontWeight = FontWeight.SemiBold)
-                Text(media.relativePath, style = MaterialTheme.typography.bodySmall, color = Muted)
-                HorizontalDivider()
-                Text("尺寸  ${media.width} × ${media.height}", style = MaterialTheme.typography.bodySmall)
-                Text("文件大小  ${formatBytes(media.size)}", style = MaterialTheme.typography.bodySmall)
-                Text(
-                    if (media.dateTakenMillis > 0) "拍摄时间  ${DateFormat.getDateTimeInstance().format(Date(media.dateTakenMillis))}"
-                    else "添加时间  ${DateFormat.getDateTimeInstance().format(Date(media.dateAddedMillis))}（未记录拍摄时间）",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                media.video?.let { video ->
-                    Text("视频参数  ${video.codec ?: "编码未知"} · ${video.frameRate?.let { "%.1f fps".format(it) } ?: "帧率未知"}", style = MaterialTheme.typography.bodySmall)
-                    Text("动态范围  ${video.dynamicRange ?: "未知"} · 音轨 ${video.audioSignature ?: "未知"}", style = MaterialTheme.typography.bodySmall)
-                }
-                MediaLocationSection(media, locationRepository, placeNameRepository)
-                Text("详情页用于查看内容和元数据；重复项处理仍需进入人工复核流程。", style = MaterialTheme.typography.bodySmall, color = Muted)
-            }
-        },
-    )
 }
 
 @Composable
@@ -444,111 +407,7 @@ private fun DuplicateGroupCard(group: DuplicateGroup, review: GroupReview, viewM
 }
 
 @Composable
-private fun RenameScreen(state: MediaCraftUiState, viewModel: MediaCraftViewModel) {
-    var prefix by rememberSaveable { mutableStateOf("旅行") }
-    var includeDate by rememberSaveable { mutableStateOf(true) }
-    var digits by rememberSaveable { mutableStateOf(3) }
-    fun applyVisualTemplate() {
-        val template = buildString { append(prefix.ifBlank { "Media" }); if (includeDate) append("_{date}"); append("_{seq:$digits}") }
-        viewModel.updateRenameOptions(template = template)
-    }
-    val visibleMedia = state.media.filter { state.scanScope.album == null || it.relativePath == state.scanScope.album }
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp).testTag("rename-list"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { ScreenHeading("给照片和视频，一个好找的名字", "批量重命名", "选择真实媒体，预览锁定后再授权执行。") }
-        if (state.permissionCoverage == PermissionCoverage.DENIED) item { MessageCard("需要媒体读取权限才能选择文件") }
-        if (state.scanScope.folderUri != null) item { MessageCard("指定文件夹扫描当前仅支持去重预览，重命名请切换回全局相册授权") }
-        item {
-            Text("选择文件 · ${state.selectedRenameIds.size} 项", fontWeight = FontWeight.SemiBold)
-            if (state.media.size > 200) Text("单次最多执行 200 项；列表不会自动截断。", style = MaterialTheme.typography.bodySmall, color = Color(0xFF945C12))
-        }
-        items(visibleMedia, key = { "select-${it.id}" }) { media ->
-            Row(Modifier.fillMaxWidth().clickable(enabled = !state.operationPending && state.scanScope.folderUri == null) { viewModel.toggleRenameSelection(media.id) }.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
-                    checked = media.id in state.selectedRenameIds,
-                    onCheckedChange = { viewModel.toggleRenameSelection(media.id) },
-                    enabled = !state.operationPending && state.scanScope.folderUri == null,
-                    modifier = Modifier.semantics { contentDescription = "选择 ${media.displayName}" },
-                )
-                MediaThumbnail(media, Modifier.size(48.dp).clip(RoundedCornerShape(7.dp)))
-                Column(Modifier.weight(1f).padding(start = 9.dp)) { Text(media.displayName, maxLines = 2, overflow = TextOverflow.Ellipsis); Text(media.relativePath, style = MaterialTheme.typography.labelSmall, color = Muted) }
-            }
-        }
-        item {
-            HorizontalDivider()
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                FilterChip(state.renameOptions.mode == RenameMode.CUSTOM, { viewModel.updateRenameOptions(mode = RenameMode.CUSTOM) }, { Text("自定义命名") }, enabled = !state.operationPending)
-                FilterChip(state.renameOptions.mode == RenameMode.RANDOM, { viewModel.updateRenameOptions(mode = RenameMode.RANDOM) }, { Text("随机命名") }, enabled = !state.operationPending)
-            }
-            if (state.renameOptions.mode == RenameMode.CUSTOM) {
-                OutlinedTextField(prefix, { prefix = it; applyVisualTemplate() }, label = { Text("前缀") }, modifier = Modifier.fillMaxWidth(), enabled = !state.operationPending)
-                Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(includeDate, { includeDate = it; applyVisualTemplate() }, enabled = !state.operationPending); Text("加入拍摄日期（缺失时使用添加日期）") }
-                Text("序号位数")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    (1..6).forEach { value -> FilterChip(digits == value, { digits = value; applyVisualTemplate() }, { Text(value.toString()) }, enabled = !state.operationPending) }
-                }
-                OutlinedTextField(state.renameOptions.template, { viewModel.updateRenameOptions(template = it) }, label = { Text("模板") }, supportingText = { Text("支持 {date}、{seq:1}–{seq:6}、{original}") }, modifier = Modifier.fillMaxWidth(), enabled = !state.operationPending)
-            } else Text("将生成 MC_ + 10 位随机字符，预览后名称锁定。", style = MaterialTheme.typography.bodySmall, color = Muted)
-            Button(viewModel::createRenamePreview, Modifier.fillMaxWidth(), enabled = !state.operationPending && state.scanScope.folderUri == null && state.selectedRenameIds.isNotEmpty()) { Text(if (state.renamePlanLocked) "重新生成预览" else "生成名称预览") }
-        }
-        state.renamePlan?.let { plan ->
-            item { Text("名称预览${if (state.renamePlanLocked) " · 已锁定" else ""}", fontWeight = FontWeight.SemiBold); plan.error?.let { MessageCard(it) } }
-            items(plan.items, key = { "preview-${it.media.id}" }) { item ->
-                Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
-                    Text(item.media.displayName, style = MaterialTheme.typography.bodySmall, color = Muted)
-                    Text("↳ ${item.newName}", color = if (item.error == null) Green else MaterialTheme.colorScheme.error)
-                    item.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                    item.warnings.forEach { Text(it, color = Color(0xFF945C12), style = MaterialTheme.typography.bodySmall) }
-                    if (item.unchanged) Text("无需更改", style = MaterialTheme.typography.labelSmall, color = Muted)
-                    HorizontalDivider(Modifier.padding(top = 7.dp))
-                }
-            }
-            item { Button(viewModel::prepareRename, Modifier.fillMaxWidth(), enabled = !state.operationPending && plan.canExecute && state.renamePlanLocked) { Text("确认并请求系统授权") }; Text("不改变扩展名、画质、拍摄时间和所在相册。", style = MaterialTheme.typography.bodySmall, color = Muted); Spacer(Modifier.height(16.dp)) }
-        }
-        state.message?.let { item { MessageCard(it) } }
-    }
-}
-
-@Composable
-private fun HistoryScreen(state: MediaCraftUiState, viewModel: MediaCraftViewModel) {
-    val records = state.records
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp).testTag("history-list"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { ScreenHeading("每一次整理，都有迹可循", "操作记录", "查看逐项结果，或尝试恢复。") }
-        if (records.isEmpty()) item { Text("还没有操作记录", color = Muted) }
-        items(records, key = { it.id }) { record -> OperationRecordCard(record, viewModel, enabled = !state.operationPending) }
-        item { Text("恢复取决于媒体仍存在、身份可核对、权限允许且原名称未被占用。", style = MaterialTheme.typography.bodySmall, color = Muted); Spacer(Modifier.height(16.dp)) }
-    }
-}
-
-@Composable
-private fun OperationRecordCard(record: OperationRecord, viewModel: MediaCraftViewModel, enabled: Boolean) {
-    var expanded by rememberSaveable(record.id) { mutableStateOf(false) }
-    val success = record.items.count { it.status == OperationStatus.SUCCESS }
-    val failed = record.items.count { it.status == OperationStatus.FAILED }
-    val cancelled = record.items.count { it.status == OperationStatus.CANCELLED }
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(operationLabel(record.type), fontWeight = FontWeight.SemiBold)
-            Text(DateFormat.getDateTimeInstance().format(Date(record.createdAtMillis)), style = MaterialTheme.typography.labelSmall, color = Muted)
-            Text("成功 $success · 失败 $failed · 取消 $cancelled")
-            if (!expanded) record.items.filter { it.status != OperationStatus.SUCCESS }.take(5).forEach { Text("${it.spec.media.displayName}：${it.message}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-            TextButton({ expanded = !expanded }) { Text(if (expanded) "收起逐项结果" else "展开逐项结果（${record.items.size}）") }
-            if (expanded) record.items.forEach { item ->
-                HorizontalDivider()
-                Text(item.spec.media.displayName + (item.spec.targetName?.let { " → $it" } ?: ""), style = MaterialTheme.typography.bodySmall)
-                Text("${statusLabel(item.status)}：${item.message}", style = MaterialTheme.typography.bodySmall, color = if (item.status == OperationStatus.SUCCESS) Green else MaterialTheme.colorScheme.error)
-                item.spec.keeper?.let { Text("保留：${it.displayName}", style = MaterialTheme.typography.labelSmall, color = Muted) }
-            }
-            val skipped = record.items.count { it.status == OperationStatus.SKIPPED }
-            if (skipped > 0) Text("跳过 $skipped", color = Color(0xFF945C12))
-            if (success > 0 && record.type in setOf(OperationType.TRASH, OperationType.RENAME)) {
-                OutlinedButton({ viewModel.prepareUndo(record) }, Modifier.fillMaxWidth(), enabled = enabled) { Text(if (record.type == OperationType.TRASH) "尝试恢复文件" else "尝试恢复原名") }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PermissionCard(coverage: PermissionCoverage, folderSelected: Boolean = false, onRequest: () -> Unit) {
+internal fun PermissionCard(coverage: PermissionCoverage, folderSelected: Boolean = false, onRequest: () -> Unit) {
     val (title, detail) = when {
         folderSelected && coverage == PermissionCoverage.FULL -> "已获得文件夹访问权限" to "将递归扫描所选文件夹中的照片和视频。"
         coverage == PermissionCoverage.FULL -> "已获得完整媒体权限" to "可扫描已选照片和视频类型。"
@@ -564,7 +423,7 @@ private fun PermissionCard(coverage: PermissionCoverage, folderSelected: Boolean
 }
 
 @Composable
-private fun AlbumPicker(albums: List<String>, selected: String?, enabled: Boolean, onSelect: (String?) -> Unit) {
+internal fun AlbumPicker(albums: List<String>, selected: String?, enabled: Boolean, onSelect: (String?) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text("相册范围", style = MaterialTheme.typography.labelMedium)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -575,7 +434,7 @@ private fun AlbumPicker(albums: List<String>, selected: String?, enabled: Boolea
 }
 
 @Composable
-private fun MediaThumbnail(media: MediaItem, modifier: Modifier = Modifier) {
+internal fun MediaThumbnail(media: MediaItem, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
     val context = LocalContext.current
     var bitmap by remember(media.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
     var failed by remember(media.id) { mutableStateOf(false) }
@@ -591,7 +450,7 @@ private fun MediaThumbnail(media: MediaItem, modifier: Modifier = Modifier) {
         }
     }
     Box(modifier.background(PaleGreen), contentAlignment = Alignment.Center) {
-        bitmap?.let { Image(it.asImageBitmap(), contentDescription = media.displayName, modifier = Modifier.fillMaxSize()) }
+        bitmap?.let { Image(it.asImageBitmap(), contentDescription = media.displayName, modifier = Modifier.fillMaxSize(), contentScale = contentScale) }
             ?: Icon(if (media.kind == MediaKind.PHOTO) Icons.Default.Image else Icons.Default.PlayCircle, contentDescription = if (failed) "${media.displayName} 预览读取失败" else null, tint = Green)
     }
 }
@@ -761,85 +620,13 @@ private fun TrashConfirmationDialog(selected: List<Pair<DuplicateGroup, GroupRev
     )
 }
 
-@Composable
-private fun SettingsScreen(
-    state: MediaCraftUiState,
-    viewModel: MediaCraftViewModel,
-    onRequestPermissions: (Boolean, Boolean) -> Unit,
-    onPickFolder: () -> Unit,
-    onClearFolder: () -> Unit,
-) {
-    LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            ScreenHeading("管理访问范围", "设置", "先授权媒体访问，再选择全局相册或指定文件夹进行去重。")
-            PermissionCard(state.permissionCoverage, folderSelected = state.scanScope.folderUri != null) { onRequestPermissions(state.scanScope.photos, state.scanScope.videos) }
-        }
-        item {
-            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("扫描范围", fontWeight = FontWeight.SemiBold)
-                    Text("媒体类型", style = MaterialTheme.typography.labelMedium, color = Muted)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = state.scanScope.photos,
-                            onClick = { viewModel.updateScope(photos = !state.scanScope.photos) },
-                            label = { Text("照片") },
-                            enabled = !state.operationPending,
-                        )
-                        FilterChip(
-                            selected = state.scanScope.videos,
-                            onClick = { viewModel.updateScope(videos = !state.scanScope.videos) },
-                            label = { Text("视频") },
-                            enabled = !state.operationPending,
-                        )
-                    }
-                    Text("扫描来源", style = MaterialTheme.typography.labelMedium, color = Muted)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton(onClick = onPickFolder, enabled = !state.operationPending) {
-                            Icon(Icons.Default.FolderOpen, contentDescription = null)
-                            Spacer(Modifier.size(6.dp))
-                            Text("选择文件夹")
-                        }
-                        if (state.scanScope.folderUri != null) {
-                            TextButton(onClick = onClearFolder, enabled = !state.operationPending) { Text("恢复全局") }
-                        }
-                    }
-                    Text(
-                        when {
-                            state.scanScope.folderUri != null -> "当前：已选文件夹（包含子文件夹）"
-                            state.scanScope.album != null -> "当前相册：${state.scanScope.album}"
-                            else -> "当前：所有已授权媒体文件夹"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Muted,
-                    )
-                    if (state.scanScope.folderUri == null) {
-                        AlbumPicker(state.albums, state.scanScope.album, enabled = !state.operationPending) { viewModel.updateScope(album = it) }
-                    }
-                }
-            }
-        }
-        item {
-            Card(colors = CardDefaults.cardColors(containerColor = PaleGreen)) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("隐私与安全", fontWeight = FontWeight.SemiBold)
-                    Text("扫描和摘要计算均在本机完成，不上传照片或视频。应用只读取 Android 授权范围内的媒体。地名查询可能由系统联网发送坐标；加载在线地图会向 OpenStreetMap 发送坐标。", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-    }
-}
-
-@Composable private fun ScreenHeading(eyebrow: String, title: String, subtitle: String) = Column(Modifier.padding(vertical = 16.dp)) { Text(eyebrow, style = MaterialTheme.typography.labelMedium, color = Green); Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold); Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Muted) }
-@Composable private fun MessageCard(message: String) = Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5E8))) { Text(message, Modifier.fillMaxWidth().padding(12.dp)) }
+@Composable internal fun ScreenHeading(eyebrow: String, title: String, subtitle: String) = Column(Modifier.padding(vertical = 16.dp)) { Text(eyebrow, style = MaterialTheme.typography.labelMedium, color = Green); Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold); Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Muted) }
+@Composable internal fun MessageCard(message: String) = Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF5E8))) { Text(message, Modifier.fillMaxWidth().padding(12.dp)) }
 @Composable private fun BusyOverlay(message: String) = Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)), contentAlignment = Alignment.Center) { Card { Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(24.dp)); Spacer(Modifier.size(12.dp)); Text(message) } } }
 
 private fun kindLabel(kind: DuplicateKind) = when (kind) { DuplicateKind.EXACT -> "完全重复"; DuplicateKind.PHOTO_VERSION -> "疑似同内容 · 照片版本"; DuplicateKind.VIDEO_VERSION -> "疑似同内容 · 视频版本" }
-private fun operationLabel(type: OperationType) = when (type) { OperationType.RENAME -> "批量重命名"; OperationType.TRASH -> "移入回收站"; OperationType.RESTORE -> "恢复文件"; OperationType.UNDO_RENAME -> "恢复原名" }
-private fun statusLabel(status: OperationStatus) = when (status) { OperationStatus.PENDING -> "等待核对"; OperationStatus.SUCCESS -> "成功"; OperationStatus.FAILED -> "失败"; OperationStatus.SKIPPED -> "跳过"; OperationStatus.CANCELLED -> "取消" }
+internal fun operationLabel(type: OperationType) = when (type) { OperationType.RENAME -> "批量重命名"; OperationType.TRASH -> "移入回收站"; OperationType.RESTORE -> "恢复文件"; OperationType.UNDO_RENAME -> "恢复原名" }
+internal fun statusLabel(status: OperationStatus) = when (status) { OperationStatus.PENDING -> "等待核对"; OperationStatus.SUCCESS -> "成功"; OperationStatus.FAILED -> "失败"; OperationStatus.SKIPPED -> "跳过"; OperationStatus.CANCELLED -> "取消" }
 private fun mediaDetails(media: MediaItem): String = buildString {
     append("${media.width} × ${media.height}")
     if (media.kind == MediaKind.PHOTO) append(" · ${"%.1f".format(media.pixels / 1_000_000.0)} MP")
@@ -854,4 +641,4 @@ private fun mediaDetails(media: MediaItem): String = buildString {
     }
     append(" · ${formatBytes(media.size)}")
 }
-private fun formatBytes(bytes: Long): String = when { bytes >= 1_073_741_824L -> "%.1f GB".format(bytes / 1_073_741_824.0); bytes >= 1_048_576L -> "%.1f MB".format(bytes / 1_048_576.0); bytes >= 1024L -> "%.1f KB".format(bytes / 1024.0); else -> "$bytes B" }
+internal fun formatBytes(bytes: Long): String = when { bytes >= 1_073_741_824L -> "%.1f GB".format(bytes / 1_073_741_824.0); bytes >= 1_048_576L -> "%.1f MB".format(bytes / 1_048_576.0); bytes >= 1024L -> "%.1f KB".format(bytes / 1024.0); else -> "$bytes B" }

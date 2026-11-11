@@ -20,6 +20,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performScrollTo
 import androidx.exifinterface.media.ExifInterface
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -69,6 +70,7 @@ class MediaLocationFlowTest {
 
         // MainActivity may have completed its first MediaStore query before the fixtures existed.
         composeRule.activityRule.scenario.recreate()
+        composeRule.onNodeWithTag("nav-gallery").performClick()
         waitForThumbnail(locatedName)
         waitForThumbnail(missingName)
     }
@@ -141,6 +143,7 @@ class MediaLocationFlowTest {
     }
 
     private fun openDetails(name: String) {
+        composeRule.onNodeWithTag("gallery-grid").performScrollToNode(hasContentDescription(name))
         composeRule.onNodeWithContentDescription(name).performClick()
         composeRule.onNodeWithText("媒体详情").assertExists()
     }
@@ -152,7 +155,7 @@ class MediaLocationFlowTest {
 
     private fun waitForThumbnail(name: String) {
         composeRule.waitUntil(20_000) {
-            composeRule.onAllNodes(hasContentDescription(name)).fetchSemanticsNodes().isNotEmpty()
+            runCatching { composeRule.onNodeWithTag("gallery-grid").performScrollToNode(hasContentDescription(name)) }.isSuccess
         }
     }
 

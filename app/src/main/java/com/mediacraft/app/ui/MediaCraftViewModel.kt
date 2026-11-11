@@ -39,7 +39,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-enum class MainPage { DEDUPLICATE, RENAME, HISTORY, SETTINGS }
+enum class MainPage { GALLERY, DEDUPLICATE, RENAME, HISTORY, SETTINGS }
 enum class PermissionCoverage { FULL, PARTIAL, DENIED }
 
 data class GroupReview(
@@ -48,7 +48,7 @@ data class GroupReview(
 )
 
 data class MediaCraftUiState(
-    val page: MainPage = MainPage.DEDUPLICATE,
+    val page: MainPage = MainPage.GALLERY,
     val permissionCoverage: PermissionCoverage = PermissionCoverage.DENIED,
     val scanScope: ScanScope = ScanScope(),
     val albums: List<String> = emptyList(),

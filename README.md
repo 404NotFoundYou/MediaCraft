@@ -35,6 +35,6 @@ Windows 也可运行 `scripts/build.ps1`，它复用当前配置的 JDK/SDK 环�
 
 仪器测试只应创建、操作自身带测试前缀的媒体；不要对个人媒体运行清理或永久删除。系统确认属于产品实际流程，应用不会将扫描结果自动删除。
 
-当前版本 0.4.0 的构建、测试与交付状态见 [0.4.0 验证记录](docs/releases/v0.4.0-validation.md)，历史发布见 [0.2.0 验证记录](docs/releases/v0.2.0-validation.md)。未验证项目不得视为已完成。
+当前版本 0.5.0 的构建、测试与交付状态见 [0.5.0 验证记录](docs/releases/v0.5.0-validation.md)，历史发布见 [0.4.0 验证记录](docs/releases/v0.4.0-validation.md)。未验证项目不得视为已完成。
 
 手机安装与验收步骤见 [Android 14 及以上测试说明](docs/testing-on-android14.md)。

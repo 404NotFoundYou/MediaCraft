@@ -76,6 +76,7 @@ class AppFlowTest {
 
         // MainActivity may have completed its first MediaStore query before @Before inserted fixtures.
         composeRule.activityRule.scenario.recreate()
+        composeRule.onNodeWithTag("nav-deduplicate").performClick()
         selectFixtureAlbum()
     }
 
@@ -171,7 +172,8 @@ class AppFlowTest {
         val record = operationRepository.complete(prepared.id, approved = true)
         assertEquals(6, record.items.count { it.status == OperationStatus.FAILED })
 
-        composeRule.onNodeWithText("记录").performClick()
+        composeRule.onNodeWithContentDescription("更多").performClick()
+        composeRule.onNodeWithText("活动记录").performClick()
         val expandLabel = "展开逐项结果（6）"
         waitUntilNodeExists(hasText(expandLabel), timeoutMillis = 20_000)
         composeRule.onNodeWithTag("history-list").performScrollToNode(hasText(expandLabel))
@@ -229,7 +231,7 @@ class AppFlowTest {
     }
 
     private fun assertPreviewSurvivesNavigation(expected: List<String>) {
-        composeRule.onNodeWithText("去重").performClick()
+        composeRule.onNodeWithTag("nav-gallery").performClick()
         composeRule.onNodeWithText("重命名").performClick()
         composeRule.onNodeWithTag("rename-list").performScrollToNode(hasText("名称预览 · 已锁定"))
         assertEquals("Locked preview changed after navigation", expected, previewNames())
