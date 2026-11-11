@@ -1,9 +1,18 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
 }
+
+val releaseSigningFile = rootProject.file("signing.properties")
+val releaseSigning = Properties().apply {
+    if (releaseSigningFile.isFile) releaseSigningFile.inputStream().use(::load)
+}
+fun signingValue(name: String): String = releaseSigning.getProperty(name)?.takeIf { it.isNotBlank() }
+    ?: error("本地 signing.properties 缺少 $name；签名密钥和密码不得提交到 Git")
 
 android {
     namespace = "com.mediacraft.app"
@@ -13,11 +22,19 @@ android {
         applicationId = "com.mediacraft.app"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = providers.gradleProperty("appVersionCode").orElse("2").get().toInt()
+        versionName = providers.gradleProperty("appVersionName").orElse("0.2.0").get()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
+    signingConfigs {
+        if (releaseSigningFile.isFile) create("release") {
+            storeFile = rootProject.file(signingValue("storeFile"))
+            storePassword = signingValue("storePassword")
+            keyAlias = signingValue("keyAlias")
+            keyPassword = signingValue("keyPassword")
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -25,11 +42,22 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (releaseSigningFile.isFile) signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
+    testBuildType = providers.gradleProperty("testBuildType").orElse("debug").get()
     testOptions { unitTests.isReturnDefaultValues = true }
 }
+
+val validateReleaseSigning by tasks.registering {
+    doLast {
+        check(releaseSigningFile.isFile) { "正式版构建需要本地 signing.properties，参考 signing.properties.example" }
+        check(rootProject.file(signingValue("storeFile")).isFile) { "正式签名密钥文件不存在" }
+        listOf("storePassword", "keyAlias", "keyPassword").forEach(::signingValue)
+    }
+}
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(validateReleaseSigning) }
 
 kotlin {
     compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
@@ -58,6 +86,7 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.8.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.BottomAppBar
@@ -118,9 +119,11 @@ private val Muted = Color(0xFF66796F)
 @Composable
 fun MediaCraftApp(
     viewModel: MediaCraftViewModel,
+    updateViewModel: UpdateViewModel,
     onRequestPermissions: (photos: Boolean, videos: Boolean) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val updateState by updateViewModel.state.collectAsStateWithLifecycle()
     var comparing by remember { mutableStateOf<DuplicateGroup?>(null) }
     MaterialTheme(
         colorScheme = MaterialTheme.colorScheme.copy(primary = Green, onPrimary = Color.White, primaryContainer = PaleGreen, onPrimaryContainer = Ink, secondary = Green, secondaryContainer = PaleGreen, onSecondaryContainer = Green, surface = Color(0xFFFAFCF9), onSurface = Ink),
@@ -129,7 +132,11 @@ fun MediaCraftApp(
             topBar = {
                 TopAppBar(
                     title = { Column { Text("MediaCraft", fontWeight = FontWeight.SemiBold); Text("本机影像，轻松整理", style = MaterialTheme.typography.labelSmall, color = Muted) } },
-                    actions = { Icon(Icons.Default.Shield, contentDescription = null, tint = Green); Text("本机处理", style = MaterialTheme.typography.labelSmall, color = Green, modifier = Modifier.padding(end = 16.dp)) },
+                    actions = {
+                        IconButton(updateViewModel::openAndCheck) { Icon(Icons.Default.SystemUpdate, contentDescription = "检查更新", tint = Green) }
+                        Icon(Icons.Default.Shield, contentDescription = null, tint = Green)
+                        Text("媒体本机处理", style = MaterialTheme.typography.labelSmall, color = Green, modifier = Modifier.padding(end = 12.dp))
+                    },
                 )
             },
             bottomBar = {
@@ -166,6 +173,7 @@ fun MediaCraftApp(
                 confirmButton = { OutlinedButton(viewModel::cancelPendingAuthorization) { Text("取消等待并核对") } },
             )
         }
+        UpdateDialog(updateState, updateViewModel)
     }
 }
 

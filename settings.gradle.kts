@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "MediaCraft"
 include(":app")
+if (providers.gradleProperty("includeUpdaterE2e").orNull == "true") include(":updater-e2e")

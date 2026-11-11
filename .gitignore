@@ -4,9 +4,12 @@
 local.properties
 *.jks
 *.keystore
+signing.properties
+release-signing.properties
 .idea/
 captures/
 artifacts/device/
 artifacts/*.apk
 artifacts/*.sha256
 artifacts/reports/
+artifacts/releases/
