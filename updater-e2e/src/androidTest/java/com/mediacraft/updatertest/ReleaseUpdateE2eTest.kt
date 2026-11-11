@@ -53,7 +53,7 @@ class ReleaseUpdateE2eTest {
         waitForVersion(expectedVersionName, expectedVersionCode, INSTALL_TIMEOUT)
         Log.i(LOG_TAG, "已安装版本：$expectedVersionName ($expectedVersionCode)")
 
-        launchTargetApp()
+        openInstalledAppFromInstaller()
         clickRequired(By.desc("检查更新"), CHECK_TIMEOUT, "升级后应用更新入口")
         val current = device.wait(Until.findObject(By.textContains("当前已是最新版本")), CHECK_TIMEOUT)
             ?: failWithDump("升级后真实联网检查未显示已是最新")
@@ -66,11 +66,15 @@ class ReleaseUpdateE2eTest {
         while (System.currentTimeMillis() < deadline) {
             val currentPackage = device.currentPackageName.orEmpty()
             if (currentPackage == "com.android.settings") {
+                val allowFromSource = Pattern.compile("(?i).*(allow from this source|允许来自此来源).*")
                 val toggle = waitForAny(
                     listOf(
+                        By.pkg("com.android.settings")
+                            .checkable(true)
+                            .hasDescendant(By.text(allowFromSource)),
                         By.res("com.android.settings", "switch_widget"),
                         By.res("android", "switch_widget"),
-                        By.text(Pattern.compile("(?i).*(allow from this source|允许来自此来源).*")).clickable(true),
+                        By.text(allowFromSource).clickable(true),
                     ),
                     10_000,
                 ) ?: failWithDump("未知来源设置页没有可用开关")
@@ -99,6 +103,19 @@ class ReleaseUpdateE2eTest {
         ) ?: failWithDump("系统安装器没有找到更新或安装按钮")
         install.click()
         device.waitForIdle()
+    }
+
+    private fun openInstalledAppFromInstaller() {
+        val open = device.wait(
+            Until.findObject(By.text(Pattern.compile("(?i)^(open|打开)$")).enabled(true)),
+            INSTALLER_OPEN_TIMEOUT,
+        ) ?: failWithDump("安装成功后没有找到可用的 Open/打开 按钮")
+        open.click()
+        waitUntil(20_000, "从安装完成页重新打开MediaCraft") {
+            device.currentPackageName == targetPackage
+        }
+        device.waitForIdle()
+        Log.i(LOG_TAG, "安装完成页已重新打开MediaCraft")
     }
 
     private fun launchTargetApp() {
