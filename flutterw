@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+# MediaCraft pins its toolchain independently of any globally installed SDK.
+set -eu
+PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+FLUTTER_DIR="$PROJECT_ROOT/.tooling/flutter"
+if [ ! -f "$FLUTTER_DIR/bin/flutter" ]; then
+  mkdir -p "$PROJECT_ROOT/.tooling"
+  git clone --depth 1 --branch 3.47.8 https://github.com/flutter/flutter.git "$FLUTTER_DIR"
+fi
+exec "$FLUTTER_DIR/bin/flutter" "$@"

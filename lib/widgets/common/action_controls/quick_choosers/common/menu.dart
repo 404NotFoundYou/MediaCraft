@@ -1,0 +1,345 @@
+import 'dart:async';
+import 'dart:math';
+
+import 'package:aves/theme/durations.dart';
+import 'package:aves/theme/icons.dart';
+import 'package:aves/widgets/common/action_controls/quick_choosers/common/button.dart';
+import 'package:aves/widgets/common/action_controls/quick_choosers/common/quick_chooser.dart';
+import 'package:aves_ui/aves_ui.dart';
+import 'package:aves_utils/aves_utils.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:provider/provider.dart';
+
+class const MenuQuickChooser<T>({
+  super.key,
+  required final ValueNotifier<Set<T>> selectedValuesNotifier,
+  required final List<T> options,
+  required final bool autoReverse,
+  required final bool blurred,
+  required final PopupMenuPosition chooserPosition,
+  required final Stream<Offset> pointerGlobalPosition,
+  final ValueNotifier<SelectionMode>? selectionModeNotifier,
+  final int maxTotalOptionCount = maxVisibleOptionCount,
+  final double itemHeight = kMinInteractiveDimension,
+  final double? Function(BuildContext context)? contentWidth,
+  required final Widget Function(BuildContext context, T menuItem) itemBuilder,
+  final WidgetBuilder? emptyBuilder,
+}) extends StatefulWidget {
+  static const int maxVisibleOptionCount = 5;
+
+  @override
+  State<MenuQuickChooser<T>> createState() => _MenuQuickChooserState<T>();
+}
+
+class _MenuQuickChooserState<T> extends State<MenuQuickChooser<T>> {
+  final Set<StreamSubscription> _subscriptions = {};
+  final ValueNotifier<Rect> _selectedRowRect = ValueNotifier(Rect.zero);
+  final ScrollController _scrollController = ScrollController();
+  List<T> _options = [];
+  int _scrollDirection = 0;
+  Timer? _scrollUpdateTimer;
+  Offset _globalPosition = Offset.zero;
+
+  ValueNotifier<Set<T>> get _selectedValuesNotifier => widget.selectedValuesNotifier;
+
+  bool get _reversed => widget.autoReverse && widget.chooserPosition == PopupMenuPosition.over;
+
+  bool get _scrollable => _options.length > MenuQuickChooser.maxVisibleOptionCount;
+
+  double get _itemHeight => widget.itemHeight;
+
+  double get _contentHeight {
+    final visibleOptionCount = min(MenuQuickChooser.maxVisibleOptionCount, _options.length);
+    return max(0, _itemHeight * visibleOptionCount + _intraPadding * (visibleOptionCount - 1));
+  }
+
+  static const double _selectorMargin = 24;
+  static const double _intraPadding = 8;
+  static const double _nonScrollablePaddingHeight = _intraPadding;
+  static const double _scrollerAreaHeight = kMinInteractiveDimension;
+  static const double _scrollMaxPixelPerSecond = 600.0;
+  static const Duration _scrollUpdateInterval = Duration(milliseconds: 100);
+
+  @override
+  void initState() {
+    super.initState();
+    _registerWidget(widget);
+    WidgetsBinding.instance.addPostFrameCallback((_) => setState(() {}));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _selectedRowRect.value = Rect.fromLTWH(0, MediaQuery.sizeOf(context).height * (_reversed ? 1 : -1), 0, 0);
+  }
+
+  @override
+  void didUpdateWidget(covariant MenuQuickChooser<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _unregisterWidget(oldWidget);
+    _registerWidget(widget);
+  }
+
+  @override
+  void dispose() {
+    _unregisterWidget(widget);
+    _selectedRowRect.dispose();
+    _scrollController.dispose();
+    _scrollUpdateTimer?.cancel();
+    super.dispose();
+  }
+
+  void _registerWidget(MenuQuickChooser<T> widget) {
+    _options = widget.options.take(widget.maxTotalOptionCount).toList();
+    _subscriptions.add(widget.pointerGlobalPosition.listen(_onPointerMove));
+  }
+
+  void _unregisterWidget(MenuQuickChooser<T> widget) {
+    _subscriptions
+      ..forEach((sub) => sub.cancel())
+      ..clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return QuickChooser(
+      blurred: widget.blurred,
+      child: ValueListenableBuilder<Set<T>>(
+        valueListenable: _selectedValuesNotifier,
+        builder: (context, selectedValues, child) {
+          final durations = context.watch<DurationsData>();
+
+          if (_options.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: widget.emptyBuilder?.call(context) ?? const SizedBox(),
+            );
+          }
+
+          return NullableValueListenableBuilder<SelectionMode>(
+            valueListenable: widget.selectionModeNotifier,
+            builder: (context, selectionMode, child) {
+              selectionMode ??= .single;
+              return Stack(
+                children: [
+                  ValueListenableBuilder<Rect>(
+                    valueListenable: _selectedRowRect,
+                    builder: (context, selectedRowRect, child) {
+                      Widget child = const Center(child: AvesDot(filled: true));
+                      child = AnimatedOpacity(
+                        opacity: selectionMode == .single && selectedValues.isNotEmpty ? 1 : 0,
+                        curve: Curves.easeInOutCubic,
+                        duration: const Duration(milliseconds: 200),
+                        child: child,
+                      );
+                      child = AnimatedPositioned(
+                        left: 2,
+                        top: selectedRowRect.top,
+                        height: selectedRowRect.height,
+                        curve: Curves.easeInOutCubic,
+                        duration: const Duration(milliseconds: 200),
+                        child: child,
+                      );
+                      return child;
+                    },
+                  ),
+                  SizedBox(
+                    width: widget.contentWidth?.call(context),
+                    child: Column(
+                      mainAxisSize: .min,
+                      children: [
+                        _scrollable
+                            ? ListenableBuilder(
+                                listenable: _scrollController,
+                                builder: (context, child) => Opacity(
+                                  opacity: canGoUp ? 1 : .5,
+                                  child: child,
+                                ),
+                                child: _buildScrollerArea(AIcons.up),
+                              )
+                            : const SizedBox(height: _nonScrollablePaddingHeight),
+                        ConstrainedBox(
+                          constraints: BoxConstraints.tightFor(height: _contentHeight),
+                          child: ListView.separated(
+                            reverse: _reversed,
+                            controller: _scrollController,
+                            shrinkWrap: true,
+                            padding: EdgeInsets.zero,
+                            itemBuilder: (context, index) {
+                              final option = _options[index];
+                              final isSelected = selectedValues.contains(option);
+                              final child = Stack(
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: _selectorMargin,
+                                        alignment: .center,
+                                        child: selectionMode == .multiple ? AvesDot(filled: isSelected) : null,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Container(
+                                          alignment: .centerStart,
+                                          constraints: BoxConstraints.tightFor(height: _itemHeight),
+                                          child: widget.itemBuilder(context, option),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (selectionMode == .multiple)
+                                    Positioned.fill(
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          if (isSelected) {
+                                            selectedValues.remove(option);
+                                          } else {
+                                            selectedValues.add(option);
+                                          }
+                                          // create a new `Set` to trigger notification
+                                          _selectedValuesNotifier.value = Set.of(selectedValues);
+                                        },
+                                      ),
+                                    ),
+                                ],
+                              );
+                              if (index < MenuQuickChooser.maxVisibleOptionCount) {
+                                // only animate items visible on first render
+                                return AnimationConfiguration.staggeredList(
+                                  position: index,
+                                  duration: durations.staggeredAnimation * .5,
+                                  delay: durations.staggeredAnimationDelay * .5 * timeDilation,
+                                  child: SlideAnimation(
+                                    verticalOffset: 50.0 * (widget.chooserPosition == PopupMenuPosition.over ? 1 : -1),
+                                    child: FadeInAnimation(
+                                      child: child,
+                                    ),
+                                  ),
+                                );
+                              } else {
+                                return child;
+                              }
+                            },
+                            separatorBuilder: (context, index) => const SizedBox(height: _intraPadding),
+                            itemCount: _options.length,
+                          ),
+                        ),
+                        _scrollable
+                            ? ListenableBuilder(
+                                listenable: _scrollController,
+                                builder: (context, child) => Opacity(
+                                  opacity: canGoDown ? 1 : .5,
+                                  child: child,
+                                ),
+                                child: _buildScrollerArea(AIcons.down),
+                              )
+                            : const SizedBox(height: _nonScrollablePaddingHeight),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  bool get canGoUp {
+    if (!_scrollController.hasClients) return false;
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions) return false;
+    return _reversed ? position.pixels < position.maxScrollExtent : 0 < position.pixels;
+  }
+
+  bool get canGoDown {
+    if (!_scrollController.hasClients) return false;
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions) return false;
+    return _reversed ? 0 < position.pixels : position.pixels < position.maxScrollExtent;
+  }
+
+  Widget _buildScrollerArea(IconData icon) {
+    return Container(
+      alignment: .center,
+      height: _scrollerAreaHeight,
+      child: Icon(icon),
+    );
+  }
+
+  void _onPointerMove(Offset globalPosition) {
+    _globalPosition = globalPosition;
+    final chooserBox = context.findRenderObject() as RenderBox?;
+    if (chooserBox == null) return;
+
+    final chooserSize = chooserBox.size;
+    final contentWidth = chooserSize.width;
+    final chooserBoxEdgeHeight = (QuickChooser.margin.vertical + QuickChooser.padding.vertical) / 2;
+
+    final localPosition = chooserBox.globalToLocal(globalPosition);
+    final dx = localPosition.dx;
+    if (!(0 < dx && dx < contentWidth)) {
+      _selectedValuesNotifier.value = {};
+      return;
+    }
+
+    double dy = localPosition.dy - chooserBoxEdgeHeight;
+    int scrollDirection = 0;
+    if (_scrollable) {
+      dy -= _scrollerAreaHeight;
+      if (-_scrollerAreaHeight < dy && dy < 0) {
+        scrollDirection = _reversed ? 1 : -1;
+      } else if (_contentHeight < dy && dy < _contentHeight + _scrollerAreaHeight) {
+        scrollDirection = _reversed ? -1 : 1;
+      }
+      _scroll(scrollDirection);
+    } else {
+      dy -= _nonScrollablePaddingHeight;
+    }
+
+    T? selectedValue;
+    if (scrollDirection == 0 && 0 < dy && dy < _contentHeight) {
+      final visibleOffset = _reversed ? _contentHeight - dy : dy;
+      final fullItemHeight = _itemHeight + _intraPadding;
+      final scrollOffset = _scrollController.offset;
+      final index = (visibleOffset + _intraPadding + scrollOffset) ~/ (fullItemHeight);
+      if (0 <= index && index < _options.length) {
+        selectedValue = _options[index];
+        double fromEdge = fullItemHeight * index;
+        fromEdge += (_scrollable ? _scrollerAreaHeight - scrollOffset : _nonScrollablePaddingHeight);
+        final top = _reversed ? chooserSize.height - chooserBoxEdgeHeight - fromEdge - fullItemHeight : fromEdge;
+        _selectedRowRect.value = Rect.fromLTWH(0, top, contentWidth, _itemHeight);
+      }
+    }
+    _selectedValuesNotifier.value = {?selectedValue};
+  }
+
+  void _scroll(int scrollDirection) {
+    if (scrollDirection == _scrollDirection) return;
+    _scrollDirection = scrollDirection;
+    _scrollUpdateTimer?.cancel();
+
+    final current = _scrollController.offset;
+    if (scrollDirection == 0) {
+      _scrollController.jumpTo(current);
+      return;
+    }
+
+    final target = scrollDirection > 0 ? _scrollController.position.maxScrollExtent : .0;
+    if (target != current) {
+      final distance = target - current;
+      final millis = distance * 1000 / _scrollMaxPixelPerSecond / scrollDirection;
+      _scrollController.animateTo(
+        target,
+        duration: Duration(milliseconds: millis.round()),
+        curve: Curves.linear,
+      );
+      // use a timer to update the selection, because `_onPointerMove`
+      // is not called when the pointer stays still while the view is scrolling
+      _scrollUpdateTimer = Timer.periodic(_scrollUpdateInterval, (_) => _onPointerMove(_globalPosition));
+    }
+  }
+}

@@ -1,0 +1,187 @@
+import 'dart:async';
+
+import 'package:aves/model/entry/entry.dart';
+import 'package:aves/model/entry/extensions/catalog.dart';
+import 'package:aves/model/filters/container/tag_group.dart';
+import 'package:aves/model/filters/covered/tag.dart';
+import 'package:aves/model/metadata/catalog.dart';
+import 'package:aves/model/source/analysis_controller.dart';
+import 'package:aves/model/source/collection_source.dart';
+import 'package:aves/model/source/filter_summary.dart';
+import 'package:aves/services/common/service_policy.dart';
+import 'package:aves/services/common/services.dart';
+import 'package:aves_model/aves_model.dart';
+import 'package:collection/collection.dart';
+
+mixin TagMixin on SourceBase {
+  static const commitCountThreshold = 500;
+  static const _stopCheckCountThreshold = 50;
+
+  List<String>? _sortedTags;
+
+  List<String> get sortedTags {
+    _sortedTags ??= List.unmodifiable(visibleEntries.expand((entry) => entry.tags).toSet().toList()..sort(compareAsciiUpperCaseNatural));
+    return _sortedTags!;
+  }
+
+  Future<void> loadCatalogMetadata({Set<int>? ids}) async {
+    final saved = await (ids != null ? localMediaDb.loadCatalogMetadataById(ids) : localMediaDb.loadCatalogMetadata());
+    saved.forEach((metadata) => getEntryById(metadata.id)?.catalogMetadata = metadata);
+    invalidateEntries();
+    onCatalogMetadataChanged();
+  }
+
+  static bool catalogEntriesTest(AvesEntry entry) => !entry.isCatalogued;
+
+  // returns whether some entries got processed
+  Future<bool> catalogEntries(AnalysisController controller, Set<AvesEntry> candidateEntries) async {
+    if (controller.isStopping) return false;
+
+    final force = controller.force;
+    if (!force) {
+      candidateEntries = candidateEntries.where(catalogEntriesTest).toSet();
+    }
+    if (candidateEntries.isEmpty) return false;
+
+    state = SourceState.cataloguing;
+    var progressDone = controller.progressOffset;
+    var progressTotal = controller.progressTotal;
+    if (progressTotal == 0) {
+      progressTotal = candidateEntries.length;
+    }
+    setProgress(done: progressDone, total: progressTotal);
+
+    Future<void> commitPendingData(Set<CatalogMetadata> metadata) async {
+      if (metadata.isEmpty) return;
+      await localMediaDb.saveCatalogMetadata(Set.unmodifiable(metadata));
+      onCatalogMetadataChanged();
+    }
+
+    final newMetadata = <CatalogMetadata>{};
+
+    var stopCheckCount = 0;
+    await Future.wait(
+      candidateEntries.map((entry) async {
+        await scanServicePolicy.call(() async {
+          if (++stopCheckCount >= _stopCheckCountThreshold) {
+            stopCheckCount = 0;
+            if (controller.isStopping) return;
+          }
+
+          await entry.catalog(background: true, force: force, persist: true);
+          if (entry.isCatalogued) {
+            newMetadata.add(entry.catalogMetadata!);
+            if (newMetadata.length >= commitCountThreshold) {
+              final todo = Set.of(newMetadata);
+              newMetadata.clear();
+              await commitPendingData(todo);
+            }
+          }
+          setProgress(done: ++progressDone, total: progressTotal);
+        });
+      }),
+    );
+
+    await commitPendingData(newMetadata);
+    return true;
+  }
+
+  void onCatalogMetadataChanged() {
+    invalidateTags();
+    eventBus.fire(CatalogMetadataChangedEvent());
+  }
+
+  void invalidateTags() {
+    _sortedTags = null;
+    invalidateTagFilterSummary();
+    eventBus.fire(TagsChangedEvent());
+  }
+
+  // filter summary
+
+  // by filter key
+  final Map<String, FilterSummary> _filterSummary = {};
+
+  void invalidateTagFilterSummary({
+    Set<AvesEntry>? entries,
+    Set<String>? tags,
+    bool notify = true,
+  }) {
+    if (_filterSummary.isEmpty) return;
+
+    if (entries == null && tags == null) {
+      _filterSummary.clear();
+    } else {
+      tags ??= {};
+      if (entries != null) {
+        tags.addAll(entries.where((entry) => entry.isCatalogued).expand((entry) => entry.tags));
+      }
+      tags.map((v) => TagFilter(v).key).forEach(_filterSummary.remove);
+
+      // clear entries for all groups
+      invalidateTagGroupFilterSummary(notify: false);
+    }
+    if (notify) {
+      eventBus.fire(TagSummaryInvalidatedEvent(tags));
+      eventBus.fire(const TagGroupSummaryInvalidatedEvent());
+    }
+  }
+
+  void invalidateTagGroupFilterSummary({bool notify = true}) {
+    _filterSummary.removeWhere(_isTagGroupKey);
+
+    if (notify) {
+      eventBus.fire(const TagGroupSummaryInvalidatedEvent());
+    }
+  }
+
+  bool _isTagGroupKey(String key, _) => key.startsWith('${TagGroupFilter.type}-');
+
+  void _computeTagSummaries() {
+    final entryCounts = <String, int>{};
+    final sizes = <String, int>{};
+    final recentEntries = <String, AvesEntry?>{};
+
+    sortedEntriesByDate.forEach((entry) {
+      final tags = entry.tags;
+      tags.forEach((tag) {
+        entryCounts[tag] = (entryCounts[tag] ?? 0) + 1;
+        sizes[tag] = (sizes[tag] ?? 0) + (entry.sizeBytes ?? 0);
+        recentEntries.putIfAbsent(tag, () => entry);
+      });
+    });
+
+    entryCounts.keys.forEach((tag) {
+      final key = TagFilter(tag).key;
+      _filterSummary.putIfAbsent(
+        key,
+        () => FilterSummary(
+          entryCount: entryCounts[tag] ?? 0,
+          size: sizes[tag] ?? 0,
+          recentEntry: recentEntries[tag],
+        ),
+      );
+    });
+  }
+
+  FilterSummary _getSummary(TagBaseFilter filter) {
+    if (_filterSummary.isEmpty) {
+      _computeTagSummaries();
+    }
+    return _filterSummary.putIfAbsent(filter.key, () => computeFilterSummary(filter));
+  }
+
+  int tagEntryCount(TagBaseFilter filter) => _getSummary(filter).entryCount;
+
+  int tagSize(TagBaseFilter filter) => _getSummary(filter).size;
+
+  AvesEntry? tagRecentEntry(TagBaseFilter filter) => _getSummary(filter).recentEntry;
+}
+
+class CatalogMetadataChangedEvent;
+
+class TagsChangedEvent;
+
+class const TagGroupSummaryInvalidatedEvent();
+
+class const TagSummaryInvalidatedEvent(final Set<String>? tags);

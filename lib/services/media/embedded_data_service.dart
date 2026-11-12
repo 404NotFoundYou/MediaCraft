@@ -1,0 +1,155 @@
+import 'dart:ui' as ui;
+
+import 'package:aves/model/entry/entry.dart';
+import 'package:aves/services/common/channel.dart';
+import 'package:aves/services/common/decoding.dart';
+import 'package:aves/services/common/services.dart';
+import 'package:aves/theme/text.dart';
+import 'package:flutter/services.dart';
+
+abstract class EmbeddedDataService {
+  Future<List<ui.ImageDescriptor?>> getExifThumbnails(AvesEntry entry);
+
+  Future<Map> extractC2paResource(AvesEntry entry, String dataUri);
+
+  Future<Map> extractGoogleDeviceItem(AvesEntry entry, String dataUri);
+
+  Future<Map> extractMotionPhotoImage(AvesEntry entry);
+
+  Future<Map> extractMotionPhotoVideo(AvesEntry entry);
+
+  Future<Map> extractJpegMpfItem(AvesEntry entry, int index);
+
+  Future<Map> extractVideoEmbeddedPicture(AvesEntry entry);
+
+  Future<Map> extractXmpDataProp(AvesEntry entry, List<Object?>? propPath, String? propMimeType);
+}
+
+class PlatformEmbeddedDataService implements EmbeddedDataService {
+  static const _platform = AvesMethodChannel('deckers.thibault/aves/embedded');
+
+  @override
+  Future<List<ui.ImageDescriptor?>> getExifThumbnails(AvesEntry entry) async {
+    try {
+      final result = await _platform.invokeMethod('getExifThumbnails', <String, Object?>{
+        ...entry.toPlatformContentAddress(),
+      });
+      if (result != null) {
+        final descriptors = <ui.ImageDescriptor?>[];
+        await Future.forEach((result as List).cast<Uint8List>(), (bytes) async {
+          descriptors.add(await InteropDecoding.rawBytesToDescriptor(bytes));
+        });
+        return descriptors;
+      }
+    } on PlatformException catch (e, stack) {
+      await reportService.recordError(e, stack);
+    }
+    return [];
+  }
+
+  @override
+  Future<Map> extractC2paResource(AvesEntry entry, String dataUri) async {
+    try {
+      final result = await _platform.invokeMethod('extractC2paResource', <String, Object?>{
+        ...entry.toPlatformContentAddress(),
+        'displayName': ['${entry.bestTitle}', dataUri].join(AText.separator),
+        'dataUri': dataUri,
+      });
+      if (result != null) return result as Map;
+    } on PlatformException catch (e, stack) {
+      await reportService.recordError(e, stack);
+    }
+    return {};
+  }
+
+  @override
+  Future<Map> extractGoogleDeviceItem(AvesEntry entry, String dataUri) async {
+    try {
+      final result = await _platform.invokeMethod('extractGoogleDeviceItem', <String, Object?>{
+        ...entry.toPlatformContentAddress(),
+        'displayName': ['${entry.bestTitle}', dataUri].join(AText.separator),
+        'dataUri': dataUri,
+      });
+      if (result != null) return result as Map;
+    } on PlatformException catch (e, stack) {
+      await reportService.recordError(e, stack);
+    }
+    return {};
+  }
+
+  @override
+  Future<Map> extractMotionPhotoImage(AvesEntry entry) async {
+    try {
+      final result = await _platform.invokeMethod('extractMotionPhotoImage', <String, Object?>{
+        ...entry.toPlatformContentAddress(),
+        'displayName': ['${entry.bestTitle}', 'Image'].join(AText.separator),
+      });
+      if (result != null) return result as Map;
+    } on PlatformException catch (e, stack) {
+      await reportService.recordError(e, stack);
+    }
+    return {};
+  }
+
+  @override
+  Future<Map> extractMotionPhotoVideo(AvesEntry entry) async {
+    try {
+      final result = await _platform.invokeMethod('extractMotionPhotoVideo', <String, Object?>{
+        ...entry.toPlatformContentAddress(),
+        'displayName': ['${entry.bestTitle}', 'Video'].join(AText.separator),
+      });
+      if (result != null) return result as Map;
+    } on PlatformException catch (e, stack) {
+      await reportService.recordError(e, stack);
+    }
+    return {};
+  }
+
+  @override
+  Future<Map> extractJpegMpfItem(AvesEntry entry, int id) async {
+    try {
+      final result = await _platform.invokeMethod('extractJpegMpfItem', <String, Object?>{
+        ...entry.toPlatformContentAddress(),
+        'displayName': ['${entry.bestTitle}', 'MPF #$id'].join(AText.separator),
+        'id': id,
+      });
+      if (result != null) return result as Map;
+    } on PlatformException catch (e, stack) {
+      await reportService.recordError(e, stack);
+    }
+    return {};
+  }
+
+  @override
+  Future<Map> extractVideoEmbeddedPicture(AvesEntry entry) async {
+    try {
+      final result = await _platform.invokeMethod('extractVideoEmbeddedPicture', <String, Object?>{
+        ...entry.toPlatformContentAddress(),
+        'displayName': ['${entry.bestTitle}', 'Cover'].join(AText.separator),
+      });
+      if (result != null) return result as Map;
+    } on PlatformException catch (e, stack) {
+      await reportService.recordError(e, stack);
+    }
+    return {};
+  }
+
+  // `propPath` is a list of path segments, each segment can be:
+  // - a pair of strings: for a namespace and property name
+  // - an integer: for an array index
+  @override
+  Future<Map> extractXmpDataProp(AvesEntry entry, List<Object?>? propPath, String? propMimeType) async {
+    try {
+      final result = await _platform.invokeMethod('extractXmpDataProp', <String, Object?>{
+        ...entry.toPlatformContentAddress(),
+        'displayName': ['${entry.bestTitle}', '$propPath'].join(AText.separator),
+        'propPath': propPath,
+        'propMimeType': propMimeType,
+      });
+      if (result != null) return result as Map;
+    } on PlatformException catch (e, stack) {
+      await reportService.recordError(e, stack);
+    }
+    return {};
+  }
+}

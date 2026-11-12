@@ -1,0 +1,379 @@
+package deckers.thibault.aves.channel.calls
+
+import android.content.Context
+import android.util.Log
+import androidx.core.content.FileProvider
+import androidx.exifinterface.media.ExifInterface
+import com.adobe.internal.xmp.XMPException
+import com.adobe.internal.xmp.XMPUtils
+import com.bumptech.glide.load.resource.bitmap.TransformationUtils
+import com.drew.metadata.xmp.XmpDirectory
+import deckers.thibault.aves.channel.calls.Coresult.Companion.safe
+import deckers.thibault.aves.channel.calls.Coresult.Companion.safeSuspend
+import deckers.thibault.aves.metadata.C2paHelper
+import deckers.thibault.aves.metadata.Metadata
+import deckers.thibault.aves.metadata.MultiPage
+import deckers.thibault.aves.metadata.metadataextractor.MetadataExtractorHelper
+import deckers.thibault.aves.metadata.xmp.GoogleDeviceContainer
+import deckers.thibault.aves.metadata.xmp.GoogleXMP
+import deckers.thibault.aves.metadata.xmp.XMP.getSafeStructField
+import deckers.thibault.aves.metadata.xmp.XMPPropName
+import deckers.thibault.aves.model.ContentAddress
+import deckers.thibault.aves.model.EntryFields
+import deckers.thibault.aves.model.FieldMap
+import deckers.thibault.aves.model.provider.ImageProvider
+import deckers.thibault.aves.model.provider.ImageProviderFactory.getProvider
+import deckers.thibault.aves.storage.StorageUtils
+import deckers.thibault.aves.utils.BitmapUtils
+import deckers.thibault.aves.utils.LogUtils
+import deckers.thibault.aves.utils.MimeTypes
+import deckers.thibault.aves.utils.MimeTypes.canReadWithExifInterface
+import deckers.thibault.aves.utils.MimeTypes.canReadWithMetadataExtractor
+import deckers.thibault.aves.utils.MimeTypes.extensionFor
+import deckers.thibault.aves.utils.MimeTypes.isImage
+import deckers.thibault.aves.utils.MimeTypes.isVideo
+import io.flutter.plugin.common.MethodCall
+import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.MethodChannel.MethodCallHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import java.io.InputStream
+
+class EmbeddedDataHandler(private val context: Context) : MethodCallHandler {
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        when (call.method) {
+            "getExifThumbnails" -> ioScope.launch { safeSuspend(call, result, ::getExifThumbnails) }
+            "extractC2paResource" -> ioScope.launch { safe(call, result, ::extractC2paResource) }
+            "extractGoogleDeviceItem" -> ioScope.launch { safe(call, result, ::extractGoogleDeviceItem) }
+            "extractJpegMpfItem" -> ioScope.launch { safe(call, result, ::extractJpegMpfItem) }
+            "extractMotionPhotoImage" -> ioScope.launch { safe(call, result, ::extractMotionPhotoImage) }
+            "extractMotionPhotoVideo" -> ioScope.launch { safe(call, result, ::extractMotionPhotoVideo) }
+            "extractVideoEmbeddedPicture" -> ioScope.launch { safe(call, result, ::extractVideoEmbeddedPicture) }
+            "extractXmpDataProp" -> ioScope.launch { safe(call, result, ::extractXmpDataProp) }
+            else -> result.notImplemented()
+        }
+    }
+
+    private suspend fun getExifThumbnails(call: MethodCall, result: MethodChannel.Result) {
+        val contentAddress = ContentAddress.fromMethodCall(call)
+        val sizeBytes = call.argument<Number>("sizeBytes")?.toLong()
+        if (contentAddress == null) {
+            result.error("getExifThumbnails-args", "missing arguments", null)
+            return
+        }
+
+        val thumbnails = ArrayList<ByteArray>()
+        if (canReadWithExifInterface(contentAddress.mimeType)) {
+            try {
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
+                    val exifInterface = ExifInterface(input)
+                    val orientation = exifInterface.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+                    exifInterface.thumbnailBitmap?.let { bitmap ->
+                        TransformationUtils.rotateImageExif(BitmapUtils.getBitmapPool(context), bitmap, orientation)?.let {
+                            // do not recycle bitmaps fetched from `ExifInterface` as their lifecycle is unknown
+                            BitmapUtils.getBytes(it, recycle = false, decoded = true, applyGainmap = false, mimeType = null)?.let { bytes -> thumbnails.add(bytes) }
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // `ExifInterface` initialization can fail with a RuntimeException
+                // caused by an internal MediaMetadataRetriever failure
+            }
+        }
+        result.success(thumbnails)
+    }
+
+    private fun extractC2paResource(call: MethodCall, result: MethodChannel.Result) {
+        val contentAddress = ContentAddress.fromMethodCall(call)
+        val displayName = call.argument<String>("displayName")
+        val dataUri = call.argument<String>("dataUri")
+        if (contentAddress == null || dataUri == null) {
+            result.error("extractC2paResource-args", "missing arguments", null)
+            return
+        }
+
+        C2paHelper.openResource(contentAddress, dataUri)?.let { bytes ->
+            var embedMimeType: String? = null
+            bytes.inputStream().use { input ->
+                MetadataExtractorHelper.readMimeType(input, path = null, sizeBytes = bytes.size.toLong())?.let { embedMimeType = it }
+            }
+            copyEmbeddedBytes(result, embedMimeType ?: MimeTypes.ANY, displayName, bytes.inputStream(), bytes.size.toLong())
+            return
+        }
+
+        result.error("extractC2paResource-empty", "failed to extract resource from C2PA at $contentAddress dataUri=$dataUri", null)
+    }
+
+    private fun extractGoogleDeviceItem(call: MethodCall, result: MethodChannel.Result) {
+        val contentAddress = ContentAddress.fromMethodCall(call)
+        val sizeBytes = call.argument<Number>("sizeBytes")?.toLong()
+        val displayName = call.argument<String>("displayName")
+        val dataUri = call.argument<String>("dataUri")
+        if (contentAddress == null || sizeBytes == null || dataUri == null) {
+            result.error("extractGoogleDeviceItem-args", "missing arguments", null)
+            return
+        }
+
+        var container: GoogleDeviceContainer? = null
+
+        if (canReadWithMetadataExtractor(contentAddress.mimeType)) {
+            try {
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
+                    val metadata = MetadataExtractorHelper.safeRead(input, sizeBytes, contentAddress.path)
+                    // data can be large and stored in "Extended XMP",
+                    // which is returned as a second XMP directory
+                    val xmpDirs = metadata.getDirectoriesOfType(XmpDirectory::class.java)
+                    try {
+                        container = xmpDirs.firstNotNullOfOrNull { GoogleXMP.getDeviceContainer(it.xmpMeta) }
+                    } catch (e: XMPException) {
+                        result.error("extractGoogleDeviceItem-xmp", "failed to read XMP directory for $contentAddress dataUri=$dataUri", e.message)
+                        return
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(LOG_TAG, "failed to extract file from XMP", e)
+            } catch (e: NoClassDefFoundError) {
+                Log.w(LOG_TAG, "failed to extract file from XMP", e)
+            } catch (e: AssertionError) {
+                Log.w(LOG_TAG, "failed to extract file from XMP", e)
+            }
+        }
+
+        container?.let {
+            it.findOffsets(context, contentAddress, sizeBytes)
+
+            val index = it.itemIndex(dataUri)
+            val itemStartOffset = it.itemStartOffset(index)
+            val itemLength = it.itemLength(index)
+            val itemMimeType = it.itemMimeType(index)
+            if (itemStartOffset != null && itemLength != null && itemMimeType != null) {
+                StorageUtils.openInputStream(context, contentAddress.uri)?.let { input ->
+                    input.skip(itemStartOffset)
+                    copyEmbeddedBytes(result, itemMimeType, displayName, input, itemLength)
+                    return
+                }
+            }
+        }
+
+        result.error("extractGoogleDeviceItem-empty", "failed to extract item from Google Device XMP at $contentAddress dataUri=$dataUri", null)
+    }
+
+    private fun extractJpegMpfItem(call: MethodCall, result: MethodChannel.Result) {
+        val contentAddress = ContentAddress.fromMethodCall(call)
+        val sizeBytes = call.argument<Number>("sizeBytes")?.toLong()
+        val displayName = call.argument<String>("displayName")
+        val id = call.argument<Int>("id")
+        if (contentAddress == null || sizeBytes == null || id == null) {
+            result.error("extractJpegMpfItem-args", "missing arguments", null)
+            return
+        }
+
+        val pageIndex = id - 1
+        val mpEntries = MultiPage.getJpegMpfEntries(context, contentAddress, sizeBytes)
+        if (mpEntries != null && pageIndex < mpEntries.size) {
+            val mpEntry = mpEntries[pageIndex]
+            mpEntry.mimeType?.let { embedMimeType ->
+                var dataOffset = mpEntry.dataOffset
+                if (dataOffset > 0) {
+                    val baseOffset = MultiPage.getJpegMpfBaseOffset(context, contentAddress, sizeBytes)
+                    if (baseOffset != null) {
+                        dataOffset += baseOffset
+                    }
+                }
+                StorageUtils.openInputStream(context, contentAddress.uri)?.let { input ->
+                    input.skip(dataOffset)
+                    copyEmbeddedBytes(result, embedMimeType, displayName, input, mpEntry.size)
+                }
+                return
+            }
+        }
+
+        result.error("extractJpegMpfItem-empty", "failed to extract file index=$id from MPF at $contentAddress", null)
+    }
+
+    private fun extractMotionPhotoImage(call: MethodCall, result: MethodChannel.Result) {
+        val contentAddress = ContentAddress.fromMethodCall(call)
+        val sizeBytes = call.argument<Number>("sizeBytes")?.toLong()
+        val displayName = call.argument<String>("displayName")
+        if (contentAddress == null || sizeBytes == null) {
+            result.error("extractMotionPhotoImage-args", "missing arguments", null)
+            return
+        }
+
+        MultiPage.getTrailerVideoSize(context, contentAddress, sizeBytes)?.let { videoSizeBytes ->
+            val imageSizeBytes = sizeBytes - videoSizeBytes
+            StorageUtils.openInputStream(context, contentAddress.uri)?.let { input ->
+                copyEmbeddedBytes(result, contentAddress.mimeType, displayName, input, imageSizeBytes)
+            }
+            return
+        }
+
+        result.error("extractMotionPhotoImage-empty", "failed to extract image from motion photo at $contentAddress", null)
+    }
+
+    private fun extractMotionPhotoVideo(call: MethodCall, result: MethodChannel.Result) {
+        val contentAddress = ContentAddress.fromMethodCall(call)
+        val sizeBytes = call.argument<Number>("sizeBytes")?.toLong()
+        val displayName = call.argument<String>("displayName")
+        if (contentAddress == null || sizeBytes == null) {
+            result.error("extractMotionPhotoVideo-args", "missing arguments", null)
+            return
+        }
+
+        MultiPage.getMotionPhotoVideoSizing(context, contentAddress, sizeBytes)?.let { (videoOffset, videoSize) ->
+            StorageUtils.openInputStream(context, contentAddress.uri)?.let { input ->
+                input.skip(videoOffset)
+                copyEmbeddedBytes(result, MimeTypes.MP4, displayName, input, videoSize)
+            }
+            return
+        }
+
+        result.error("extractMotionPhotoVideo-empty", "failed to extract video from motion photo at $contentAddress", null)
+    }
+
+    private fun extractVideoEmbeddedPicture(call: MethodCall, result: MethodChannel.Result) {
+        val contentAddress = ContentAddress.fromMethodCall(call)
+        val displayName = call.argument<String>("displayName")
+        if (contentAddress == null) {
+            result.error("extractVideoEmbeddedPicture-args", "missing arguments", null)
+            return
+        }
+
+        val retriever = StorageUtils.openMetadataRetriever(context, contentAddress)
+        if (retriever != null) {
+            try {
+                retriever.embeddedPicture?.let { bytes ->
+                    var embedMimeType: String? = null
+                    bytes.inputStream().use { input ->
+                        MetadataExtractorHelper.readMimeType(input, path = null, sizeBytes = bytes.size.toLong())?.let { embedMimeType = it }
+                    }
+                    copyEmbeddedBytes(result, embedMimeType ?: MimeTypes.ANY_IMAGE, displayName, bytes.inputStream(), bytes.size.toLong())
+                    return
+                }
+            } catch (e: Exception) {
+                result.error("extractVideoEmbeddedPicture-fetch", "failed to fetch picture for $contentAddress", e.message)
+            } finally {
+                // cannot rely on `MediaMetadataRetriever` being `AutoCloseable` on older APIs
+                retriever.release()
+            }
+        }
+        result.error("extractVideoEmbeddedPicture-empty", "failed to extract picture for $contentAddress", null)
+    }
+
+    private fun extractXmpDataProp(call: MethodCall, result: MethodChannel.Result) {
+        val contentAddress = ContentAddress.fromMethodCall(call)
+        val sizeBytes = call.argument<Number>("sizeBytes")?.toLong()
+        val displayName = call.argument<String>("displayName")
+        val dataProp = call.argument<List<Any>>("propPath")
+        val embedMimeType = call.argument<String>("propMimeType")
+        if (contentAddress == null || dataProp == null || embedMimeType == null) {
+            result.error("extractXmpDataProp-args", "missing arguments", null)
+            return
+        }
+
+        val props = dataProp.mapNotNull {
+            when (it) {
+                is List<*> -> XMPPropName(it.first() as String, it.last() as String)
+                is Int -> it
+                else -> null
+            }
+        }
+
+        if (canReadWithMetadataExtractor(contentAddress.mimeType)) {
+            try {
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
+                    val metadata = MetadataExtractorHelper.safeRead(input, sizeBytes, contentAddress.path)
+                    // data can be large and stored in "Extended XMP",
+                    // which is returned as a second XMP directory
+                    val xmpDirs = metadata.getDirectoriesOfType(XmpDirectory::class.java)
+                    try {
+                        val embedBytes: ByteArray = if (props.size == 1) {
+                            val prop = props.first() as XMPPropName
+                            xmpDirs.firstNotNullOf { it.xmpMeta.getPropertyBase64(prop.nsUri, prop.toString()) }
+                        } else {
+                            xmpDirs.firstNotNullOf { it.xmpMeta.getSafeStructField(props) }.let {
+                                XMPUtils.decodeBase64(it.value)
+                            }
+                        }
+
+                        copyEmbeddedBytes(result, embedMimeType, displayName, embedBytes.inputStream(), embedBytes.size.toLong())
+                        return
+                    } catch (e: XMPException) {
+                        result.error("extractXmpDataProp-xmp", "failed to read XMP directory for $contentAddress prop=$dataProp", e.message)
+                        return
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(LOG_TAG, "failed to extract file from XMP", e)
+            } catch (e: NoClassDefFoundError) {
+                Log.w(LOG_TAG, "failed to extract file from XMP", e)
+            } catch (e: AssertionError) {
+                Log.w(LOG_TAG, "failed to extract file from XMP", e)
+            }
+        }
+        result.error("extractXmpDataProp-empty", "failed to extract file from XMP $contentAddress prop=$dataProp", null)
+    }
+
+    // auto closes the provided input stream
+    private fun copyEmbeddedBytes(
+        result: MethodChannel.Result,
+        mimeType: String,
+        displayName: String?,
+        embeddedByteStream: InputStream,
+        embeddedByteLength: Long,
+    ) {
+        val extension = extensionFor(mimeType, defaultExtension = null)
+        val targetFile = StorageUtils.createTempFile(context, embeddedByteStream, embeddedByteLength)
+
+        val authority = "${context.applicationContext.packageName}.file_provider"
+        val uri = if (displayName != null) {
+            // add extension to ease type identification when sharing this content
+            val displayNameWithExtension = if (displayName.endsWith(extension, ignoreCase = true)) {
+                displayName
+            } else {
+                "$displayName$extension"
+            }
+            FileProvider.getUriForFile(context, authority, targetFile, displayNameWithExtension)
+        } else {
+            FileProvider.getUriForFile(context, authority, targetFile)
+        }
+        val resultFields: FieldMap = hashMapOf(
+            EntryFields.URI to uri.toString(),
+            EntryFields.MIME_TYPE to mimeType,
+        )
+        if (isImage(mimeType) || isVideo(mimeType)) {
+            val provider = getProvider(context, uri)
+            if (provider == null) {
+                result.error("copyEmbeddedBytes-provider", "failed to find provider for uri=$uri", null)
+                return
+            }
+
+            ioScope.launch {
+                provider.fetchSingle(
+                    context = context,
+                    sourceMimeType = mimeType,
+                    uri = uri,
+                    allowUnsized = false,
+                    callback = object : ImageProvider.ImageOpCallback {
+                        override fun onSuccess(fields: FieldMap) {
+                            resultFields.putAll(fields)
+                            result.success(resultFields)
+                        }
+
+                        override fun onFailure(throwable: Throwable) = result.error("copyEmbeddedBytes-failure", "failed to get entry for uri=$uri mime=$mimeType", throwable.message)
+                    })
+            }
+        } else {
+            result.success(resultFields)
+        }
+    }
+
+    companion object {
+        private val LOG_TAG = LogUtils.createTag<EmbeddedDataHandler>()
+        const val CHANNEL = "deckers.thibault/aves/embedded"
+    }
+}

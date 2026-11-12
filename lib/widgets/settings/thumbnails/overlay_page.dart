@@ -1,0 +1,206 @@
+import 'package:aves/model/settings/settings.dart';
+import 'package:aves/ref/mime_types.dart';
+import 'package:aves/services/media/enums.dart';
+import 'package:aves/theme/icons.dart';
+import 'package:aves/utils/mime_utils.dart';
+import 'package:aves/view/view.dart';
+import 'package:aves/widgets/common/basic/scaffold.dart';
+import 'package:aves/widgets/common/extensions/build_context.dart';
+import 'package:aves/widgets/common/grid/theme.dart';
+import 'package:aves/widgets/common/identity/icons/textless.dart';
+import 'package:aves/widgets/settings/common/switch_icon.dart';
+import 'package:aves/widgets/settings/common/tiles/multi_selection.dart';
+import 'package:aves/widgets/settings/common/tiles/single_selection.dart';
+import 'package:aves/widgets/settings/common/tiles/switch_list.dart';
+import 'package:aves/widgets/settings/settings_definition.dart';
+import 'package:aves_model/aves_model.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:provider/provider.dart';
+
+class const ThumbnailOverlayPage({super.key}) extends StatelessWidget {
+  static const routeName = '/settings/thumbnail_overlay';
+
+  static const List<String> settingKeys = [
+    SettingKeys.showThumbnailHdrKey,
+    SettingKeys.showThumbnailRawKey,
+    SettingKeys.showThumbnailFormatKey,
+    SettingKeys.showThumbnailMotionPhotoKey,
+    SettingKeys.showThumbnailVideoDurationKey,
+    SettingKeys.showThumbnailFavouriteKey,
+    SettingKeys.showThumbnailRatingKey,
+    SettingKeys.thumbnailCredentialValidityKey,
+    SettingKeys.thumbnailLocationIconKey,
+    SettingKeys.thumbnailTagIconKey,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final iconColor = SettingSwitchTrailingIcon.getIconColor(context);
+    final iconSize = SettingSwitchTrailingIcon.getIconSize(context);
+    final fontSize = GridTheme.getFontSize(iconSize);
+
+    final l10n = context.l10n;
+    return AvesScaffold(
+      appBar: AppBar(
+        automaticallyImplyLeading: !settings.useTvLayout,
+        title: Text(l10n.settingsThumbnailOverlayPageTitle),
+      ),
+      body: SafeArea(
+        child: ListView(
+          children: [
+            SettingsSwitchListTile(
+              selector: (context, s) => s.showThumbnailHdr,
+              onChanged: (v) => settings.showThumbnailHdr = v,
+              title: (_) => l10n.settingsThumbnailShowHdrIcon,
+              trailing: Icon(
+                AIcons.hdr,
+                size: iconSize,
+                color: iconColor,
+              ),
+            ),
+            SettingsSwitchListTile(
+              selector: (context, s) => s.showThumbnailRaw,
+              onChanged: (v) => settings.showThumbnailRaw = v,
+              title: (_) => l10n.settingsThumbnailShowRawIcon,
+              trailing: Icon(
+                AIcons.raw,
+                size: iconSize,
+                color: iconColor,
+              ),
+            ),
+            SettingsSwitchListTile(
+              selector: (context, s) => s.showThumbnailMotionPhoto,
+              onChanged: (v) => settings.showThumbnailMotionPhoto = v,
+              title: (_) => l10n.settingsThumbnailShowMotionPhotoIcon,
+              trailing: Padding(
+                padding: EdgeInsets.symmetric(horizontal: iconSize * (1 - MotionPhotoIcon.scale) / 2),
+                child: Icon(
+                  AIcons.motionPhoto,
+                  size: iconSize * MotionPhotoIcon.scale,
+                  color: iconColor,
+                ),
+              ),
+            ),
+            SettingsSwitchListTile(
+              selector: (context, s) => s.showThumbnailVideoDuration,
+              onChanged: (v) => settings.showThumbnailVideoDuration = v,
+              title: (_) => l10n.settingsThumbnailShowVideoDuration,
+            ),
+            SettingsSwitchListTile(
+              selector: (context, s) => s.showThumbnailFormat,
+              onChanged: (v) => settings.showThumbnailFormat = v,
+              title: (_) => l10n.settingsThumbnailShowFormat,
+              trailing: Text(
+                MimeUtils.displayType(MimeTypes.jpeg),
+                style: TextStyle(fontSize: fontSize),
+              ),
+            ),
+            const Divider(),
+            SettingsSwitchListTile(
+              selector: (context, s) => s.showThumbnailFavourite,
+              onChanged: (v) => settings.showThumbnailFavourite = v,
+              title: (_) => l10n.settingsThumbnailShowFavouriteIcon,
+              trailing: Padding(
+                padding: EdgeInsets.symmetric(horizontal: iconSize * (1 - FavouriteIcon.scale) / 2),
+                child: Icon(
+                  AIcons.favourite,
+                  size: iconSize * FavouriteIcon.scale,
+                  color: iconColor,
+                ),
+              ),
+            ),
+            SettingsSwitchListTile(
+              selector: (context, s) => s.showThumbnailRating,
+              onChanged: (v) => settings.showThumbnailRating = v,
+              title: (_) => l10n.settingsThumbnailShowRating,
+              trailing: Icon(
+                AIcons.rating,
+                size: iconSize,
+                color: iconColor,
+              ),
+            ),
+            SettingsTileThumbnailLocationIcon().build(context),
+            SettingsTileThumbnailTagIcon().build(context),
+            SettingsTileThumbnailCredentialValidity().build(context),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class SettingsTileThumbnailLocationIcon extends SettingsTile {
+  @override
+  List<String> get settingKeys => [SettingKeys.thumbnailLocationIconKey];
+
+  @override
+  String title(BuildContext context) => context.l10n.settingsThumbnailShowLocationIcon;
+
+  @override
+  Widget build(BuildContext context) => SettingsSelectionListTile<ThumbnailOverlayLocationIcon>(
+    values: ThumbnailOverlayLocationIcon.values,
+    getName: (context, v) => v.getName(context),
+    selector: (context, s) => s.thumbnailLocationIcon,
+    onSelection: (v) => settings.thumbnailLocationIcon = v,
+    tileTitle: title,
+    trailingBuilder: _buildTrailing,
+  );
+
+  Widget _buildTrailing(BuildContext context) {
+    final iconType = context.select<Settings, ThumbnailOverlayLocationIcon>((v) => v.thumbnailLocationIcon);
+    return SettingSwitchTrailingIcon(
+      key: ValueKey(iconType),
+      iconBuilder: (context) => Icon(iconType.getIcon(context)),
+      disabled: iconType == .none,
+    );
+  }
+}
+
+class SettingsTileThumbnailTagIcon extends SettingsTile {
+  @override
+  List<String> get settingKeys => [SettingKeys.thumbnailTagIconKey];
+
+  @override
+  String title(BuildContext context) => context.l10n.settingsThumbnailShowTagIcon;
+
+  @override
+  Widget build(BuildContext context) => SettingsSelectionListTile<ThumbnailOverlayTagIcon>(
+    values: ThumbnailOverlayTagIcon.values,
+    getName: (context, v) => v.getName(context),
+    selector: (context, s) => s.thumbnailTagIcon,
+    onSelection: (v) => settings.thumbnailTagIcon = v,
+    tileTitle: title,
+    trailingBuilder: _buildTrailing,
+  );
+
+  Widget _buildTrailing(BuildContext context) {
+    final iconType = context.select<Settings, ThumbnailOverlayTagIcon>((v) => v.thumbnailTagIcon);
+    return SettingSwitchTrailingIcon(
+      key: ValueKey(iconType),
+      iconBuilder: (context) => Icon(iconType.getIcon(context)),
+      disabled: iconType == .none,
+    );
+  }
+}
+
+class SettingsTileThumbnailCredentialValidity extends SettingsTile {
+  @override
+  List<String> get settingKeys => [SettingKeys.thumbnailCredentialValidityKey];
+
+  @override
+  String title(BuildContext context) => context.l10n.settingsThumbnailShowCredentialValidity;
+
+  static const _options = <C2paValidity>[.trusted, .valid, .invalid, .unknown];
+
+  @override
+  Widget build(BuildContext context) {
+    return SettingsMultiSelectionListTile<C2paValidity>(
+      values: _options,
+      getName: (context, v) => v.getText(context),
+      selector: (context, s) => s.thumbnailCredentialValidity,
+      onSelection: (v) => settings.thumbnailCredentialValidity = v,
+      tileTitle: title,
+      optionLeadingBuilder: (v) => v.getIconData(),
+    );
+  }
+}

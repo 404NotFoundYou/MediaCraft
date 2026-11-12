@@ -1,0 +1,29 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "MediaCraft (libre)",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main_libre.dart",
+            "args": [
+                "--flavor",
+                "libre"
+            ]
+        },
+        {
+            "name": "MediaCraft (libre) [profile]",
+            "request": "launch",
+            "type": "dart",
+            "program": "lib/main_libre.dart",
+            "args": [
+                "--flavor",
+                "libre"
+            ],
+            "flutterMode": "profile"
+        }
+    ]
+}

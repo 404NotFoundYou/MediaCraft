@@ -1,6 +1,0 @@
-# Copy to signing.properties and keep the completed file private.
-# Use an absolute keystore path with forward slashes; escape the drive colon on Windows.
-storeFile=
-storePassword=
-keyAlias=mediacraft-release
-keyPassword=

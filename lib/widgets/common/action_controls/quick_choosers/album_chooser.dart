@@ -1,0 +1,42 @@
+import 'dart:async';
+
+import 'package:aves/model/filters/covered/stored_album.dart';
+import 'package:aves/model/filters/filters.dart';
+import 'package:aves/model/source/collection_source.dart';
+import 'package:aves/widgets/common/action_controls/quick_choosers/common/menu.dart';
+import 'package:aves/widgets/common/action_controls/quick_choosers/filter_quick_chooser_mixin.dart';
+import 'package:aves/widgets/common/extensions/build_context.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:provider/provider.dart';
+
+class const AlbumQuickChooser({
+  super.key,
+  required final ValueNotifier<Set<String>> valuesNotifier,
+  @override required final List<String> options,
+  required final bool blurred,
+  required final PopupMenuPosition chooserPosition,
+  required final Stream<Offset> pointerGlobalPosition,
+}) extends StatelessWidget with FilterQuickChooserMixin<String> {
+  @override
+  Widget build(BuildContext context) {
+    return MenuQuickChooser<String>(
+      selectedValuesNotifier: valuesNotifier,
+      options: options,
+      autoReverse: true,
+      blurred: blurred,
+      chooserPosition: chooserPosition,
+      pointerGlobalPosition: pointerGlobalPosition,
+      maxTotalOptionCount: FilterQuickChooserMixin.maxTotalOptionCount,
+      itemHeight: computeItemHeight(context),
+      contentWidth: computeLargestItemWidth,
+      itemBuilder: itemBuilder,
+      emptyBuilder: (context) => Text(context.l10n.albumEmpty),
+    );
+  }
+
+  @override
+  CollectionFilter buildFilter(BuildContext context, String option) {
+    final source = context.read<CollectionSource>();
+    return StoredAlbumFilter(option, source.getStoredAlbumDisplayName(context, option));
+  }
+}

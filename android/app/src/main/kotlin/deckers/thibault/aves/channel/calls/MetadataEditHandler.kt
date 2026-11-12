@@ -1,0 +1,296 @@
+package deckers.thibault.aves.channel.calls
+
+import android.content.Context
+import androidx.core.net.toUri
+import deckers.thibault.aves.channel.calls.Coresult.Companion.safe
+import deckers.thibault.aves.model.ContentAddress
+import deckers.thibault.aves.model.ExifInterfaceException
+import deckers.thibault.aves.model.ExifOrientationOp
+import deckers.thibault.aves.model.FieldMap
+import deckers.thibault.aves.model.FileDescriptorException
+import deckers.thibault.aves.model.Mp4FragmentedException
+import deckers.thibault.aves.model.Mp4TooLargeException
+import deckers.thibault.aves.model.Mp4ZeroSizeBoxException
+import deckers.thibault.aves.model.OutputStreamException
+import deckers.thibault.aves.model.PartialTransferException
+import deckers.thibault.aves.model.ReadOnlyFileSystemException
+import deckers.thibault.aves.model.provider.ImageProvider.ImageOpCallback
+import deckers.thibault.aves.model.provider.ImageProviderFactory.getProvider
+import io.flutter.plugin.common.MethodCall
+import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.MethodChannel.MethodCallHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import java.io.FileNotFoundException
+import java.io.IOException
+
+class MetadataEditHandler(private val context: Context) : MethodCallHandler {
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        when (call.method) {
+            "rotate" -> ioScope.launch { safe(call, result, ::rotate) }
+            "flip" -> ioScope.launch { safe(call, result, ::flip) }
+            "editExifDate" -> ioScope.launch { safe(call, result, ::editExifDate) }
+            "editMetadata" -> ioScope.launch { safe(call, result, ::editMetadata) }
+            "removeTrailerVideo" -> ioScope.launch { safe(call, result, ::removeTrailerVideo) }
+            "removeTypes" -> ioScope.launch { safe(call, result, ::removeTypes) }
+            else -> result.notImplemented()
+        }
+    }
+
+    private fun rotate(call: MethodCall, result: MethodChannel.Result) {
+        val clockwise = call.argument<Boolean>("clockwise")
+        if (clockwise == null) {
+            result.error("rotate-args", "missing arguments", null)
+            return
+        }
+
+        val op = if (clockwise) ExifOrientationOp.ROTATE_CW else ExifOrientationOp.ROTATE_CCW
+        editOrientation(call, result, op)
+    }
+
+    private fun flip(call: MethodCall, result: MethodChannel.Result) {
+        editOrientation(call, result, ExifOrientationOp.FLIP)
+    }
+
+    private fun editOrientation(call: MethodCall, result: MethodChannel.Result, op: ExifOrientationOp) {
+        val entryMap = call.argument<FieldMap>("entry")
+        if (entryMap == null) {
+            result.error("editOrientation-args", "missing arguments", null)
+            return
+        }
+
+        val mimeType = entryMap["mimeType"] as String?
+        val uri = (entryMap["uri"] as String?)?.toUri()
+        val path = entryMap["path"] as String?
+        val sizeBytes = (entryMap["sizeBytes"] as Number?)?.toLong()
+        if (uri == null || path == null || mimeType == null || sizeBytes == null) {
+            result.error("editOrientation-args", "failed because entry fields are missing", null)
+            return
+        }
+
+        val provider = getProvider(context, uri)
+        if (provider == null) {
+            result.error("editOrientation-provider", "failed to find provider for uri=$uri", null)
+            return
+        }
+
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
+        val callback = MetadataOpCallback("editOrientation", entryMap, result)
+        provider.editOrientation(
+            context = context,
+            contentAddress = contentAddress,
+            sizeBytes = sizeBytes,
+            op = op,
+            callback = callback,
+        )
+    }
+
+    private fun editExifDate(call: MethodCall, result: MethodChannel.Result) {
+        val dateMillis = call.argument<Number>("dateMillis")?.toLong()
+        val timeZoneOffsetMinutes = call.argument<Int>("timeZoneOffsetMinutes")
+        val shiftSeconds = call.argument<Number>("shiftSeconds")?.toLong()
+        val fields = call.argument<List<String>>("fields")
+        val entryMap = call.argument<FieldMap>("entry")
+        if (entryMap == null || fields == null) {
+            result.error("editExifDate-args", "missing arguments", null)
+            return
+        }
+
+        val mimeType = entryMap["mimeType"] as String?
+        val uri = (entryMap["uri"] as String?)?.toUri()
+        val path = entryMap["path"] as String?
+        val sizeBytes = (entryMap["sizeBytes"] as Number?)?.toLong()
+        if (uri == null || path == null || mimeType == null || sizeBytes == null) {
+            result.error("editExifDate-args", "failed because entry fields are missing", null)
+            return
+        }
+
+        val provider = getProvider(context, uri)
+        if (provider == null) {
+            result.error("editExifDate-provider", "failed to find provider for uri=$uri", null)
+            return
+        }
+
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
+        val callback = MetadataOpCallback("editExifDate", entryMap, result)
+        provider.editExifDate(
+            context = context,
+            contentAddress = contentAddress,
+            sizeBytes = sizeBytes,
+            dateMillis = dateMillis,
+            timeZoneOffsetMinutes = timeZoneOffsetMinutes,
+            shiftSeconds = shiftSeconds,
+            fields = fields,
+            callback = callback,
+        )
+    }
+
+    private fun editMetadata(call: MethodCall, result: MethodChannel.Result) {
+        val metadata = call.argument<FieldMap>("metadata")
+        val entryMap = call.argument<FieldMap>("entry")
+        val autoCorrectTrailerOffset = call.argument<Boolean>("autoCorrectTrailerOffset")
+        if (entryMap == null || metadata == null || autoCorrectTrailerOffset == null) {
+            result.error("editMetadata-args", "missing arguments", null)
+            return
+        }
+
+        val mimeType = entryMap["mimeType"] as String?
+        val uri = (entryMap["uri"] as String?)?.toUri()
+        val path = entryMap["path"] as String?
+        val sizeBytes = (entryMap["sizeBytes"] as Number?)?.toLong()
+        if (uri == null || path == null || mimeType == null || sizeBytes == null) {
+            result.error("editMetadata-args", "failed because entry fields are missing", null)
+            return
+        }
+
+        val provider = getProvider(context, uri)
+        if (provider == null) {
+            result.error("editMetadata-provider", "failed to find provider for uri=$uri", null)
+            return
+        }
+
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
+        val callback = MetadataOpCallback("editMetadata", entryMap, result)
+        provider.editMetadata(
+            context = context,
+            contentAddress = contentAddress,
+            sizeBytes = sizeBytes,
+            modifier = metadata,
+            autoCorrectTrailerOffset = autoCorrectTrailerOffset,
+            callback = callback,
+        )
+    }
+
+    private fun removeTrailerVideo(call: MethodCall, result: MethodChannel.Result) {
+        val entryMap = call.argument<FieldMap>("entry")
+        if (entryMap == null) {
+            result.error("removeTrailerVideo-args", "missing arguments", null)
+            return
+        }
+
+        val mimeType = entryMap["mimeType"] as String?
+        val uri = (entryMap["uri"] as String?)?.toUri()
+        val path = entryMap["path"] as String?
+        val sizeBytes = (entryMap["sizeBytes"] as Number?)?.toLong()
+        if (uri == null || path == null || mimeType == null || sizeBytes == null) {
+            result.error("removeTrailerVideo-args", "failed because entry fields are missing", null)
+            return
+        }
+
+        val provider = getProvider(context, uri)
+        if (provider == null) {
+            result.error("removeTrailerVideo-provider", "failed to find provider for uri=$uri", null)
+            return
+        }
+
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
+        val callback = MetadataOpCallback("removeTrailerVideo", entryMap, result)
+        provider.removeTrailerVideo(
+            context = context,
+            contentAddress = contentAddress,
+            sizeBytes = sizeBytes,
+            callback = callback,
+        )
+    }
+
+    private fun removeTypes(call: MethodCall, result: MethodChannel.Result) {
+        val types = call.argument<List<String>>("types")
+        val entryMap = call.argument<FieldMap>("entry")
+        if (entryMap == null || types == null) {
+            result.error("removeTypes-args", "missing arguments", null)
+            return
+        }
+
+        val mimeType = entryMap["mimeType"] as String?
+        val uri = (entryMap["uri"] as String?)?.toUri()
+        val path = entryMap["path"] as String?
+        val sizeBytes = (entryMap["sizeBytes"] as Number?)?.toLong()
+        if (uri == null || path == null || mimeType == null || sizeBytes == null) {
+            result.error("removeTypes-args", "failed because entry fields are missing", null)
+            return
+        }
+
+        val provider = getProvider(context, uri)
+        if (provider == null) {
+            result.error("removeTypes-provider", "failed to find provider for uri=$uri", null)
+            return
+        }
+
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
+        val callback = MetadataOpCallback("removeTypes", entryMap, result)
+        provider.removeMetadataTypes(
+            context = context,
+            contentAddress = contentAddress,
+            sizeBytes = sizeBytes,
+            types = types.toSet(),
+            callback = callback,
+        )
+    }
+
+    companion object {
+        const val CHANNEL = "deckers.thibault/aves/metadata_edit"
+    }
+}
+
+private class MetadataOpCallback(
+    private val errorCodeBase: String,
+    private val entryMap: FieldMap,
+    private val result: MethodChannel.Result,
+) : ImageOpCallback {
+    override fun onSuccess(fields: FieldMap) = result.success(fields)
+    override fun onFailure(throwable: Throwable) {
+        val errorCode = if (throwable is ExifInterfaceException) {
+            val cause = throwable.cause
+            if (cause is IOException && (cause.message ?: "").startsWith("Failed to copy the given amount of bytes")) {
+                "$errorCodeBase-$ERROR_PARTIAL_TRANSFER"
+            } else {
+                "$errorCodeBase-$ERROR_EXIF_INTERFACE"
+            }
+        } else if (throwable is FileDescriptorException) {
+            "$errorCodeBase-$ERROR_FILE_NOT_FOUND"
+        } else if (throwable is FileNotFoundException) {
+            "$errorCodeBase-$ERROR_FILE_NOT_FOUND"
+        } else if (throwable is Mp4FragmentedException) {
+            "$errorCodeBase-$ERROR_MP4_FRAGMENTED"
+        } else if (throwable is Mp4TooLargeException) {
+            if (throwable.type == "moov") {
+                "$errorCodeBase-$ERROR_MP4_LARGE_MOOV"
+            } else {
+                "$errorCodeBase-$ERROR_MP4_LARGE_OTHER"
+            }
+        } else if (throwable is Mp4ZeroSizeBoxException) {
+            "$errorCodeBase-$ERROR_MP4_ZERO_SIZE_BOX"
+        } else if (throwable is OutputStreamException) {
+            "$errorCodeBase-$ERROR_OUTPUT_STREAM"
+        } else if (throwable is PartialTransferException) {
+            "$errorCodeBase-$ERROR_PARTIAL_TRANSFER"
+        } else if (throwable is ReadOnlyFileSystemException) {
+            "$errorCodeBase-$ERROR_READ_ONLY"
+        } else {
+            "$errorCodeBase-$ERROR_GENERIC_FAILURE"
+        }
+        result.error(errorCode, "failed for entry=$entryMap", throwable)
+    }
+
+    companion object {
+        const val ERROR_GENERIC_FAILURE = "failure"
+        const val ERROR_EXIF_INTERFACE = "exifinterface"
+        const val ERROR_FILE_NOT_FOUND = "filenotfound"
+        const val ERROR_MP4_FRAGMENTED = "mp4fragmented"
+        const val ERROR_MP4_LARGE_MOOV = "mp4largemoov"
+        const val ERROR_MP4_LARGE_OTHER = "mp4largeother"
+        const val ERROR_MP4_ZERO_SIZE_BOX = "mp4zerosizebox"
+        const val ERROR_OUTPUT_STREAM = "outputstream"
+        const val ERROR_PARTIAL_TRANSFER = "partialtransfer"
+        const val ERROR_READ_ONLY = "readonly"
+    }
+}
