@@ -73,7 +73,7 @@ Play、Izzy 与 libre 的依赖和发布配置不同，不能用一个 flavor �
 
 尚未通过：
 
-- Release 构建、发布签名、商店渠道和对应升级流程仍未验证；本次调试包的覆盖安装已通过。
+- libre release 构建和 MediaCraft 发布签名已于 2026-11-12 验证；Play/Izzy flavor、商店渠道和对应升级流程仍未验证。本次调试包的覆盖安装已通过。
 - 网络视频播放、流媒体及 libmpv 高级 OSC/cache 配置尚未覆盖；本地播放验证不能外推这些能力。
 
 最终交付记录：
@@ -85,6 +85,12 @@ Play、Izzy 与 libre 的依赖和发布配置不同，不能用一个 flavor �
 | 签名校验 | 通过，APK Signature Scheme v2，Android Debug 证书；见 `artifacts/validation/apk-signature.txt` |
 | 覆盖安装与冷启动 | Honor YOK-AN10 / Android 12，安装成功、`Status: ok`、`LaunchState: COLD`；交付文件与手机安装包摘要一致 |
 | QA 清理 | 四个媒体文件、两处专用媒体目录和六个手机临时文件已移除，MediaStore 残留记录为零；清理后再次冷启动成功 |
+
+### 2026-11-12 发布签名检查点
+
+| APK | `artifacts/MediaCraft-1.15.10-libre-release-arm64.apk` |
+| SHA-256 | `21f2c18c931b18ea12d4b5deeb501a84a3fc034b2a54b7a555900810b047348e` |
+| 签名校验 | 通过，APK Signature Scheme v2，`MediaCraft Release` RSA 4096 证书；证书 SHA-256 为 `6454e954515b3ae190061204778d3774659acd395c76ee99806973697af37b29`；见 `artifacts/validation/apk-release-signature.txt` |
 
 ### Honor YOK-AN10 真机重复项检查
 

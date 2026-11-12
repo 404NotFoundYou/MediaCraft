@@ -19,7 +19,7 @@ All notable changes to this project will be documented in this file.
 
 ### Known limitations
 
-- 当前发布附件是 libre debug APK；正式签名、Play/Izzy flavor、商店上传、其他设备和网络媒体仍未验证。
+- 当前发布附件是 libre release APK，已使用 MediaCraft 新发布签名；Play/Izzy flavor、商店上传、其他设备和网络媒体仍未验证。
 - 详细证据与边界见 [v0.6.0 发布说明](docs/releases/v0.6.0.md) 和 [重建与验证记录](docs/rebuild-and-validation.md)。
 
 ### Added

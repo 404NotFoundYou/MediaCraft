@@ -51,7 +51,7 @@ jobs:
       - name: Generate app localizations
         run: ./flutterw gen-l10n
 
-      - name: Build signed artifacts
+      - name: Build signed libre artifacts
         # specify NDK for `icu4x` hook linker
         # cf https://github.com/deckerst/aves/issues/1521#issuecomment-5599985874
         #
@@ -59,6 +59,7 @@ jobs:
         # gpg -c --armor keystore.jks
         # `KEY_JKS_PASSPHRASE` should contain the passphrase used for the command above
         run: |
+          set -euo pipefail
           echo "Default Android NDK environment paths:"
           echo "ANDROID_NDK=$ANDROID_NDK"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
@@ -72,25 +73,16 @@ jobs:
           echo "ANDROID_NDK=$ANDROID_NDK"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
           echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
-          echo "${{ secrets.KEY_JKS }}" > release.keystore.asc
-          gpg -d --passphrase "${{ secrets.KEY_JKS_PASSPHRASE }}" --batch release.keystore.asc > $AVES_STORE_FILE
+          printf '%s' "${{ secrets.KEY_JKS }}" > release.keystore.asc
+          gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.KEY_JKS_PASSPHRASE }}" --decrypt release.keystore.asc > "$AVES_STORE_FILE"
           rm release.keystore.asc
           mkdir outputs
-          scripts/apply_flavor_play.sh
-          ./flutterw build appbundle -t lib/main_play.dart --flavor play
-          cp build/app/outputs/bundle/playRelease/*.aab outputs
-          ./flutterw build apk -t lib/main_play.dart --flavor play
-          cp build/app/outputs/apk/play/release/*.apk outputs
-          scripts/apply_flavor_izzy.sh
-          ./flutterw build apk -t lib/main_izzy.dart --flavor izzy --split-per-abi
-          cp build/app/outputs/apk/izzy/release/*.apk outputs
           export AVES_GOOGLE_API_KEY="NONE"
           scripts/apply_flavor_libre.sh
-          ./flutterw build appbundle -t lib/main_libre.dart --flavor libre
-          cp build/app/outputs/bundle/libreRelease/*.aab outputs
           ./flutterw build apk -t lib/main_libre.dart --flavor libre --split-per-abi
-          cp build/app/outputs/apk/libre/release/*.apk outputs
-          rm $AVES_STORE_FILE
+          cp build/app/outputs/flutter-apk/*-libre-release.apk outputs
+          sha256sum outputs/*.apk > outputs/SHA256SUMS
+          rm "$AVES_STORE_FILE"
         env:
           AVES_STORE_FILE: ${{ github.workspace }}/key.jks
           AVES_STORE_PASSWORD: ${{ secrets.AVES_STORE_PASSWORD }}
@@ -107,39 +99,11 @@ jobs:
         uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
         with:
           artifacts: "outputs/*"
-          body: "[Changelog](https://github.com/${{ github.repository }}/blob/develop/CHANGELOG.md#${{ github.ref_name }})"
+          allowUpdates: true
+          removeArtifacts: true
+          name: "MediaCraft ${{ github.ref_name }}"
+          body: |
+            [Changelog](https://github.com/${{ github.repository }}/blob/${{ github.sha }}/CHANGELOG.md#${{ github.ref_name }})
+
+            This release contains signed libre APK artifacts. Play flavor and store upload remain pending Google Cloud/Firebase and Play service-account configuration.
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload app bundle
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: appbundle
-          path: outputs/app-play-release.aab
-
-  release_play:
-    name: Play Store beta release
-    needs: [ release_github ]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
-        with:
-          egress-policy: audit
-
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Get appbundle from artifacts
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: appbundle
-
-      - name: Release to beta channel
-        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.PLAYSTORE_ACCOUNT_KEY }}
-          packageName: deckers.thibault.aves
-          releaseFiles: app-play-release.aab
-          tracks: beta
-          status: completed
-          whatsNewDirectory: whatsnew
