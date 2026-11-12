@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## <a id="unreleased"></a>[Unreleased]
 
+## <a id="v0.6.0"></a>[v0.6.0] - 2026-11-12
+
+### Added
+
+- MediaCraft 迁移到基于 Aves 完整源码的 Flutter 图库工程，保留图片、视频、元数据、搜索、地图和 Android 平台集成能力。
+- 新增照片和视频完全重复检测、应用回收站恢复校验，以及 `liquid_glass_widgets` 玻璃风格界面。
+- 固定 Flutter 3.47.8、libre flavor 构建流程和 Aves/第三方许可证归属信息。
+
+### Verified
+
+- Flutter 测试 85/85 通过，Android JVM 测试 18/18 通过，实际启用分析目录均为 `No issues found`。
+- libre debug APK 已在 Honor YOK-AN10（Android 12）完成覆盖安装与冷启动，并完成照片/视频重复项扫描、回收站恢复和本地视频播放检查。
+
+### Known limitations
+
+- 当前发布附件是 libre debug APK；正式签名、Play/Izzy flavor、商店上传、其他设备和网络媒体仍未验证。
+- 详细证据与边界见 [v0.6.0 发布说明](docs/releases/v0.6.0.md) 和 [重建与验证记录](docs/rebuild-and-validation.md)。
+
 ### Added
 
 - Collection: format overlay option
