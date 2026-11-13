@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## <a id="unreleased"></a>[Unreleased]
 
+## <a id="v0.6.2"></a>[v0.6.2] - 2026-11-13
+
+### Fixed
+
+- 修复首次安装协议仍显示 Aves 的问题，并明确 MediaCraft 仅用于个人学习。
+- 修复图库顶部导航圆角裁剪和查看器详情按钮颜色。
+- 发布百度地图 flavor 的新 Release 包。
+
+### Changed
+
+- 移除 `liquid_glass_widgets` 依赖，使用 Flutter Material 组件。
+
 ## <a id="v0.6.1"></a>[v0.6.1] - 2026-11-13
 
 ### Added
