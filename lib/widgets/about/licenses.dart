@@ -26,7 +26,10 @@ class _LicensesState extends State<Licenses> {
   @override
   void initState() {
     super.initState();
-    _platform = List<Dependency>.of(Dependencies.androidDependencies);
+    _platform = [
+      ...Dependencies.androidDependencies,
+      if (context.read<AppFlavor>() == AppFlavor.baidu) ...Dependencies.baiduAndroidDependencies,
+    ];
     _flutterPlugins = List<Dependency>.of(Dependencies.flutterPlugins(context.read<AppFlavor>()));
     _flutterPackages = List<Dependency>.of(Dependencies.flutterPackages);
     _dartPackages = List<Dependency>.of(Dependencies.dartPackages);

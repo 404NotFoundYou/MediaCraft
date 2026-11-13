@@ -1,6 +1,7 @@
 import 'package:aves/app_flavor.dart';
 import 'package:aves/model/device.dart';
 import 'package:aves/model/settings/settings.dart';
+import 'package:aves/services/common/services.dart';
 import 'package:aves/theme/icons.dart';
 import 'package:aves/widgets/common/basic/scaffold.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
@@ -46,6 +47,7 @@ class const PermissionsPage({super.key}) extends StatelessWidget {
               ),
             const NotificationPermissionTile(),
             if (!settings.useTvLayout && device.canRequestMediaManagementPermission) const ManageMediaTile(),
+            mobileServices.buildPrivacySettings(context),
           ],
         ),
       ),

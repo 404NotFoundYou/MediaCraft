@@ -13,6 +13,7 @@ class const ZoomedBounds({
   required final LatLng ne,
   required final double zoom,
   required final double rotation,
+  final LatLng? center,
 }) extends Equatable {
   // returns [southwestLng, southwestLat, northeastLng, northeastLat], as expected by Fluster
   List<double> get boundingBox => [sw.longitude, sw.latitude, ne.longitude, ne.latitude];
@@ -22,6 +23,9 @@ class const ZoomedBounds({
 
   // The projected center appears visually in the middle of the bounds.
   LatLng get projectedCenter {
+    // Coordinate conversion can be nonlinear; preserve the native camera center.
+    final cameraCenter = center;
+    if (cameraCenter != null) return cameraCenter;
     final swPoint = _crs.latLngToOffset(sw, zoom);
     final nePoint = _crs.latLngToOffset(ne, zoom);
     // assume no padding around bounds
@@ -29,7 +33,7 @@ class const ZoomedBounds({
   }
 
   @override
-  List<Object?> get props => [sw, ne, zoom, rotation];
+  List<Object?> get props => [sw, ne, zoom, rotation, center];
 
   static const _collocationMaxDeltaThreshold = 360 / (2 << 19);
 
@@ -74,12 +78,14 @@ class const ZoomedBounds({
     LatLng? ne,
     double? zoom,
     double? rotation,
+    LatLng? center,
   }) {
     return ZoomedBounds(
       sw: sw ?? this.sw,
       ne: ne ?? this.ne,
       zoom: zoom ?? this.zoom,
       rotation: rotation ?? this.rotation,
+      center: center ?? (sw == null && ne == null ? this.center : null),
     );
   }
 

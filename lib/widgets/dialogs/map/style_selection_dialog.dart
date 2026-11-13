@@ -112,10 +112,13 @@ class _MapStyleSelectionDialogState extends State<MapStyleSelectionDialog> {
   }
 
   String? _getImageAssetName(EntryMapStyle style) {
+    if (style == EntryMapStyles.baiduNormal) return 'map_tile_128_baidu_normal.png';
+    if (style == EntryMapStyles.baiduSatellite) return 'map_tile_128_baidu_satellite.png';
     if (style == EntryMapStyles.googleNormal) return 'map_tile_128_google_normal.png';
     if (style == EntryMapStyles.googleHybrid) return 'map_tile_128_google_hybrid.png';
     if (style == EntryMapStyles.googleTerrain) return 'map_tile_128_google_terrain.png';
     if (style == EntryMapStyles.osmLiberty) return 'map_tile_128_osm_liberty.png';
+    if (style == EntryMapStyles.openFreeMapBright) return 'map_tile_128_openfreemap_bright.png';
     if (style == EntryMapStyles.openTopoMap) return 'map_tile_128_opentopomap.png';
     if (style == EntryMapStyles.osmHot) return 'map_tile_128_osm_hot.png';
     if (style == EntryMapStyles.stamenWatercolor) return 'map_tile_128_stamen_watercolor.png';

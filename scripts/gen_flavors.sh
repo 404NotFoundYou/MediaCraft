@@ -6,3 +6,4 @@ fi
 scripts/gen_flavor_izzy.sh
 scripts/gen_flavor_libre.sh
 scripts/gen_flavor_play.sh
+scripts/gen_flavor_baidu.sh

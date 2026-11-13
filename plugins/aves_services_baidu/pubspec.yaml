@@ -1,0 +1,37 @@
+name: aves_services_platform
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ">=3.13.7 <4.0.0"
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  aves_map:
+    path: ../aves_map
+  aves_services:
+    path: ../aves_services
+  aves_utils:
+    path: ../aves_utils
+  # 4.0.2+1 requires the OHOS Flutter fork. Keep both official plugins pinned.
+  flutter_baidu_mapapi_base: 4.0.2
+  flutter_baidu_mapapi_map: 4.0.2
+  latlong2:
+  material_ui:
+  provider:
+  shared_preferences:
+  url_launcher:
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints:
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: deckers.thibault.aves.services.baidu
+        pluginClass: BaiduServicesPlugin

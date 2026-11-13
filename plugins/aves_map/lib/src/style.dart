@@ -72,6 +72,26 @@ class const EntryMapStyle({
 }
 
 class EntryMapStyles {
+  // Baidu
+
+  static const baiduNormal = EntryMapStyle(
+    key: 'baiduNormal',
+    name: '百度地图',
+    needMobileService: true,
+    isHeavy: true,
+    minZoom: 4,
+    maxZoom: 21,
+  );
+
+  static const baiduSatellite = EntryMapStyle(
+    key: 'baiduSatellite',
+    name: '百度卫星地图',
+    needMobileService: true,
+    isHeavy: true,
+    minZoom: 4,
+    maxZoom: 21,
+  );
+
   // Google
 
   static const googleNormal = EntryMapStyle(

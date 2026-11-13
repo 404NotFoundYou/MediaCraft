@@ -1,5 +1,8 @@
 import com.android.build.gradle.internal.api.ApkVariantOutputImpl
+import com.android.build.api.artifact.SingleArtifact
+import java.security.MessageDigest
 import java.util.Properties
+import java.util.zip.ZipFile
 
 plugins {
     alias(libs.plugins.android.application)
@@ -36,6 +39,16 @@ if (keystorePropertiesFile.exists()) {
     getEnv("googleApiKey", "AVES_GOOGLE_API_KEY")
 }
 
+val baiduApiKey = (keystoreProperties["baiduApiKey"] as String?)?.takeIf { it.isNotBlank() }
+    ?: System.getenv("MEDIACRAFT_BAIDU_API_KEY")?.takeIf { it.isNotBlank() }
+    ?: "NONE"
+
+// The Baidu Flutter plugin still declares pre-AndroidX lifecycle extensions,
+// although its source uses AndroidX via flutter_plugin_android_lifecycle.
+configurations.matching { it.name.startsWith("baidu", ignoreCase = true) }.configureEach {
+    exclude(group = "android.arch.lifecycle", module = "extensions")
+}
+
 android {
     namespace = "deckers.thibault.aves"
     compileSdk = 37
@@ -66,6 +79,7 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         manifestPlaceholders["googleApiKey"] = keystoreProperties["googleApiKey"] ?: "NONE"
+        manifestPlaceholders["baiduApiKey"] = baiduApiKey
         multiDexEnabled = true
     }
 
@@ -110,6 +124,12 @@ android {
             // cf https://f-droid.org/en/docs/Submitting_to_F-Droid_Quick_Start_Guide/
             dimension = "store"
             applicationIdSuffix = ".libre"
+        }
+
+        create("baidu") {
+            // Baidu Maps SDK, distributed separately from Google-free builds
+            dimension = "store"
+            applicationIdSuffix = ".baidu"
         }
     }
 
@@ -182,6 +202,45 @@ android {
 }
 
 androidComponents {
+    onVariants(selector().withFlavor("store", "baidu")) { variant ->
+        // C2PA and Baidu both ship libc++. Keep the C2PA runtime (the first
+        // dependency here); verify its symbols and APK hash when either SDK changes.
+        variant.packaging.jniLibs.pickFirsts.add("**/libc++_shared.so")
+
+        val variantTaskName = variant.name.replaceFirstChar { it.uppercaseChar() }
+        val apkDirectory = variant.artifacts.get(SingleArtifact.APK)
+        val verifyRuntime = tasks.register("verify${variantTaskName}CppRuntime") {
+            dependsOn("package$variantTaskName")
+            inputs.dir(apkDirectory)
+            doLast {
+                // C2PA 0.0.15 runtimes: all three ABIs export every C++ symbol
+                // needed by Baidu 8.2.0. Fail if dependency ordering picks another.
+                val expected = mapOf(
+                    "armeabi-v7a" to "A95C07C255E481878B853385942C9179313123619652DA3269D8EDBD71158588",
+                    "arm64-v8a" to "F4E1E97C1943E60311E47E8B024D78F5B3B7229B3CCC65FEB33AF83D6025A670",
+                    "x86_64" to "89082B8BAA2DE544A155BE4F05FD1170E89D1A5BBD198F913CDFFA7C2A31F44A",
+                )
+                val apks = apkDirectory.get().asFile.walkTopDown().filter { it.extension == "apk" }.toList()
+                check(apks.isNotEmpty()) { "No Baidu APK found for C++ runtime verification" }
+                apks.forEach { apk ->
+                    ZipFile(apk).use { zip ->
+                        val sdkLibraries = zip.entries().asSequence().filter { it.name.endsWith("/libBaiduMapSDK_map_v8_2_0.so") }.toList()
+                        check(sdkLibraries.isNotEmpty()) { "Baidu SDK is missing from ${apk.name}; apply the baidu pubspec first" }
+                        sdkLibraries.forEach { sdkLibrary ->
+                            val abi = sdkLibrary.name.split('/')[1]
+                            val runtime = checkNotNull(zip.getEntry("lib/$abi/libc++_shared.so")) { "Missing C++ runtime for $abi" }
+                            val hash = zip.getInputStream(runtime).use { input ->
+                                MessageDigest.getInstance("SHA-256").digest(input.readBytes()).joinToString("") { "%02X".format(it) }
+                            }
+                            check(hash == expected[abi]) { "Unexpected $abi C++ runtime in ${apk.name}; recheck Baidu/C2PA symbol compatibility" }
+                        }
+                    }
+                }
+            }
+        }
+        tasks.matching { it.name == "assemble$variantTaskName" }.configureEach { dependsOn(verifyRuntime) }
+    }
+
     onVariants(selector().withFlavor("store", "izzy")) { variant ->
         // uncompressed native libraries are recommended:
         // https://developer.android.com/build/releases/agp-4-2-0-release-notes#compress-native-libs-dsl

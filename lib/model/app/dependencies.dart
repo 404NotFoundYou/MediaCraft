@@ -165,6 +165,22 @@ class Dependencies {
 
   static const List<Dependency> _flutterPluginsLibreOnly = [];
 
+  static const List<Dependency> baiduAndroidDependencies = [
+    Dependency(
+      name: '百度地图 Android SDK',
+      license: '百度地图开放平台服务协议',
+      sourceUrl: 'https://lbsyun.baidu.com/index.php?title=open/law',
+    ),
+  ];
+
+  static const List<Dependency> _flutterPluginsBaiduOnly = [
+    Dependency(
+      name: 'Baidu Map for Flutter (Base, Map)',
+      license: bsd3,
+      sourceUrl: 'https://lbsyun.baidu.com/index.php?title=flutter/loc',
+    ),
+  ];
+
   static const List<Dependency> _flutterPluginsPlayOnly = [
     ..._googleMobileServices,
     Dependency(
@@ -179,6 +195,7 @@ class Dependencies {
     if (flavor == AppFlavor.izzy) ..._flutterPluginsIzzyOnly,
     if (flavor == AppFlavor.libre) ..._flutterPluginsLibreOnly,
     if (flavor == AppFlavor.play) ..._flutterPluginsPlayOnly,
+    if (flavor == AppFlavor.baidu) ..._flutterPluginsBaiduOnly,
   ];
 
   static const List<Dependency> flutterPackages = [

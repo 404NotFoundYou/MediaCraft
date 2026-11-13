@@ -5,6 +5,8 @@ import 'package:latlong2/latlong.dart';
 abstract class MobileServices {
   Future<void> init();
 
+  Widget buildPrivacySettings(BuildContext context) => const SizedBox();
+
   bool get isServiceAvailable;
 
   EntryMapStyle? get defaultMapStyle;

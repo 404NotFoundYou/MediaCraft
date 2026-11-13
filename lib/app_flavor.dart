@@ -1,4 +1,4 @@
-enum AppFlavor { play, izzy, libre }
+enum AppFlavor { play, izzy, libre, baidu }
 
 extension ExtraAppFlavor on AppFlavor {
   bool get canEnableErrorReporting {
@@ -7,6 +7,7 @@ extension ExtraAppFlavor on AppFlavor {
         return true;
       case .izzy:
       case .libre:
+      case .baidu:
         return false;
     }
   }
@@ -14,6 +15,7 @@ extension ExtraAppFlavor on AppFlavor {
   bool get hasMapStyleDefault {
     switch (this) {
       case .play:
+      case .baidu:
         return true;
       case .izzy:
       case .libre:

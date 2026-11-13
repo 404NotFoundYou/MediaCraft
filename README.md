@@ -34,6 +34,8 @@ Windows 首次构建先安装项目固定的 Flutter 3.47.8，随后执行统一
 
 Play flavor 的 Google Services/Firebase 配置必须由构建者提供 MediaCraft 自有的 `android/app/google-services.json`；仓库不提交 Aves 上游 Firebase 配置。
 
+百度内嵌地图使用独立的 `baidu` flavor，并保留现有免费地图样式；AK、包名、构建方式及验证边界见 [百度地图接入](docs/baidu-map.md)。
+
 当前详细测试、真机数据和未覆盖项见 [重建与验证记录](docs/rebuild-and-validation.md)。本地交付文件为 `artifacts/MediaCraft-1.15.10-libre-debug-arm64.apk`，SHA-256 为 `7684e1e6ca72757ecce300fd75bf768c38f4aecf2baf7ec3e63fec9ab1ac76a3`。该 APK 已通过 v2 调试签名校验、真机覆盖安装及冷启动，手机内安装包摘要与交付文件一致。本次四个 QA 媒体及专用测试目录已清理，验证报告和截图保存在 `artifacts/validation/`。
 
 ## 来源与许可证

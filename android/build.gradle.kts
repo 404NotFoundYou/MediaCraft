@@ -41,6 +41,17 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// Baidu 4.0.2 declares API 35, but the shared Flutter lifecycle plugin needs 36+.
+subprojects {
+    if (name == "flutter_baidu_mapapi_map") {
+        plugins.withId("com.android.library") {
+            extensions.configure<com.android.build.api.variant.LibraryAndroidComponentsExtension> {
+                finalizeDsl { it.compileSdk = 37 }
+            }
+        }
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
