@@ -15,7 +15,7 @@ MediaCraft 当前 Flutter 工程由 Aves 完整源码重建，不是仅参考界
 | Flutter SDK | `3.47.8` |
 | Windows SDK 路径 | `.tooling/flutter` |
 | Dart SDK 约束 | `>=3.13.7 <4.0.0` |
-| UI 依赖 | `liquid_glass_widgets 1.17.2`，MIT |
+| UI 依赖 | Flutter Material 组件与 MediaCraft 自有视觉样式 |
 | Dart package namespace | `aves`（保留上游内部标识） |
 | Android applicationId | `com.mediacraft.app` |
 | libre applicationId | `com.mediacraft.app.libre` |
@@ -50,7 +50,7 @@ Play、Izzy 与 libre 的依赖和发布配置不同，不能用一个 flavor �
 3. libre debug APK 的构建、安装和冷启动。
 4. 媒体权限、索引、浏览、详情、搜索、地图、分享和文件写入流程。
 5. Android TV、媒体 viewer/picker、后台扫描等平台入口。
-6. `liquid_glass_widgets` 在目标 Android GPU/渲染后端上的显示、降级和性能。
+6. MediaCraft UI 在目标 Android GPU/渲染后端上的显示与性能。
 7. Release 签名、混淆、升级和商店渠道流程。
 
 只有实际执行且保存结果的项目才能标记为通过。未执行、被跳过或只在旧壳层验证过的项目均保持“未验证”。
@@ -118,7 +118,7 @@ Play、Izzy 与 libre 的依赖和发布配置不同，不能用一个 flavor �
 
 - 1 秒 H.264 测试视频已在本机播放器中播放并渲染画面，截图证据为 `artifacts/validation/qa-player.png`。
 - libmpv 输出了可选 OSC/cache 相关的非阻断日志，本地播放正常。这不证明网络媒体或高级播放配置已经通过。
-- About 页面已在真机显示中文来源说明，Aves 与 `liquid_glass_widgets` 两个项目及许可证入口可访问；完整许可证同时可通过应用内许可证页离线查看。
+- About 页面已在真机显示中文来源说明，Aves 许可证入口可访问；完整许可证同时可通过应用内许可证页离线查看。
 
 ### 交付资源清理
 
@@ -133,3 +133,4 @@ Play、Izzy 与 libre 的依赖和发布配置不同，不能用一个 flavor �
 ## 后续验证记录格式
 
 每次验证应记录日期、提交、Flutter 版本、flavor、命令、设备/系统版本、结果与未覆盖项。失败或跳过必须显式记录，不能合并为“测试通过”。
+

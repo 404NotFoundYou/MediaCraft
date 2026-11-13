@@ -14,21 +14,6 @@ MediaCraft 是 Aves 的衍生作品，并使用以下第三方软件。此文件
 
 MediaCraft 复制并修改了 Aves 的完整源码。上游版权声明、许可条件及免责声明应随源码和二进制分发保留。本项目名称及发布行为不代表 Aves 作者对 MediaCraft 的认可或背书。
 
-## liquid_glass_widgets 1.17.2
-
-- 包：`liquid_glass_widgets`
-- 版本：`1.17.2`
-- 来源：<https://pub.dev/packages/liquid_glass_widgets>
-- 上游仓库：<https://github.com/sdegenaar/liquid_glass_widgets>
-- 许可证：MIT License
-- 版权所有：Copyright (c) 2024–2026 Sebastian Degenaar
-- 完整文本：[licenses/liquid_glass_widgets-MIT.txt](licenses/liquid_glass_widgets-MIT.txt)
-
-该包自身包含或改编了以下 MIT 许可代码，其完整上游通知保存在 [licenses/liquid_glass_widgets-THIRD_PARTY_NOTICES.txt](licenses/liquid_glass_widgets-THIRD_PARTY_NOTICES.txt)：
-
-- `liquid_glass_renderer` 0.2.0-dev.4，Copyright 2025 Tim Lehmann for whynotmake.it
-- `motor` 1.1.0，Copyright (c) 2024 Tim Lehmann for whynotmake.it
-
 ## 完整依赖清单边界
 
 仓库保留 Aves 的完整依赖模型及应用内许可证查看页。锁定依赖发生变化时，应重新生成依赖清单并核对许可证；本文件不能替代每个依赖随包分发的许可证文本。

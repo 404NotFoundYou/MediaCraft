@@ -10,7 +10,6 @@ import 'package:aves/widgets/common/extensions/media_query.dart';
 import 'package:aves/widgets/navigation/nav_bar/floating.dart';
 import 'package:aves/widgets/navigation/nav_item.dart';
 import 'package:collection/collection.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
@@ -20,12 +19,14 @@ class const AppBottomNavBar({
   // collection loaded in the `CollectionPage`, if any
   final CollectionLens? currentCollection,
 }) extends StatefulWidget {
+  static const double barHeight = 68;
+
   static EdgeInsets getMargin(double safeBottomPadding) {
-    return EdgeInsets.only(left: 8, top: 8, right: 8, bottom: max(8, safeBottomPadding + 4));
+    return EdgeInsets.only(left: 12, top: 8, right: 12, bottom: max(8, safeBottomPadding + 4));
   }
 
   static double getHeightWithMargin(double safeBottomPadding) {
-    return kBottomNavigationBarHeight + getMargin(safeBottomPadding).vertical;
+    return barHeight + getMargin(safeBottomPadding).vertical;
   }
 
   @override
@@ -81,20 +82,7 @@ class _AppBottomNavBarState extends State<AppBottomNavBar> {
           removeBottom: true,
           child: Padding(
             padding: AppBottomNavBar.getMargin(safeBottomPadding),
-            child: GlassTabBar.bottom(
-              tabs: items.map((item) => GlassTab(icon: item.getIcon(context), label: item.getText(context))).toList(),
-              selectedIndex: _getCurrentIndex(context, items),
-              onTabSelected: (index) => _goTo(context, items, index),
-              horizontalPadding: 0,
-              verticalPadding: 0,
-              barHeight: kBottomNavigationBarHeight,
-              quality: GlassQuality.standard,
-              backgroundQuality: GlassQuality.standard,
-              selectedIconColor: Theme.of(context).colorScheme.primary,
-              selectedLabelColor: Theme.of(context).colorScheme.primary,
-              unselectedIconColor: Theme.of(context).colorScheme.onSurfaceVariant,
-              unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+            child: _buildNavigationBar(context, items),
           ),
         ),
       ),
@@ -119,6 +107,93 @@ class _AppBottomNavBarState extends State<AppBottomNavBar> {
   }
 
   void _onCollectionFilterChanged() => setState(() {});
+
+  Widget _buildNavigationBar(BuildContext context, List<AvesNavItem> items) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final selectedIndex = _getCurrentIndex(context, items);
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        height: AppBottomNavBar.barHeight,
+        padding: const EdgeInsets.all(6),
+        decoration: ShapeDecoration(
+          color: colorScheme.surfaceContainerHigh.withValues(alpha: .96),
+          shadows: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: colorScheme.brightness == Brightness.dark ? .24 : .10),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
+            ),
+          ],
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+            side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: .72)),
+          ),
+        ),
+        child: Row(
+          children: [
+            for (var index = 0; index < items.length; index++)
+              Expanded(
+                child: _buildNavigationDestination(
+                  context,
+                  item: items[index],
+                  selected: index == selectedIndex,
+                  onPressed: () => _goTo(context, items, index),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavigationDestination(
+    BuildContext context, {
+    required AvesNavItem item,
+    required bool selected,
+    required VoidCallback onPressed,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final foreground = selected ? colorScheme.primary : colorScheme.onSurfaceVariant;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: item.getText(context),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(17),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          decoration: BoxDecoration(
+            color: selected ? colorScheme.primaryContainer.withValues(alpha: .72) : Colors.transparent,
+            borderRadius: BorderRadius.circular(17),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconTheme(
+                data: IconThemeData(color: foreground, size: 22),
+                child: item.getIcon(context),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                item.getText(context),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: foreground,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   int _getCurrentIndex(BuildContext context, List<AvesNavItem> items) {
     // current route may be null during navigation

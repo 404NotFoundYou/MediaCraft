@@ -19,7 +19,7 @@ import 'package:aves/widgets/collection/collection_page.dart';
 import 'package:aves/widgets/common/basic/text/outlined.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/common/extensions/media_query.dart';
-import 'package:aves/widgets/common/identity/aves_logo.dart';
+import 'package:aves/widgets/common/identity/mediacraft_logo.dart';
 import 'package:aves/widgets/debug/app_debug_page.dart';
 import 'package:aves/widgets/explorer/page.dart';
 import 'package:aves/widgets/filter_grids/albums_page.dart';
@@ -116,6 +116,7 @@ class _AppDrawerState extends State<AppDrawer> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final drawerItems = <Widget>[
       _buildHeader(context),
       _buildHomeLink(),
@@ -134,7 +135,8 @@ class _AppDrawerState extends State<AppDrawer> with WidgetsBindingObserver {
 
     return Drawer(
       child: ListTileTheme.merge(
-        selectedColor: Theme.of(context).colorScheme.primary,
+        selectedColor: colorScheme.primary,
+        selectedTileColor: colorScheme.primary.withValues(alpha: .12),
         horizontalTitleGap: 20,
         visualDensity: VisualDensity.comfortable,
         child: Selector<MediaQueryData, double>(
@@ -165,6 +167,7 @@ class _AppDrawerState extends State<AppDrawer> with WidgetsBindingObserver {
   Widget _buildHeader(BuildContext context) {
     final l10n = context.l10n;
     final appName = l10n.appName;
+    final colorScheme = Theme.of(context).colorScheme;
 
     Future<void> goTo(String routeName, WidgetBuilder pageBuilder) async {
       Navigator.maybeOf(context)?.pop();
@@ -177,24 +180,31 @@ class _AppDrawerState extends State<AppDrawer> with WidgetsBindingObserver {
       );
     }
 
-    final colorScheme = Theme.of(context).colorScheme;
-    final onPrimary = colorScheme.onPrimary;
+    final headerForeground = colorScheme.onSurface;
 
     final drawerButtonStyle = ButtonStyle(
       padding: WidgetStateProperty.all(const EdgeInsetsDirectional.only(start: 12, end: 16)),
     );
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      color: colorScheme.primary,
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHigh,
+        border: Border(
+          bottom: BorderSide(color: colorScheme.outlineVariant),
+        ),
+        borderRadius: const BorderRadius.vertical(
+          bottom: Radius.circular(24),
+        ),
+      ),
       child: SafeArea(
         bottom: false,
         child: OutlinedButtonTheme(
           data: OutlinedButtonThemeData(
             style: ButtonStyle(
-              foregroundColor: WidgetStateProperty.all<Color>(onPrimary),
-              overlayColor: WidgetStateProperty.all<Color>(onPrimary.withValues(alpha: .12)),
-              iconColor: WidgetStateProperty.all<Color>(onPrimary),
-              side: WidgetStateProperty.all<BorderSide>(BorderSide(width: 1, color: onPrimary.withValues(alpha: .24))),
+              foregroundColor: WidgetStateProperty.all<Color>(headerForeground),
+              overlayColor: WidgetStateProperty.all<Color>(colorScheme.primary.withValues(alpha: .12)),
+              iconColor: WidgetStateProperty.all<Color>(colorScheme.primary),
+              side: WidgetStateProperty.all<BorderSide>(BorderSide(width: 1, color: colorScheme.outlineVariant)),
             ),
           ),
           child: Column(
@@ -207,13 +217,13 @@ class _AppDrawerState extends State<AppDrawer> with WidgetsBindingObserver {
                   spacing: 16,
                   crossAxisAlignment: .center,
                   children: [
-                    const AvesLogo(size: 48),
+                    const MediaCraftLogo(size: 48),
                     OutlinedText(
                       textSpans: [
                         TextSpan(
                           text: appName,
                           style: AStyles.appNameStyle(context, appName).copyWith(
-                            color: Colors.white,
+                            color: colorScheme.primary,
                             fontSize: 38,
                             fontWeight: .w300,
                           ),

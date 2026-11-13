@@ -15,8 +15,7 @@ class DerivationNotice extends StatelessWidget {
             'MediaCraft 基于 Aves 的完整源码构建，上游基线为 '
             '9d3f1ff19f680db043c9d80831c6f222e0f8220c，'
             '依照 BSD 3-Clause License 使用和修改。'
-            '当前界面真实引入 liquid_glass_widgets 1.17.2，'
-            '依照 MIT License 使用。',
+            '当前界面使用 Flutter Material 组件与 MediaCraft 自有视觉样式。',
           ),
           const SizedBox(height: 8),
           Wrap(

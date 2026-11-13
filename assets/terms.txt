@@ -1,7 +1,7 @@
 MediaCraft 使用与隐私说明
 ------------------------
 
-MediaCraft 是基于 Aves 完整开源代码开发的独立衍生应用，提供本地图库、元数据浏览和照片、视频完全重复清理。界面引入 liquid_glass_widgets。原始版权和完整许可条款可在“关于 > 许可证”中离线查看。
+MediaCraft 是基于 Aves 完整开源代码开发的独立衍生应用，提供本地图库、元数据浏览和照片、视频完全重复清理。原始版权和完整许可条款可在“关于 > 许可证”中离线查看。
 
 媒体与去重
 ----------
@@ -22,6 +22,4 @@ MediaCraft 是基于 Aves 完整开源代码开发的独立衍生应用，提供
 
 MediaCraft 项目与问题反馈：https://github.com/404NotFoundYou/MediaCraft
 Aves 上游项目：https://github.com/deckerst/aves
-liquid_glass_widgets：https://github.com/sdegenaar/liquid_glass_widgets
-
 MediaCraft 的修改由本项目维护，不代表上游作者为本应用提供支持或背书。应用按所附开源许可证“按原样”提供。

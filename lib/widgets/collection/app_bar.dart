@@ -356,9 +356,27 @@ class _CollectionAppBarState extends State<CollectionAppBar> with RouteAware, Si
           source: source,
         );
       }
-      return InteractiveAppBarTitle(
-        onTap: appMode.canNavigate ? _goToSearch : null,
-        child: title,
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: InteractiveAppBarTitle(
+              onTap: appMode.canNavigate ? _goToSearch : null,
+              child: title,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 8, end: 4),
+            child: Text(
+              l10n.itemCount(collection.entryCount),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
       );
     }
   }

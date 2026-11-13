@@ -9,7 +9,7 @@ import 'package:aves/widgets/common/basic/link_chip.dart';
 import 'package:aves/widgets/common/basic/markdown_container.dart';
 import 'package:aves/widgets/common/basic/scaffold.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
-import 'package:aves/widgets/common/identity/aves_logo.dart';
+import 'package:aves/widgets/common/identity/mediacraft_logo.dart';
 import 'package:aves/widgets/common/identity/buttons/outlined_button.dart';
 import 'package:aves/widgets/home/home_page.dart';
 import 'package:flutter/scheduler.dart';
@@ -139,7 +139,7 @@ class _WelcomePageState extends State<WelcomePage> {
       SizedBox(height: padding),
       ...(isPortrait
           ? [
-              const AvesLogo(size: 64),
+              const MediaCraftLogo(size: 64),
               const SizedBox(height: 16),
               message,
             ]
@@ -147,7 +147,7 @@ class _WelcomePageState extends State<WelcomePage> {
               Row(
                 mainAxisSize: .min,
                 children: [
-                  const AvesLogo(size: 48),
+                  const MediaCraftLogo(size: 48),
                   const SizedBox(width: 16),
                   message,
                 ],

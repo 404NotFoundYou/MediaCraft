@@ -4,14 +4,13 @@ import 'package:aves/theme/styles.dart';
 import 'package:aves/widgets/about/policy_page.dart';
 import 'package:aves/widgets/common/basic/link_chip.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
-import 'package:aves/widgets/common/identity/aves_logo.dart';
+import 'package:aves/widgets/common/identity/mediacraft_logo.dart';
 import 'package:material_ui/material_ui.dart';
 
 class AppReference extends StatelessWidget {
   static const avesGithub = 'https://github.com/deckerst/aves';
   static const avesFaq = '$avesGithub/wiki/FAQ';
   static const mediaCraftGithub = 'https://github.com/404NotFoundYou/MediaCraft';
-  static const liquidGlassWidgetsGithub = 'https://github.com/sdegenaar/liquid_glass_widgets';
 
   const new({super.key});
 
@@ -46,7 +45,7 @@ class AppReference extends StatelessWidget {
       mainAxisSize: .min,
       spacing: 8,
       children: [
-        AvesLogo(size: textScaler.scale(fontSize) * 1.3),
+        MediaCraftLogo(size: textScaler.scale(fontSize) * 1.3),
         Text(appName, style: appTitleStyle),
         Text(device.packageVersion, style: appTitleStyle),
       ],
@@ -85,16 +84,6 @@ class AppReference extends StatelessWidget {
         leading: Icon(AIcons.legal, size: 22),
         text: 'Aves BSD-3-Clause',
         urlString: '$avesGithub/blob/develop/LICENSE',
-      ),
-      LinkChip(
-        leading: Icon(AIcons.github, size: 24),
-        text: 'liquid_glass_widgets',
-        urlString: liquidGlassWidgetsGithub,
-      ),
-      LinkChip(
-        leading: Icon(AIcons.legal, size: 22),
-        text: 'liquid_glass_widgets MIT',
-        urlString: '$liquidGlassWidgetsGithub/blob/main/LICENSE',
       ),
     ];
   }

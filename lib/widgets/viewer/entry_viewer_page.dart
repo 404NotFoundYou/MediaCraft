@@ -1,7 +1,6 @@
 import 'package:aves/model/entry/entry.dart';
 import 'package:aves/model/source/collection_lens.dart';
 import 'package:aves/widgets/common/basic/scaffold.dart';
-import 'package:aves/widgets/common/extensions/theme.dart';
 import 'package:aves/widgets/viewer/controls/controller.dart';
 import 'package:aves/widgets/viewer/entry_viewer_stack.dart';
 import 'package:aves/widgets/viewer/providers.dart';
@@ -20,7 +19,9 @@ class const EntryViewerPage({
   @override
   State<EntryViewerPage> createState() => _EntryViewerPageState();
 
-  static Color getBackground(BuildContext context) => Theme.of(context).isDark ? Colors.black : Colors.white;
+  static const viewerSurface = Color(0xfff4f8f7);
+
+  static Color getBackground(BuildContext context) => viewerSurface;
 }
 
 class _EntryViewerPageState extends State<EntryViewerPage> {
@@ -45,14 +46,45 @@ class _EntryViewerPageState extends State<EntryViewerPage> {
           VideoConductorProvider(collection: collection),
           MultiPageConductorProvider(),
         ],
-        child: EntryViewerStack(
-          collection: collection,
-          initialEntry: widget.initialEntry,
-          viewerController: _viewerController,
+        child: Theme(
+          data: _viewerTheme(context),
+          child: EntryViewerStack(
+            collection: collection,
+            initialEntry: widget.initialEntry,
+            viewerController: _viewerController,
+          ),
         ),
       ),
       backgroundColor: Navigator.canPop(context) ? Colors.transparent : EntryViewerPage.getBackground(context),
       resizeToAvoidBottomInset: false,
+    );
+  }
+
+  ThemeData _viewerTheme(BuildContext context) {
+    final baseTheme = Theme.of(context);
+    final baseColors = baseTheme.colorScheme;
+    const viewerSurfaceElevated = Colors.white;
+    final viewerColors = baseColors.copyWith(
+      brightness: Brightness.light,
+      surface: EntryViewerPage.viewerSurface,
+      onSurface: const Color(0xff17212b),
+      onSurfaceVariant: const Color(0xff5e6b73),
+    );
+    return baseTheme.copyWith(
+      brightness: Brightness.light,
+      colorScheme: viewerColors,
+      canvasColor: EntryViewerPage.viewerSurface,
+      scaffoldBackgroundColor: EntryViewerPage.viewerSurface,
+      cardColor: viewerSurfaceElevated,
+      iconTheme: baseTheme.iconTheme.copyWith(color: const Color(0xff17212b)),
+      textTheme: baseTheme.textTheme.apply(
+        bodyColor: const Color(0xff17212b),
+        displayColor: const Color(0xff17212b),
+      ),
+      popupMenuTheme: baseTheme.popupMenuTheme.copyWith(
+        color: viewerSurfaceElevated,
+        iconColor: Colors.white,
+      ),
     );
   }
 }

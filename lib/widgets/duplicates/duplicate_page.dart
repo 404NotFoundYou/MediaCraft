@@ -12,7 +12,6 @@ import 'package:aves/widgets/common/basic/scaffold.dart';
 import 'package:aves/widgets/common/thumbnail/image.dart';
 import 'package:aves/widgets/duplicates/duplicate_selection.dart';
 import 'package:aves_model/aves_model.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:material_ui/material_ui.dart';
 
 enum DuplicateScanScope { all, photos, videos }
@@ -289,19 +288,16 @@ class _DuplicatePageState extends State<DuplicatePage> {
           : SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: GlassButton.custom(
-                  onTap: _reviewAndDelete,
-                  enabled: !_submitting,
+                child: SizedBox(
                   width: MediaQuery.sizeOf(context).width - 24,
                   height: 52,
-                  shape: const LiquidRoundedSuperellipse(borderRadius: 12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (_submitting) const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)) else const Icon(Icons.delete_outline),
-                      const SizedBox(width: 8),
-                      Text('复核 ${_selectedEntries.length} 项·${formatFileSize(settings.avesLocale, _selectedBytes)}'),
-                    ],
+                  child: FilledButton.icon(
+                    onPressed: _submitting ? null : _reviewAndDelete,
+                    style: FilledButton.styleFrom(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: _submitting ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.delete_outline),
+                    label: Text('复核 ${_selectedEntries.length} 项·${formatFileSize(settings.avesLocale, _selectedBytes)}'),
                   ),
                 ),
               ),
@@ -401,57 +397,60 @@ class _ScanControls extends StatelessWidget {
     final busy = scanning || submitting;
     return Padding(
       padding: const EdgeInsets.all(12),
-      child: GlassContainer.card(
-        width: double.infinity,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text('仅扫描当前已授权且可访问的本机照片和视频。读取失败的项目会单独列出，不会参与清理。'),
-            const SizedBox(height: 12),
-            SegmentedButton<DuplicateScanScope>(
-              segments: const [
-                ButtonSegment(
-                  value: DuplicateScanScope.all,
-                  label: Text('全部'),
-                  icon: Icon(Icons.perm_media_outlined),
-                ),
-                ButtonSegment(
-                  value: DuplicateScanScope.photos,
-                  label: Text('照片'),
-                  icon: Icon(Icons.photo_outlined),
-                ),
-                ButtonSegment(
-                  value: DuplicateScanScope.videos,
-                  label: Text('视频'),
-                  icon: Icon(Icons.videocam_outlined),
-                ),
-              ],
-              selected: {scope},
-              onSelectionChanged: busy ? null : (values) => onScopeChanged(values.single),
-            ),
-            const SizedBox(height: 10),
-            if (scanning) ...[
-              LinearProgressIndicator(
-                value: p == null || p.total == 0 ? null : p.processed / p.total,
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      p == null ? '准备扫描…' : '$stageLabel  ${p.processed}/${p.total}',
-                    ),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('仅扫描当前已授权且可访问的本机照片和视频。读取失败的项目会单独列出，不会参与清理。'),
+              const SizedBox(height: 12),
+              SegmentedButton<DuplicateScanScope>(
+                segments: const [
+                  ButtonSegment(
+                    value: DuplicateScanScope.all,
+                    label: Text('全部'),
+                    icon: Icon(Icons.perm_media_outlined),
                   ),
-                  TextButton(onPressed: onCancel, child: const Text('取消')),
+                  ButtonSegment(
+                    value: DuplicateScanScope.photos,
+                    label: Text('照片'),
+                    icon: Icon(Icons.photo_outlined),
+                  ),
+                  ButtonSegment(
+                    value: DuplicateScanScope.videos,
+                    label: Text('视频'),
+                    icon: Icon(Icons.videocam_outlined),
+                  ),
                 ],
+                selected: {scope},
+                onSelectionChanged: busy ? null : (values) => onScopeChanged(values.single),
               ),
-            ] else
-              FilledButton.icon(
-                onPressed: submitting ? null : onScan,
-                icon: const Icon(Icons.search),
-                label: const Text('开始扫描'),
-              ),
-          ],
+              const SizedBox(height: 10),
+              if (scanning) ...[
+                LinearProgressIndicator(
+                  value: p == null || p.total == 0 ? null : p.processed / p.total,
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        p == null ? '准备扫描…' : '$stageLabel  ${p.processed}/${p.total}',
+                      ),
+                    ),
+                    TextButton(onPressed: onCancel, child: const Text('取消')),
+                  ],
+                ),
+              ] else
+                FilledButton.icon(
+                  onPressed: submitting ? null : onScan,
+                  icon: const Icon(Icons.search),
+                  label: const Text('开始扫描'),
+                ),
+            ],
+          ),
         ),
       ),
     );

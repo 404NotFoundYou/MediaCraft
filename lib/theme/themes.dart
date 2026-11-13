@@ -1,4 +1,5 @@
 import 'package:aves/theme/styles.dart';
+import 'package:aves/theme/colors.dart';
 import 'package:aves/widgets/aves_app.dart';
 import 'package:aves/widgets/settings/language/locales.dart';
 import 'package:aves_utils/aves_utils.dart';
@@ -82,6 +83,7 @@ class Themes {
     final iconTheme = _iconTheme(colors);
     return BottomNavigationBarThemeData(
       elevation: 0,
+      backgroundColor: _schemeFirstLayer(colors).withValues(alpha: .96),
       selectedIconTheme: iconTheme.copyWith(color: colors.primary),
       unselectedIconTheme: iconTheme.copyWith(color: _unselectedWidgetColor(colors)),
     );
@@ -93,6 +95,8 @@ class Themes {
 
   static DrawerThemeData _drawerTheme(ColorScheme colors) => DrawerThemeData(
     backgroundColor: _schemeSecondLayer(colors),
+    elevation: 0,
+    scrimColor: Colors.black.withValues(alpha: .32),
   );
 
   static IconThemeData _iconTheme(ColorScheme colors) => IconThemeData(
@@ -186,6 +190,8 @@ class Themes {
       onPrimary: onAccent,
       secondary: accentColor,
       onSecondary: onAccent,
+      tertiary: AColors.brandCoral,
+      onTertiary: ColorUtils.textColorOn(AColors.brandCoral),
       onSurface: _lightOnSurface,
     );
     final textTheme = _lightThemeTypo;
@@ -236,6 +242,8 @@ class Themes {
       onPrimary: onAccent,
       secondary: accentColor,
       onSecondary: onAccent,
+      tertiary: AColors.brandAmber,
+      onTertiary: ColorUtils.textColorOn(AColors.brandAmber),
       onSurface: _darkOnSurface,
     );
     return colors;

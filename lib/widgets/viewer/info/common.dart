@@ -132,45 +132,54 @@ class _InfoRowGroupState extends State<InfoRowGroup> {
         final maxBaseValueX = constraints.maxWidth / 3;
         final baseValueX = keySizes.values.where((size) => size < maxBaseValueX).fold(0.0, max);
 
-        return SelectableText.rich(
-          TextSpan(
-            children: keyValues.entries.expand(
-              (kv) {
-                final key = kv.key;
-                final value = kv.value;
-                final customSpanBuilder = spanBuilders[key];
-                final spanBuilder = customSpanBuilder ?? _buildTextValueSpans;
-                final thisSpaceSize = max(0.0, (baseValueX - keySizes[key]!)) + InfoRowGroup.keyValuePadding;
-
-                InlineSpan paddingSpan;
-                if (customSpanBuilder != null) {
-                  // add padding using hair spaces instead of a straightforward `SizedBox` in a `WidgetSpan`,
-                  // because ordering of multiple `WidgetSpan`s (e.g. with owner app icon) in Bidi context is tricky
-                  final baseSpaceWidth = _getSpanWidth(TextSpan(text: '\u200A' * 100, style: _keyStyle), textScaler);
-                  final spaceCount = (100 * thisSpaceSize / baseSpaceWidth).round();
-                  paddingSpan = TextSpan(text: '\u200A' * spaceCount);
-                } else {
-                  final textScaleFactor = textScaler.scale(thisSpaceSize) / thisSpaceSize;
-                  paddingSpan = WidgetSpan(
-                    child: SizedBox(
-                      width: thisSpaceSize / textScaleFactor,
-                      // as of Flutter v3.0.0, the underline decoration from the following `TextSpan`
-                      // is applied to the `WidgetSpan` too, so we add a dummy `Text` as a workaround
-                      child: const Text(''),
-                    ),
-                  );
-                }
-
-                return [
-                  TextSpan(text: _buildTextValue(key), style: _keyStyle),
-                  paddingSpan,
-                  ...spanBuilder(context, key, value),
-                  if (key != lastKey) const TextSpan(text: '\n'),
-                ];
-              },
-            ).toList(),
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: .55)),
           ),
-          style: InfoRowGroup.valueStyle,
+          child: SelectableText.rich(
+            TextSpan(
+              children: keyValues.entries.expand(
+                (kv) {
+                  final key = kv.key;
+                  final value = kv.value;
+                  final customSpanBuilder = spanBuilders[key];
+                  final spanBuilder = customSpanBuilder ?? _buildTextValueSpans;
+                  final thisSpaceSize = max(0.0, (baseValueX - keySizes[key]!)) + InfoRowGroup.keyValuePadding;
+
+                  InlineSpan paddingSpan;
+                  if (customSpanBuilder != null) {
+                    // add padding using hair spaces instead of a straightforward `SizedBox` in a `WidgetSpan`,
+                    // because ordering of multiple `WidgetSpan`s (e.g. with owner app icon) in Bidi context is tricky
+                    final baseSpaceWidth = _getSpanWidth(TextSpan(text: '\u200A' * 100, style: _keyStyle), textScaler);
+                    final spaceCount = (100 * thisSpaceSize / baseSpaceWidth).round();
+                    paddingSpan = TextSpan(text: '\u200A' * spaceCount);
+                  } else {
+                    final textScaleFactor = textScaler.scale(thisSpaceSize) / thisSpaceSize;
+                    paddingSpan = WidgetSpan(
+                      child: SizedBox(
+                        width: thisSpaceSize / textScaleFactor,
+                        // as of Flutter v3.0.0, the underline decoration from the following `TextSpan`
+                        // is applied to the `WidgetSpan` too, so we add a dummy `Text` as a workaround
+                        child: const Text(''),
+                      ),
+                    );
+                  }
+
+                  return [
+                    TextSpan(text: _buildTextValue(key), style: _keyStyle),
+                    paddingSpan,
+                    ...spanBuilder(context, key, value),
+                    if (key != lastKey) const TextSpan(text: '\n'),
+                  ];
+                },
+              ).toList(),
+            ),
+            style: InfoRowGroup.valueStyle,
+          ),
         );
       },
     );

@@ -147,7 +147,9 @@ class Settings
   Future<void> setContextualDefaults(AppFlavor flavor) async {
     // performance
     final performanceClass = await deviceService.getMediaPerformanceClass();
-    enableBlurEffect = performanceClass >= 31;
+    // Glass blur is expensive when many surfaces are visible together, especially
+    // on the Baidu platform view. Keep it opt-in for higher performance classes.
+    enableBlurEffect = performanceClass >= 33;
 
     final androidInfo = await DeviceInfoPlugin().androidInfo;
     final manufacturer = androidInfo.manufacturer.toLowerCase();

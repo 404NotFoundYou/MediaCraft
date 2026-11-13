@@ -8,7 +8,6 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:leak_tracker/leak_tracker.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:material_ui/material_ui.dart';
 
 Future<void> mainCommon(AppFlavor flavor, {Map<String, Object?>? debugIntentData}) async {
@@ -45,12 +44,5 @@ Future<void> mainCommon(AppFlavor flavor, {Map<String, Object?>? debugIntentData
   FlutterMemoryAllocations.instance.addListener(
     (event) => LeakTracking.dispatchObjectEvent(event.toMap()),
   );
-  await LiquidGlassWidgets.initialize();
-  runApp(
-    LiquidGlassWidgets.wrap(
-      theme: GlassThemeData.simple(quality: GlassQuality.standard),
-      brightnessResolver: (context) => Theme.of(context).brightness,
-      child: AvesApp(flavor: flavor, debugIntentData: debugIntentData),
-    ),
-  );
+  runApp(AvesApp(flavor: flavor, debugIntentData: debugIntentData));
 }

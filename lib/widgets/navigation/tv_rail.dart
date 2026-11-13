@@ -11,7 +11,7 @@ import 'package:aves/widgets/about/about_page.dart';
 import 'package:aves/widgets/collection/collection_page.dart';
 import 'package:aves/widgets/common/basic/insets.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
-import 'package:aves/widgets/common/identity/aves_logo.dart';
+import 'package:aves/widgets/common/identity/mediacraft_logo.dart';
 import 'package:aves/widgets/debug/app_debug_page.dart';
 import 'package:aves/widgets/navigation/drawer/app_drawer.dart';
 import 'package:aves/widgets/navigation/drawer/tile.dart';
@@ -96,7 +96,7 @@ class _TvRailState extends State<TvRail> {
       child: ValueListenableBuilder<bool>(
         valueListenable: _extendedNotifier,
         builder: (context, extended, child) {
-          const logo = AvesLogo(size: 48);
+          const logo = MediaCraftLogo(size: 48);
           final appName = context.l10n.appName;
           final header = extended
               ? Row(

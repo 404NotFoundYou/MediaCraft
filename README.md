@@ -10,7 +10,7 @@ MediaCraft 是基于 [Aves](https://github.com/deckerst/aves) 完整源码开发
 - Windows 构建使用仓库内 `.tooling/flutter`，由 `scripts/bootstrap.ps1` 安装固定版本，避免依赖系统 Flutter。
 - 默认开发目标是 `libre` flavor；该 flavor 使用无 Google 服务的平台实现，不默认依赖 Google Play 服务。
 - Dart/Flutter 源码的内部 package namespace 仍为 `aves`，用于保持上游模块兼容；Android 应用 ID 已独立为 `com.mediacraft.app`，libre flavor 追加 `.libre`。
-- MediaCraft UI 使用 `liquid_glass_widgets 1.17.2`（MIT）。其许可证及包内再分发代码的完整通知保存在 `licenses/`。
+- MediaCraft UI 使用 Flutter Material 组件与 MediaCraft 自有视觉样式。
 - Aves 原有功能模块和测试均保留，但这不表示 MediaCraft 的全部功能已经在当前品牌、flavor、设备和发布配置下完成验收。
 - 早期原生 Android 壳层已经删除，不再是可构建或可回退的产品实现。此前生成的测试 APK 仅为临时验证产物，不是最终发布包，也不能代表当前 Flutter 源码状态。
 - 当前 libre debug APK 已完成核心构建与真机验证，并在 Honor YOK-AN10（Android 12）安装和冷启动。Flutter 测试 85/85、Android JVM 测试 18/18 已通过，实际启用的 16 个分析目录为 `No issues found`。

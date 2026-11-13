@@ -41,7 +41,6 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   cupertino_icons: ^1.0.9
-  liquid_glass_widgets: 1.17.2
   aves_magnifier:
     path: plugins/aves_magnifier
   aves_map:
