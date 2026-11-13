@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## <a id="unreleased"></a>[Unreleased]
 
+## <a id="v0.6.1"></a>[v0.6.1] - 2026-11-13
+
+### Added
+
+- 在“关于”页面新增 GitHub Release 更新检查，可发现新版本并打开发布页。
+
+### Verified
+
+- 更新检查服务测试通过。
+- 详细发布说明见 [v0.6.1 发布说明](docs/releases/v0.6.1.md)。
+
 ## <a id="v0.6.0"></a>[v0.6.0] - 2026-11-12
 
 ### Added
