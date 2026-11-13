@@ -14,6 +14,60 @@ class OsmLibertyLayer extends StatefulWidget {
   State<OsmLibertyLayer> createState() => _OsmLibertyLayerState();
 }
 
+class const OpenFreeMapLayer({
+  super.key,
+  required final String styleUri,
+}) extends StatefulWidget {
+  @override
+  State<OpenFreeMapLayer> createState() => _OpenFreeMapLayerState();
+}
+
+class _OpenFreeMapLayerState extends State<OpenFreeMapLayer> {
+  late final Future<Style> _styleFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _styleFuture = StyleReader(
+      uri: widget.styleUri,
+      logger: const vtr.Logger.console(),
+    ).readExtra(skipSources: false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Style>(
+      future: _styleFuture,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) return Text(snapshot.error.toString());
+
+        final style = snapshot.data;
+        if (style == null) return const SizedBox();
+
+        return VectorTileLayer(
+          tileProviders: style.providers,
+          theme: style.theme,
+          sprites: style.sprites,
+          layerMode: VectorTileLayerMode.raster,
+          cacheFolder: () async {
+            final cacheRoot = await storageService.getExternalCacheDirectory();
+            final path = pContext.join(cacheRoot, 'map_vector_tiles');
+            Object result;
+            if (vmtio.Directory == String) {
+              result = path;
+            } else if (vmtio.Directory == io.Directory) {
+              result = io.Directory(path);
+            } else {
+              throw Exception('vmtio.Directory type is not supported');
+            }
+            return result as vmtio.Directory;
+          },
+        );
+      },
+    );
+  }
+}
+
 class _OsmLibertyLayerState extends State<OsmLibertyLayer> {
   late final Future<TileProviders> _tileProviderFuture;
   late final Future<Style> _styleFuture;

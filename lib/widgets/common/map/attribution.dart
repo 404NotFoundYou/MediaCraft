@@ -19,6 +19,12 @@ class Attribution extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    if (style == EntryMapStyles.openFreeMapBright) {
+      return _buildOsmAttributionMarkdown(
+        context,
+        '样式由 [OpenFreeMap](https://openfreemap.org/) 提供，基于 [OpenMapTiles](https://openmaptiles.org/)',
+      );
+    }
     if (style == EntryMapStyles.osmLiberty) return _buildOsmAttributionMarkdown(context, l10n.mapAttributionOsmLiberty);
     if (style == EntryMapStyles.openTopoMap) return _buildOsmAttributionMarkdown(context, l10n.mapAttributionOpenTopoMap);
     if (style == EntryMapStyles.osmHot) return _buildOsmAttributionMarkdown(context, l10n.mapAttributionOsmHot);

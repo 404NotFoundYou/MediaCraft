@@ -99,6 +99,15 @@ class EntryMapStyles {
     isRaster: false,
   );
 
+  static const openFreeMapBrightUrl = 'https://tiles.openfreemap.org/styles/bright';
+
+  static const openFreeMapBright = EntryMapStyle(
+    key: 'openFreeMapBright',
+    name: 'OpenFreeMap Bright',
+    isRaster: false,
+    url: openFreeMapBrightUrl,
+  );
+
   // Raster (Leaflet)
 
   static const openTopoMap = EntryMapStyle(

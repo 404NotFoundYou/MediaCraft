@@ -14,7 +14,7 @@ class PlatformMobileServices extends MobileServices {
   EntryMapStyle? get defaultMapStyle => null;
 
   @override
-  List<EntryMapStyle> get mapStyles => [];
+  List<EntryMapStyle> get mapStyles => [EntryMapStyles.openFreeMapBright];
 
   @override
   Widget buildMap<T>({

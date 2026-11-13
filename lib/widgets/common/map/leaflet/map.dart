@@ -207,6 +207,11 @@ class _EntryLeafletMapState<T> extends State<EntryLeafletMap<T>> with TickerProv
   }
 
   Widget _buildMapLayer(EntryMapStyle style) {
+    if (style == EntryMapStyles.openFreeMapBright) {
+      return const OpenFreeMapLayer(
+        styleUri: EntryMapStyles.openFreeMapBrightUrl,
+      );
+    }
     if (style == EntryMapStyles.osmLiberty) {
       return const OsmLibertyLayer();
     }
