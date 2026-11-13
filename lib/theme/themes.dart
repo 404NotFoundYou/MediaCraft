@@ -19,7 +19,7 @@ class Themes {
       case .dark:
         return blurred ? Colors.black26 : Colors.black45;
       case .light:
-        return blurred ? Colors.white54 : const Color(0xCCFFFFFF);
+        return blurred ? const Color(0xD9E7F0EF) : const Color(0xE6E7F0EF);
     }
   }
 

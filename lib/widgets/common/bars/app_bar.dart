@@ -90,6 +90,8 @@ class const AvesAppBar({
               margin: margin,
               builder: (context, backgroundColor, child) => Material(
                 color: backgroundColor,
+                borderRadius: AvesFloatingBar.borderRadius,
+                clipBehavior: Clip.antiAlias,
                 child: AInkResponse(
                   // absorb taps while providing visual feedback
                   onTap: () {},
