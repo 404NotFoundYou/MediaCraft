@@ -1,25 +1,33 @@
-## Terms of Service
+# MediaCraft 使用协议与隐私说明
 
-“Aves Gallery” is an open-source gallery and metadata explorer app allowing you to access and manage your local photos and videos.
+## 项目定位
 
-The app is designed for legal, authorized and acceptable purposes.
+MediaCraft 是基于 [Aves](https://github.com/deckerst/aves) 完整源码开发的个人学习、研究和本地测试项目。它用于学习 Flutter、Android 媒体访问、元数据处理、地图集成和重复媒体清理技术。
 
-## Disclaimer
+MediaCraft 不是商业产品、商业服务或可售卖的软件包。未经项目维护者书面许可，不得将 MediaCraft、其修改版本、构建产物、品牌、图标、文案或功能包装成收费产品、付费服务、广告产品、商业分发包或其他盈利用途。
 
-The app is released “as-is”, without any warranty, responsibility or liability. Use of the app is at your own risk.
+本项目按现状提供，不承诺商业支持、服务等级、数据恢复或对所有设备的兼容性。使用前请自行备份重要照片和视频。
 
-## Privacy Policy
+## 上游开源项目
 
-The app does not collect any personal data. We never have access to your photos and videos. This also means that we cannot get them back for you if you delete them without backing them up.
+MediaCraft 使用并修改 Aves 源码。Aves 依照 BSD 3-Clause License 发布，相关版权声明和完整许可证保留在项目中。MediaCraft 的自有修改、品牌和构建产物仍受本项目的个人学习用途限制。
 
-__Optionally, with your consent, the app accesses the inventory of installed apps__ to improve album display.
+## 媒体与隐私
 
-__Optionally, with your consent, the app collects anonymous error and diagnostic data__ to improve the app quality. We use Firebase Crashlytics, and the anonymous data are stored on their servers. Please note that those are anonymous data, there is absolutely nothing personal about those data.
+应用只访问用户授予的本地媒体范围。照片和视频不会因为使用图库、查看器或重复清理功能而自动上传到 MediaCraft 服务器。
 
-## Contact
+重复扫描在本机读取文件内容、计算摘要并进行核对。扫描不会自动删除文件；移入回收站或永久删除前需要用户确认。
 
-Developer: Thibault Deckers
+应用可在用户授权后读取已安装应用信息，用于显示媒体来源和相册名称。地图、地名查询、网络媒体和外部链接可能访问相应第三方服务，并按这些服务的隐私政策处理请求数据。
 
-Email: [gallery.aves@gmail.com](mailto:gallery.aves@gmail.com)
+错误报告和诊断数据只有在对应 flavor 和设置允许时才会启用。应用不会以此协议授予自己访问用户未授权数据的权限。
 
-Website: [https://github.com/deckerst/aves](https://github.com/deckerst/aves)
+## 许可与联系
+
+完整许可证可在“关于 > 许可证”中离线查看。
+
+项目地址：<https://github.com/404NotFoundYou/MediaCraft>
+
+问题反馈：请通过项目仓库提交 Issue。
+
+继续使用 MediaCraft 即表示你理解它是个人学习项目，并同意自行承担使用风险。

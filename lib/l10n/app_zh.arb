@@ -1,6 +1,6 @@
 {
     "appName": "MediaCraft",
-    "welcomeMessage": "欢迎使用 Aves",
+    "welcomeMessage": "欢迎使用 MediaCraft",
     "welcomeOptional": "可选",
     "welcomeTermsToggle": "我同意这些使用条款和条件",
     "itemCount": "{count, plural, other{{count} 项}}",
