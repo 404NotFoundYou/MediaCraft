@@ -1,4 +1,5 @@
 import 'package:aves/widgets/about/app_ref.dart';
+import 'package:aves/widgets/about/app_update.dart';
 import 'package:aves/widgets/about/bug_report.dart';
 import 'package:aves/widgets/about/credits.dart';
 import 'package:aves/widgets/about/data_usage.dart';
@@ -27,6 +28,7 @@ class AboutMobilePage extends StatelessWidget {
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
                     const AppReference(),
+                    const AppUpdateChecker(),
                     const Divider(),
                     const DerivationNotice(),
                     const Divider(),

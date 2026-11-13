@@ -1,6 +1,7 @@
 import 'package:aves/model/device.dart';
 import 'package:aves/theme/themes.dart';
 import 'package:aves/widgets/about/app_ref.dart';
+import 'package:aves/widgets/about/app_update.dart';
 import 'package:aves/widgets/about/credits.dart';
 import 'package:aves/widgets/about/derivation.dart';
 import 'package:aves/widgets/about/translators.dart';
@@ -165,6 +166,7 @@ class _ContentState extends State<_Content> {
               padding: EdgeInsets.all(16),
               child: DerivationNotice(),
             ),
+            const AppUpdateChecker(),
             ...AppReference.buildLinks(
               context,
             ).map((v) => Padding(padding: const EdgeInsets.all(16), child: v)),
