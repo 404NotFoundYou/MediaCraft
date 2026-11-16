@@ -2,6 +2,13 @@
 
 本规则适用于仓库内的全部源码、脚本、文档、构建目录和运行资源。
 
+## Flavor 与 GitHub 发布约定
+
+- 本地开发、日常调试和默认依赖配置继续使用 `libre` flavor。
+- GitHub Release 的默认正式发布产物使用 `baidu` flavor，包名为 `com.mediacraft.app.baidu`。
+- 正式版本标签支持 `vX.Y.Z` 和兼容已有发布历史的 `vX.Y.Z-baidu`。正式 Release 必须成为 GitHub Latest Release，供已安装旧版本检测更新。
+- 发布流程变更不得以 GitHub Release 默认使用百度版为由，将本地开发默认 flavor 从 `libre` 改为 `baidu`。
+
 ## 开发完成后的资源清理
 
 业务开发完成并验证通过后，必须及时清理已确认无用的旧版本源码、构建产物、测试包、缓存和临时资源。

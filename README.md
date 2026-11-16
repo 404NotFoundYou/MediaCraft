@@ -15,10 +15,18 @@ MediaCraft 是个人学习项目，不是商业产品、商业服务或可售卖
 ## 当前实现
 
 - Flutter 3.47.8，项目内置 SDK 位于 `.tooling/flutter`。
-- 默认 `libre` flavor 使用无 Google 服务的平台实现。
+- 本地开发、日常调试和默认依赖配置使用 `libre` flavor；它使用无 Google 服务的平台实现。
 - `baidu` flavor 集成百度地图 SDK；百度地图 Key 必须匹配对应包名、签名和平台配置。
 - Android applicationId 为 `com.mediacraft.app`，libre 和 baidu flavor 分别追加对应后缀。
 - UI 使用 Flutter Material 组件和 MediaCraft 自有视觉样式，不依赖 `liquid_glass_widgets`。
+
+## GitHub 发布
+
+GitHub Release 默认发布 `baidu` flavor，正式包名为 `com.mediacraft.app.baidu`。正式版本标签可使用 `vX.Y.Z`，已有的 `vX.Y.Z-baidu` 标签格式继续兼容。
+
+每个正式 GitHub Release 必须设为 Latest Release，供已安装旧版本通过 GitHub Latest 接口检测更新。本地开发默认仍为 `libre`；GitHub 发布默认使用百度版不会改变本地开发和调试配置。
+
+GitHub Actions 除现有签名 Secrets 外，还需配置 `MEDIACRAFT_BAIDU_API_KEY`，其 AK 必须匹配百度版包名和发布签名；缺失或为 `NONE` 时发布构建会失败。
 
 ## 构建
 

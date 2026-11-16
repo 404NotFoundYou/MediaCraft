@@ -19,6 +19,7 @@ MediaCraft 当前 Flutter 工程由 Aves 完整源码重建，不是仅参考界
 | Dart package namespace | `aves`（保留上游内部标识） |
 | Android applicationId | `com.mediacraft.app` |
 | libre applicationId | `com.mediacraft.app.libre` |
+| baidu applicationId | `com.mediacraft.app.baidu` |
 
 导入时保留 Aves 的 `lib/`、`plugins/`、`test/`、`test_driver/`、Android 工程、flavor 脚本、资源与原有模块边界。MediaCraft 后续修改应继续保留上游版权和许可证，并在变更记录中区分上游能力与 MediaCraft 自有验证。
 
@@ -27,6 +28,8 @@ MediaCraft 当前 Flutter 工程由 Aves 完整源码重建，不是仅参考界
 默认开发与无 Google 服务验证使用 `libre` flavor。该 flavor 默认选择 `aves_services_none` 等无 Google 服务实现；这只描述依赖配置，不等于所有联网功能都被禁用。地图瓦片、反向地理编码或用户主动访问的链接仍可能使用网络。
 
 Play、Izzy 与 libre 的依赖和发布配置不同，不能用一个 flavor 的构建结果推断另一个 flavor 已通过验证。
+
+GitHub Release 的默认正式发布产物使用 `baidu` flavor，包名为 `com.mediacraft.app.baidu`。正式版本标签支持 `vX.Y.Z` 和已有的 `vX.Y.Z-baidu` 格式；每个正式 Release 必须成为 GitHub Latest Release，供旧版本检测更新。此发布约定不改变本地开发、日常调试和默认依赖配置继续使用 `libre` flavor。
 
 ## Windows 构建入口
 
@@ -39,7 +42,7 @@ Play、Izzy 与 libre 的依赖和发布配置不同，不能用一个 flavor �
 
 仓库根目录的 `flutterw` 同样使用 `.tooling/flutter` 中独立固定的 Flutter 3.47.8，并在每次运行前核对 SDK checkout 的精确版本。`build.ps1` 还会拒绝与已提交 libre 快照不一致的依赖配置。`.gitmodules` 已移除，构建不再依赖旧的 `.flutter` Git 子模块。
 
-CI 分别对 libre 与 baidu flavor 执行当前插件集合的静态分析、Flutter 与插件测试、debug APK 构建和 Android JVM 测试。标签发布会在读取签名密钥前对同一提交重复这些检查，并要求 `vX.Y.Z` 标签与 `pubspec.yaml` 版本一致。
+CI 分别对 libre 与 baidu flavor 执行当前插件集合的静态分析、Flutter 与插件测试、debug APK 构建和 Android JVM 测试。标签发布会在读取签名密钥前对同一提交重复这些检查，并要求 `vX.Y.Z` 或 `vX.Y.Z-baidu` 标签中的版本与 `pubspec.yaml` 版本一致。
 
 源码中的 `package:aves/...` 和 Android namespace `deckers.thibault.aves` 是为兼容完整上游模块保留的内部标识，不是应用发布身份。发布身份由 Android applicationId 决定。
 

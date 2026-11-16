@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - v*
-      # Baidu APKs use separately configured map credentials and are published separately.
-      - '!v*-baidu*'
 
 # Declare default permissions as read only.
 permissions: read-all
@@ -41,14 +39,17 @@ jobs:
           ./flutterw doctor -v
 
       - name: Verify tag version
+        id: version
         run: |
           set -euo pipefail
           package_version=$(awk '/^version:/ { print $2; exit }' pubspec.yaml)
           package_version=${package_version%%+*}
-          test "${GITHUB_REF_NAME}" = "v${package_version}" || {
+          release_tag=${GITHUB_REF_NAME%-baidu}
+          test "$release_tag" = "v${package_version}" || {
             echo "Tag ${GITHUB_REF_NAME} does not match pubspec version ${package_version}." >&2
             exit 1
           }
+          echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
 
       - name: Configure Android NDK
         run: |
@@ -67,7 +68,7 @@ jobs:
         run: scripts/quality_flavor.sh baidu
 
       - name: Restore release flavor
-        run: scripts/apply_flavor_libre.sh
+        run: scripts/apply_flavor_baidu.sh
 
       # cf https://github.com/deckerst/aves/issues/1521#issuecomment-5229015364
       - name: Remove build ID from native lib
@@ -92,7 +93,7 @@ jobs:
       - name: Generate app localizations
         run: ./flutterw gen-l10n
 
-      - name: Build signed libre artifacts
+      - name: Build signed Baidu artifacts
         # specify NDK for `icu4x` hook linker
         # cf https://github.com/deckerst/aves/issues/1521#issuecomment-5599985874
         #
@@ -101,6 +102,10 @@ jobs:
         # `KEY_JKS_PASSPHRASE` should contain the passphrase used for the command above
         run: |
           set -euo pipefail
+          if [ -z "$MEDIACRAFT_BAIDU_API_KEY" ] || [ "$MEDIACRAFT_BAIDU_API_KEY" = NONE ]; then
+            echo "MEDIACRAFT_BAIDU_API_KEY must be configured for Baidu releases." >&2
+            exit 1
+          fi
           echo "Default Android NDK environment paths:"
           echo "ANDROID_NDK=$ANDROID_NDK"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
@@ -115,9 +120,11 @@ jobs:
           rm release.keystore.asc
           mkdir outputs
           export AVES_GOOGLE_API_KEY="NONE"
-          ./flutterw build apk --no-pub -t lib/main_libre.dart --flavor libre --split-per-abi
-          cp build/app/outputs/flutter-apk/*-libre-release.apk outputs
-          sha256sum outputs/*.apk > outputs/SHA256SUMS
+          ./flutterw build apk --no-pub --release -t lib/main_baidu.dart --flavor baidu --split-per-abi
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            cp "build/app/outputs/flutter-apk/app-${abi}-baidu-release.apk" "outputs/MediaCraft-${RELEASE_VERSION}-baidu-${abi}-release.apk"
+          done
+          (cd outputs && sha256sum *.apk > SHA256SUMS.txt)
           rm "$AVES_STORE_FILE"
         env:
           AVES_STORE_FILE: ${{ github.workspace }}/key.jks
@@ -125,6 +132,8 @@ jobs:
           AVES_KEY_ALIAS: ${{ secrets.AVES_KEY_ALIAS }}
           AVES_KEY_PASSWORD: ${{ secrets.AVES_KEY_PASSWORD }}
           AVES_GOOGLE_API_KEY: ${{ secrets.AVES_GOOGLE_API_KEY }}
+          MEDIACRAFT_BAIDU_API_KEY: ${{ secrets.MEDIACRAFT_BAIDU_API_KEY }}
+          RELEASE_VERSION: ${{ steps.version.outputs.package_version }}
 
       - name: Generate artifact attestation
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
@@ -137,9 +146,10 @@ jobs:
           artifacts: "outputs/*"
           allowUpdates: true
           removeArtifacts: true
-          name: "MediaCraft ${{ github.ref_name }}"
+          makeLatest: true
+          name: "MediaCraft v${{ steps.version.outputs.package_version }} 百度版"
           body: |
-            [Changelog](https://github.com/${{ github.repository }}/blob/${{ github.sha }}/CHANGELOG.md#${{ github.ref_name }})
+            [Changelog](https://github.com/${{ github.repository }}/blob/${{ github.sha }}/CHANGELOG.md#v${{ steps.version.outputs.package_version }})
 
-            This release contains signed libre APK artifacts. Play flavor and store upload remain pending Google Cloud/Firebase and Play service-account configuration.
+            本次 GitHub Release 提供百度版签名 APK，包名为 `com.mediacraft.app.baidu`，包含 arm64-v8a、armeabi-v7a 和 x86_64 安装包及 SHA256SUMS.txt。正式发布后设为 Latest，供应用内检查更新使用。
           token: ${{ secrets.GITHUB_TOKEN }}

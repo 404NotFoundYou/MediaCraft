@@ -39,4 +39,27 @@ void main() {
     );
     expect(update, isNull);
   });
+
+  test('Baidu Latest releases reach older installs without offering the same version again', () async {
+    final client = MockClient(
+      (_) async => http.Response(
+        '{"tag_name":"v0.6.3-baidu","html_url":"https://github.com/404NotFoundYou/MediaCraft/releases/tag/v0.6.3-baidu"}',
+        200,
+      ),
+    );
+    addTearDown(client.close);
+
+    final update = await AppUpdateService.checkForUpdate(
+      currentVersion: '0.6.2+186',
+      client: client,
+    );
+    expect(update?.version, '0.6.3-baidu');
+    expect(update?.url.toString(), 'https://github.com/404NotFoundYou/MediaCraft/releases/tag/v0.6.3-baidu');
+
+    final current = await AppUpdateService.checkForUpdate(
+      currentVersion: '0.6.3+187',
+      client: client,
+    );
+    expect(current, isNull);
+  });
 }
