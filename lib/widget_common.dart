@@ -66,28 +66,32 @@ Future<Map<String, Object>> _drawWidget(Object? args) async {
   final outline = await settings.getWidgetOutline(widgetId).color(brightness);
 
   final entry = drawEntryImage ? await _getWidgetEntry(widgetId, reuseEntry) : null;
-  final painter = HomeWidgetPainter(
-    entry: entry,
-    devicePixelRatio: devicePixelRatio,
-  );
-  final bytesBySizeDip = <Map<String, Object>>[];
-  await Future.forEach(sizesDip, (sizeDip) async {
-    final bytes = await painter.drawWidget(
-      sizeDip: sizeDip,
-      cornerRadiusPx: cornerRadiusPx,
-      outline: outline,
-      shape: settings.getWidgetShape(widgetId),
+  try {
+    final painter = HomeWidgetPainter(
+      entry: entry,
+      devicePixelRatio: devicePixelRatio,
     );
-    bytesBySizeDip.add({
-      'widthDip': sizeDip.width,
-      'heightDip': sizeDip.height,
-      'bytes': bytes,
+    final bytesBySizeDip = <Map<String, Object>>[];
+    await Future.forEach(sizesDip, (sizeDip) async {
+      final bytes = await painter.drawWidget(
+        sizeDip: sizeDip,
+        cornerRadiusPx: cornerRadiusPx,
+        outline: outline,
+        shape: settings.getWidgetShape(widgetId),
+      );
+      bytesBySizeDip.add({
+        'widthDip': sizeDip.width,
+        'heightDip': sizeDip.height,
+        'bytes': bytes,
+      });
     });
-  });
-  return {
-    'bytesBySizeDip': bytesBySizeDip,
-    'updateOnTap': settings.getWidgetOpenPage(widgetId) == WidgetOpenPage.updateWidget,
-  };
+    return {
+      'bytesBySizeDip': bytesBySizeDip,
+      'updateOnTap': settings.getWidgetOpenPage(widgetId) == WidgetOpenPage.updateWidget,
+    };
+  } finally {
+    entry?.dispose();
+  }
 }
 
 Future<AvesEntry?> _getWidgetEntry(int widgetId, bool reuseEntry) async {
@@ -101,27 +105,34 @@ Future<AvesEntry?> _getWidgetEntry(int widgetId, bool reuseEntry) async {
 
   final filters = settings.getWidgetCollectionFilters(widgetId);
   final source = MediaStoreSource();
+  CollectionLens? collection;
   final readyCompleter = Completer();
   source.stateNotifier.addListener(() {
-    if (source.isReady) {
+    if (source.isReady && !readyCompleter.isCompleted) {
       readyCompleter.complete();
     }
   });
-  source.canAnalyze = false;
-  await source.init(scope: filters);
-  await readyCompleter.future;
+  try {
+    source.canAnalyze = false;
+    await source.init(scope: filters);
+    await readyCompleter.future;
 
-  final entries = List.of(CollectionLens(source: source, filters: filters).sortedEntries);
-  switch (settings.getWidgetDisplayedItem(widgetId)) {
-    case .random:
-      entries.shuffle();
-    case .mostRecent:
-      entries.sort(AvesEntrySort.compareByDate);
+    collection = CollectionLens(source: source, filters: filters);
+    final entries = List.of(collection.sortedEntries);
+    switch (settings.getWidgetDisplayedItem(widgetId)) {
+      case .random:
+        entries.shuffle();
+      case .mostRecent:
+        entries.sort(AvesEntrySort.compareByDate);
+    }
+    final entry = entries.firstOrNull;
+    if (entry != null) {
+      settings.setWidgetUri(widgetId, entry.uri);
+    }
+    // The painter owns this copy after the temporary source and lens are disposed.
+    return entry?.copyWith();
+  } finally {
+    collection?.dispose();
+    source.dispose();
   }
-  final entry = entries.firstOrNull;
-  if (entry != null) {
-    settings.setWidgetUri(widgetId, entry.uri);
-  }
-  source.dispose();
-  return entry;
 }

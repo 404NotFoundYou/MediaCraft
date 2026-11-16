@@ -37,7 +37,9 @@ Play、Izzy 与 libre 的依赖和发布配置不同，不能用一个 flavor �
 
 `bootstrap.ps1` 将 Flutter 3.47.8 安装到项目内 `.tooling/flutter`。`build.ps1` 只使用该 SDK，并依次执行 `flutter pub get`、限定目录静态分析、`flutter test --concurrency=1`、libre debug APK 构建和 `:app:testLibreDebugUnitTest`。任一步骤失败都会中止，不能把后续步骤记为通过。
 
-仓库根目录的 `flutterw` 同样使用 `.tooling/flutter` 中独立固定的 Flutter 3.47.8。`.gitmodules` 已移除，构建不再依赖旧的 `.flutter` Git 子模块。
+仓库根目录的 `flutterw` 同样使用 `.tooling/flutter` 中独立固定的 Flutter 3.47.8，并在每次运行前核对 SDK checkout 的精确版本。`build.ps1` 还会拒绝与已提交 libre 快照不一致的依赖配置。`.gitmodules` 已移除，构建不再依赖旧的 `.flutter` Git 子模块。
+
+CI 分别对 libre 与 baidu flavor 执行当前插件集合的静态分析、Flutter 与插件测试、debug APK 构建和 Android JVM 测试。标签发布会在读取签名密钥前对同一提交重复这些检查，并要求 `vX.Y.Z` 标签与 `pubspec.yaml` 版本一致。
 
 源码中的 `package:aves/...` 和 Android namespace `deckers.thibault.aves` 是为兼容完整上游模块保留的内部标识，不是应用发布身份。发布身份由 Android applicationId 决定。
 

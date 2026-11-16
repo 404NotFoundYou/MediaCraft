@@ -11,6 +11,28 @@ import 'package:provider/provider.dart';
 
 typedef _BaiduMapSession = ({BMFMapController controller, int generation});
 
+@visibleForTesting
+Future<void> replaceTrackedOverlays<T>({
+  required List<T> active,
+  required List<T> replacements,
+  required Future<void> Function(T overlay) remove,
+  required Future<void> Function(T overlay) add,
+}) async {
+  for (final overlay in List<T>.of(active)) {
+    await remove(overlay);
+    active.remove(overlay);
+  }
+  for (final overlay in replacements) {
+    await add(overlay);
+    active.add(overlay);
+  }
+}
+
+@visibleForTesting
+void pruneMarkerBitmaps<K>(Map<K, Uint8List> bitmaps, Set<K> currentKeys) {
+  bitmaps.removeWhere((key, _) => !currentKeys.contains(key));
+}
+
 class _BaiduMapSessionEnded implements Exception {
   const new();
 }
@@ -149,6 +171,7 @@ class _EntryBaiduMapState<T> extends State<EntryBaiduMap<T>> {
           markers: _geoEntryByMarkerKey.keys.map(widget.markerWidgetBuilder).toList(),
           isReadyToRender: widget.markerImageReadyChecker,
           onRendered: (key, bitmap) {
+            if (!_geoEntryByMarkerKey.containsKey(key)) return;
             _markerBitmaps[key] = bitmap;
             _scheduleOverlaySync();
           },
@@ -250,7 +273,9 @@ class _EntryBaiduMapState<T> extends State<EntryBaiduMap<T>> {
 
   void _updateMarkers() {
     if (!mounted) return;
-    setState(() => _geoEntryByMarkerKey = widget.markerClusterBuilder());
+    final markers = widget.markerClusterBuilder();
+    pruneMarkerBitmaps(_markerBitmaps, markers.keys.toSet());
+    setState(() => _geoEntryByMarkerKey = markers);
     _scheduleOverlaySync();
   }
 
@@ -336,16 +361,12 @@ class _EntryBaiduMapState<T> extends State<EntryBaiduMap<T>> {
 
     await _requireSuccess(session, '清理百度地图标记', controller.cleanAllMarkers);
     if (markers.isNotEmpty) await _requireSuccess(session, '添加百度地图标记', () => controller.addMarkers(markers));
-    for (final overlay in _trackOverlays) {
-      await _requireSuccess(session, '清理百度地图轨迹', () => controller.removeOverlay(overlay.id));
-    }
-    _ensureSessionActive(session);
-    _trackOverlays
-      ..clear()
-      ..addAll(polylines);
-    for (final polyline in polylines) {
-      await _requireSuccess(session, '添加百度地图轨迹', () => controller.addPolyline(polyline));
-    }
+    await replaceTrackedOverlays(
+      active: _trackOverlays,
+      replacements: polylines,
+      remove: (overlay) => _requireSuccess(session, '清理百度地图轨迹', () => controller.removeOverlay(overlay.id)),
+      add: (overlay) => _requireSuccess(session, '添加百度地图轨迹', () => controller.addPolyline(overlay)),
+    );
   }
 
   Future<void> _dispatchMapTap(_BaiduMapSession session, BMFCoordinate coordinate) async {

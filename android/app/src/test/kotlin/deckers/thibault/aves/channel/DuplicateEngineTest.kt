@@ -81,6 +81,80 @@ class DuplicateEngineTest {
     }
 
     @Test
+    fun verificationRejectsChangedKeeper() = runBlocking {
+        val keeper = candidate(1, 3)
+        val delete = candidate(2, 3)
+        val original = byteArrayOf(1, 2, 3)
+        val originalDigest = Sha256Digester().digest(ByteArrayInputStream(original)) {}
+        val engine = DuplicateEngine(source(mapOf(keeper.uri to byteArrayOf(1, 2, 4), delete.uri to original)))
+
+        val issues = engine.verify(listOf(keeper, delete), 3, originalDigest)
+
+        assertEquals("changed", issues.single().code)
+        assertEquals(keeper.entryId, issues.single().candidate.entryId)
+    }
+
+    @Test
+    fun verificationRejectsKeeperAndDeleteChangingToSameOtherContent() = runBlocking {
+        val keeper = candidate(1, 3)
+        val delete = candidate(2, 3)
+        val originalDigest = Sha256Digester().digest(ByteArrayInputStream(byteArrayOf(1, 2, 3))) {}
+        val changedBytes = byteArrayOf(4, 5, 6)
+        val engine = DuplicateEngine(source(mapOf(keeper.uri to changedBytes, delete.uri to changedBytes)))
+
+        val issues = engine.verify(listOf(keeper, delete), 3, originalDigest)
+
+        assertEquals(setOf(keeper.entryId, delete.entryId), issues.map { it.candidate.entryId }.toSet())
+        assertTrue(issues.all { it.code == "changed" })
+    }
+
+    @Test
+    fun verificationCombinesDigestAndByteChecksInOneReadPerPair() = runBlocking {
+        val keeper = candidate(1, 3)
+        val firstDelete = candidate(2, 3)
+        val secondDelete = candidate(3, 3)
+        val bytes = byteArrayOf(1, 2, 3)
+        val openCounts = mutableMapOf<String, Int>()
+        var bytesRead = 0
+        val engine = DuplicateEngine(DuplicateInputSource { candidate ->
+            openCounts[candidate.uri] = openCounts.getOrDefault(candidate.uri, 0) + 1
+            object : FilterInputStream(ByteArrayInputStream(bytes)) {
+                override fun read(): Int = super.read().also { if (it >= 0) bytesRead++ }
+
+                override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
+                    super.read(buffer, offset, length).also { if (it > 0) bytesRead += it }
+            }
+        })
+        val digest = Sha256Digester().digest(ByteArrayInputStream(bytes)) {}
+
+        val issues = engine.verify(listOf(keeper, firstDelete, secondDelete), 3, digest)
+
+        assertTrue(issues.isEmpty())
+        assertEquals(2, openCounts[keeper.uri])
+        assertEquals(1, openCounts[firstDelete.uri])
+        assertEquals(1, openCounts[secondDelete.uri])
+        assertEquals(4, openCounts.values.sum())
+        assertEquals(12, bytesRead)
+    }
+
+    @Test
+    fun collisionVerificationUsesIndeterminateProgressInsteadOfWrongTotal() = runBlocking {
+        val candidates = (1L..4L).map { candidate(it, 3) }
+        val bytesByUri = candidates.associate { it.uri to byteArrayOf(1, 2, 3) }
+        val progress = mutableListOf<Triple<Int, Int, String>>()
+
+        DuplicateEngine(source(bytesByUri)).scan(candidates) { processed, total, stage ->
+            progress += Triple(processed, total, stage)
+        }
+
+        assertTrue(progress.zipWithNext().all { (previous, next) -> next.first >= previous.first })
+        val verifying = progress.filter { it.third == "verifying" }
+        assertEquals(listOf(4, 5, 6), verifying.map { it.first })
+        assertTrue(verifying.all { it.second == 0 })
+        assertEquals(Triple(7, 7, "completed"), progress.last())
+    }
+
+    @Test
     fun shortReadsDoNotCauseEqualContentToBeMissed() = runBlocking {
         val first = candidate(1, 5)
         val second = candidate(2, 5)

@@ -13,9 +13,13 @@ on:
 permissions: read-all
 
 jobs:
-  analyze_flutter:
-    name: Flutter analysis
+  test_flavors:
+    name: ${{ matrix.flavor }} quality checks
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: [ libre, baidu ]
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
@@ -25,19 +29,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Get Flutter packages
+      - name: Set up JDK for Android Gradle plugin
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Run flavor quality checks
         run: |
           chmod +x flutterw scripts/*.sh
-          ./flutterw pub get
-
-      - name: Generate app localizations
-        run: ./flutterw gen-l10n
-
-      - name: Static analysis.
-        run: ./flutterw analyze lib test test_driver
-
-      - name: Unit tests.
-        run: ./flutterw test --concurrency=1
+          scripts/quality_flavor.sh "${{ matrix.flavor }}"
 
   analyze_codeql:
     name: CodeQL analysis (${{ matrix.language }})
@@ -85,9 +86,8 @@ jobs:
         # so that setting up signing environment variables is not required
         run: |
           chmod +x flutterw scripts/*.sh
-          scripts/gen_flavor_play.sh
-          scripts/apply_flavor_play.sh
-          ./flutterw build apk --profile -t lib/main_play.dart --flavor play
+          scripts/apply_flavor_libre.sh
+          ./flutterw build apk --no-pub --profile -t lib/main_libre.dart --flavor libre
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3

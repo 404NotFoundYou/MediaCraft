@@ -1,3 +1,6 @@
+// The source defers inherited teardown until all in-flight media work exits.
+// ignore_for_file: must_call_super
+
 import 'dart:async';
 
 import 'package:aves/model/covers.dart';
@@ -16,16 +19,75 @@ import 'package:aves/theme/durations.dart';
 import 'package:aves/utils/android_file_utils.dart';
 import 'package:aves/utils/debouncer.dart';
 import 'package:aves_model/aves_model.dart';
-import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 
 class MediaStoreSource extends CollectionSource {
+  static const _maxChangeRetries = 3;
   final Debouncer _changeDebouncer = Debouncer(delay: ADurations.mediaContentChangeDebounceDelay);
   final Set<String> _changedUris = {};
+  int _activeLoads = 0, _changeRetryCount = 0;
+  bool _refreshing = false, _disposed = false, _teardownComplete = false;
   Map<String, int?>? _lastGenerationByVolume;
   SourceScope _loadedScope, _targetScope;
   bool _canAnalyze = true;
   Future<void>? _essentialLoader;
+  AnalysisController? _refreshController;
+  final Set<AnalysisController> _loadControllers = {};
+  final Set<StreamIterator<AvesEntry>> _entryLoadIterators = {};
+
+  new() {
+    stateNotifier.addListener(_onStateChanged);
+  }
+
+  void _onStateChanged() {
+    if (isReady && !_refreshing && _changedUris.isNotEmpty) {
+      _changeRetryCount = 0;
+      onStoreChanged(null);
+    }
+  }
+
+  @override
+  void resumeMonitoring() {
+    super.resumeMonitoring();
+    _changeRetryCount = 0;
+    onStoreChanged(null);
+  }
+
+  @override
+  void dispose() {
+    // The source may defer inherited teardown until in-flight database/media work exits.
+    if (_disposed) return;
+    _disposed = true;
+    detachListeners();
+    stateNotifier.removeListener(_onStateChanged);
+    _changeDebouncer.cancel();
+    _changedUris.clear();
+    albumGrouping.unregisterSource(this);
+    tagGrouping.unregisterSource(this);
+    _refreshController?.enableStopSignal();
+    _loadControllers.forEach((controller) => controller.enableStopSignal());
+    unawaited(_cancelEntryLoads());
+    _finishDisposeIfIdle();
+  }
+
+  void _beginLoad() => _activeLoads++;
+
+  void _endLoad() {
+    _activeLoads--;
+    _finishDisposeIfIdle();
+  }
+
+  void _finishDisposeIfIdle() {
+    if (_disposed && !_teardownComplete && !_refreshing && _activeLoads == 0) {
+      _teardownComplete = true;
+      super.dispose();
+    }
+  }
+
+  Future<void> _cancelEntryLoads() async {
+    final iterators = _entryLoadIterators.toList();
+    await Future.wait(iterators.map((iterator) => iterator.cancel()));
+  }
 
   @override
   set canAnalyze(bool enabled) => _canAnalyze = enabled;
@@ -42,26 +104,49 @@ class MediaStoreSource extends CollectionSource {
     AnalysisController? analysisController,
     bool loadTopEntriesFirst = false,
   }) async {
-    _targetScope = scope;
-    await reportService.log('$runtimeType init target scope=$scope');
-    _essentialLoader ??= _loadEssentials();
-    await _essentialLoader;
-    addDirectories(albums: settings.pinnedFilters.whereType<StoredAlbumFilter>().map((v) => v.album).toSet());
-    await updateGeneration();
-    unawaited(
-      _loadEntries(
-        analysisController: analysisController,
-        loadTopEntriesFirst: loadTopEntriesFirst,
-      ),
-    );
+    if (_disposed) return;
+    _beginLoad();
+    try {
+      _targetScope = scope;
+      await reportService.log('$runtimeType init target scope=$scope');
+      if (_disposed) return;
+      _essentialLoader ??= _loadEssentials();
+      await _essentialLoader;
+      if (_disposed) return;
+      addDirectories(albums: settings.pinnedFilters.whereType<StoredAlbumFilter>().map((v) => v.album).toSet());
+      await updateGeneration();
+      if (_disposed) return;
+      final loadController = analysisController ?? AnalysisController();
+      _loadControllers.add(loadController);
+      _beginLoad();
+      unawaited(
+        _loadEntries(
+              analysisController: loadController,
+              loadTopEntriesFirst: loadTopEntriesFirst,
+            )
+            .catchError((Object error, StackTrace stack) async {
+              await reportService.recordError(error, stack);
+            })
+            .whenComplete(() {
+              _loadControllers.remove(loadController);
+              if (analysisController == null) loadController.dispose();
+              _endLoad();
+            }),
+      );
+    } finally {
+      _endLoad();
+    }
   }
 
   Future<void> _loadEssentials() async {
     final stopwatch = Stopwatch()..start();
     state = SourceState.loading;
     await localMediaDb.init();
+    if (_disposed) return;
     await vaults.init();
+    if (_disposed) return;
     await favourites.init();
+    if (_disposed) return;
     albumGrouping.init();
     albumGrouping.setGroups(settings.albumGroups);
     albumGrouping.registerSource(this);
@@ -69,17 +154,22 @@ class MediaStoreSource extends CollectionSource {
     tagGrouping.setGroups(settings.tagGroups);
     tagGrouping.registerSource(this);
     await covers.init();
+    if (_disposed) return;
     await dynamicAlbums.init();
+    if (_disposed) return;
 
     final deviceOffset = DateTime.now().timeZoneOffset.inMilliseconds;
     final catalogOffset = settings.catalogTimeZoneOffsetMillis;
     if (deviceOffset != catalogOffset) {
       unawaited(reportService.log('Time zone offset change: $catalogOffset -> $deviceOffset. Clear catalog metadata to get correct date/times.'));
       await localMediaDb.clearDatesWithoutTimeZone();
+      if (_disposed) return;
       await localMediaDb.clearCatalogMetadataWithoutTimeZone();
+      if (_disposed) return;
       settings.catalogTimeZoneOffsetMillis = deviceOffset;
     }
     await loadDates();
+    if (_disposed) return;
     debugPrint('$runtimeType load essentials complete in ${stopwatch.elapsed.inMilliseconds}ms');
   }
 
@@ -87,6 +177,7 @@ class MediaStoreSource extends CollectionSource {
     AnalysisController? analysisController,
     required bool loadTopEntriesFirst,
   }) async {
+    if (_disposed) return;
     unawaited(reportService.log('$runtimeType load (known) start'));
     final stopwatch = Stopwatch()..start();
     state = SourceState.loading;
@@ -101,12 +192,20 @@ class MediaStoreSource extends CollectionSource {
       if (topIds != null) {
         debugPrint('$runtimeType load ${stopwatch.elapsed} load ${topIds.length} top entries');
         topEntries.addAll(await localMediaDb.loadEntriesById(topIds));
+        if (_disposed) {
+          topEntries.where((entry) => !entry.isDisposed).forEach((entry) => entry.dispose());
+          return;
+        }
         addEntries(topEntries);
       }
     }
 
     debugPrint('$runtimeType load ${stopwatch.elapsed} fetch known entries');
     final knownEntries = await localMediaDb.loadEntries(origin: EntryOrigins.mediaStoreContent, directory: scopeDirectory);
+    if (_disposed) {
+      knownEntries.where((entry) => !entry.isDisposed).forEach((entry) => entry.dispose());
+      return;
+    }
     final knownLiveEntries = knownEntries.where((entry) => !entry.trashed).toSet();
     final isLargeCollection = knownEntries.length > 100000;
     if (isLargeCollection && settings.isErrorReportingAllowed) {
@@ -120,9 +219,14 @@ class MediaStoreSource extends CollectionSource {
     final knownDateByContentId = Map.fromEntries(knownLiveEntries.map((entry) => MapEntry(entry.contentId, entry.dateModifiedMillis)));
     final knownContentIds = knownDateByContentId.keys.toList();
     final removedContentIds = (await mediaStoreService.checkObsoleteContentIds(knownContentIds)).toSet();
+    if (_disposed) {
+      knownEntries.where((entry) => !entry.isDisposed).forEach((entry) => entry.dispose());
+      return;
+    }
     if (topEntries.isNotEmpty) {
       final removedTopEntries = topEntries.where((entry) => removedContentIds.contains(entry.contentId));
       await removeEntries(removedTopEntries.map((entry) => entry.uri).toSet(), includeTrash: false);
+      if (_disposed) return;
     }
     final removedEntries = knownEntries.where((entry) => removedContentIds.contains(entry.contentId)).toSet();
     knownEntries.removeAll(removedEntries);
@@ -137,22 +241,28 @@ class MediaStoreSource extends CollectionSource {
     notifyAlbumsChanged();
 
     await _loadVaultEntries(scopeDirectory);
+    if (_disposed) return;
 
     debugPrint('$runtimeType load ${stopwatch.elapsed} load metadata');
     if (scopeDirectory != null) {
       final ids = knownLiveEntries.map((entry) => entry.id).toSet();
       await loadCatalogMetadata(ids: ids);
+      if (_disposed) return;
       await loadAddresses(ids: ids);
+      if (_disposed) return;
     } else {
       await loadCatalogMetadata();
+      if (_disposed) return;
       await loadAddresses();
+      if (_disposed) return;
 
       // trash
       await loadTrashDetails();
+      if (_disposed) return;
       unawaited(
         deleteExpiredTrash().then(
           (deletedUris) {
-            if (deletedUris.isNotEmpty) {
+            if (!_disposed && deletedUris.isNotEmpty) {
               debugPrint('evicted ${deletedUris.length} expired items from the trash');
               removeEntries(deletedUris, includeTrash: true);
             }
@@ -167,6 +277,7 @@ class MediaStoreSource extends CollectionSource {
     if (removedEntries.isNotEmpty) {
       debugPrint('$runtimeType load ${stopwatch.elapsed} remove obsolete entries');
       await localMediaDb.removeIds(removedEntries.map((entry) => entry.id).toSet());
+      if (_disposed) return;
     }
 
     _loadedScope = _targetScope;
@@ -180,6 +291,7 @@ class MediaStoreSource extends CollectionSource {
         knownLiveEntries: knownLiveEntries,
         knownDateByContentId: knownDateByContentId,
       );
+      if (_disposed) return;
     } else {
       state = SourceState.ready;
     }
@@ -201,6 +313,10 @@ class MediaStoreSource extends CollectionSource {
     debugPrint('$runtimeType load ${stopwatch.elapsed} recover untracked entries');
     if (directory == null) {
       final recoveredEntries = await recoverUntrackedTrashItems();
+      if (_disposed) {
+        recoveredEntries.where((entry) => !entry.isDisposed).forEach((entry) => entry.dispose());
+        return;
+      }
       // set media store as origin of recovered items, because they would be managed by it if restored
       recoveredEntries.forEach((entry) => entry.origin = EntryOrigins.mediaStoreContent);
       newEntries.addAll(recoveredEntries);
@@ -210,6 +326,10 @@ class MediaStoreSource extends CollectionSource {
     debugPrint('$runtimeType load ${stopwatch.elapsed} check obsolete paths');
     final knownPathByContentId = Map.fromEntries(knownLiveEntries.map((entry) => MapEntry(entry.contentId, entry.path)));
     final movedContentIds = (await mediaStoreService.checkObsoletePaths(knownPathByContentId)).toSet();
+    if (_disposed) {
+      newEntries.where((entry) => !entry.isDisposed).forEach((entry) => entry.dispose());
+      return;
+    }
     movedContentIds.forEach((contentId) {
       // make obsolete by resetting its modified date
       knownDateByContentId[contentId] = 0;
@@ -219,73 +339,67 @@ class MediaStoreSource extends CollectionSource {
     debugPrint('$runtimeType load ${stopwatch.elapsed} fetch new entries');
     final knownContentIds = knownDateByContentId.keys.toSet();
     final knownEntryByContentId = Map.fromEntries(knownLiveEntries.map((entry) => MapEntry(entry.contentId, entry)));
-    mediaStoreService
-        .getEntries(knownDateByContentId, directory: directory)
-        .listen(
-          (entry) {
-            // when discovering modified entry with known content ID,
-            // reuse known entry ID to overwrite it while preserving favourites, etc.
-            final contentId = entry.contentId;
-            final existingEntry = knownContentIds.contains(contentId) ? knownEntryByContentId[contentId] : null;
-            entry.id = existingEntry?.id ?? localMediaDb.nextId;
-
-            newEntries.add(entry);
-            setProgress(done: newEntries.length, total: 0);
-          },
-          onDone: () async {
-            if (newEntries.isNotEmpty) {
-              // TODO TLAD [perf] perform DB ops with `newEntries` by chunks
-              debugPrint('$runtimeType load ${stopwatch.elapsed} save ${newEntries.length} new entries');
-              await localMediaDb.insertEntries(newEntries);
-
-              // TODO TLAD find duplication cause
-              final duplicates = await localMediaDb.searchLiveDuplicates(EntryOrigins.mediaStoreContent, newEntries);
-              if (duplicates.isNotEmpty) {
-                debugPrint('Loading entries yielded duplicates=${duplicates.join(', ')}');
-                // post-error cleanup
-                await localMediaDb.removeIds(duplicates.map((v) => v.id).toSet());
-                for (final duplicate in duplicates) {
-                  final duplicateId = duplicate.id;
-                  newEntries.removeWhere((v) => duplicateId == v.id);
-                }
-              }
-
-              // update trash details, if any
-              await Future.forEach(newEntries.where((v) => v.trashed), (entry) async {
-                final trashDetails = entry.trashDetails;
-                if (trashDetails != null) {
-                  await localMediaDb.updateTrash(entry.id, trashDetails);
-                } else {
-                  unawaited(reportService.recordError(Exception('Adding trashed entry but trash details are missing for entry=$entry')));
-                }
-              });
-
-              addEntries(newEntries);
-
-              // new entries include existing entries with obsolete paths
-              // so directories may be added, but also removed or simply have their content summary changed
-              invalidateAlbumFilterSummary();
-              updateDirectories();
-            }
-
-            debugPrint('$runtimeType load ${stopwatch.elapsed} analyze');
-            Set<AvesEntry>? analysisEntries;
-            final analysisIds = analysisController?.entryIds;
-            if (analysisIds != null) {
-              // not only visible entries, as hidden and vault items may be analyzed
-              analysisEntries = allEntries.where((entry) => analysisIds.contains(entry.id)).toSet();
-            }
-            await analyze(analysisController, entries: analysisEntries);
-
-            // the home page may not reflect the current derived filters
-            // as the initial addition of entries is silent,
-            // so we manually notify change for potential home screen filters
-            notifyAlbumsChanged();
-
-            unawaited(reportService.log('$runtimeType load (new) done in ${stopwatch.elapsed.inSeconds}s for ${newEntries.length} new entries'));
-          },
-          onError: (error) => debugPrint('$runtimeType stream error=$error'),
-        );
+    final iterator = StreamIterator<AvesEntry>(mediaStoreService.getEntries(knownDateByContentId, directory: directory));
+    _entryLoadIterators.add(iterator);
+    try {
+      while (await iterator.moveNext()) {
+        final entry = iterator.current;
+        if (_disposed) {
+          entry.dispose();
+          continue;
+        }
+        final contentId = entry.contentId;
+        final existingEntry = knownContentIds.contains(contentId) ? knownEntryByContentId[contentId] : null;
+        entry.id = existingEntry?.id ?? localMediaDb.nextId;
+        newEntries.add(entry);
+        setProgress(done: newEntries.length, total: 0);
+      }
+      if (_disposed) return;
+      if (newEntries.isNotEmpty) {
+        debugPrint('$runtimeType load ${stopwatch.elapsed} save ${newEntries.length} new entries');
+        await localMediaDb.insertEntries(newEntries);
+        if (_disposed) return;
+        final duplicates = await localMediaDb.searchLiveDuplicates(EntryOrigins.mediaStoreContent, newEntries);
+        if (_disposed) return;
+        if (duplicates.isNotEmpty) {
+          debugPrint('Loading entries yielded duplicates=${duplicates.join(', ')}');
+          await localMediaDb.removeIds(duplicates.map((v) => v.id).toSet());
+          if (_disposed) return;
+          for (final duplicate in duplicates) {
+            final duplicateId = duplicate.id;
+            newEntries.removeWhere((v) => duplicateId == v.id);
+          }
+        }
+        await Future.forEach(newEntries.where((v) => v.trashed), (entry) async {
+          final trashDetails = entry.trashDetails;
+          if (trashDetails != null) {
+            await localMediaDb.updateTrash(entry.id, trashDetails);
+          } else {
+            unawaited(reportService.recordError(Exception('Adding trashed entry but trash details are missing for entry=$entry')));
+          }
+        });
+        if (_disposed) return;
+        addEntries(newEntries);
+        invalidateAlbumFilterSummary();
+        updateDirectories();
+      }
+      debugPrint('$runtimeType load ${stopwatch.elapsed} analyze');
+      Set<AvesEntry>? analysisEntries;
+      final analysisIds = analysisController?.entryIds;
+      if (analysisIds != null) {
+        analysisEntries = allEntries.where((entry) => analysisIds.contains(entry.id)).toSet();
+      }
+      await analyze(analysisController, entries: analysisEntries);
+      if (_disposed) return;
+      notifyAlbumsChanged();
+      unawaited(reportService.log('$runtimeType load (new) done in ${stopwatch.elapsed.inSeconds}s for ${newEntries.length} new entries'));
+    } finally {
+      _entryLoadIterators.remove(iterator);
+      for (final entry in newEntries) {
+        if (!identical(getEntryById(entry.id), entry) && !entry.isDisposed) entry.dispose();
+      }
+      await iterator.cancel();
+    }
   }
 
   // returns URIs to retry later. They could be URIs that are:
@@ -295,10 +409,28 @@ class MediaStoreSource extends CollectionSource {
   // sometimes yields an entry with its temporary path: `/data/sec/camera/!@#$%^..._temp.jpg`
   @override
   Future<Set<String>> refreshUris(Set<String> changedUris, {AnalysisController? analysisController}) async {
-    if (!canRefresh || _essentialLoader == null || !isReady) return changedUris;
-
+    if (_disposed) return {};
+    if (!canRefresh || _essentialLoader == null || !isReady || _refreshing) return changedUris;
+    _refreshing = true;
+    final controller = analysisController ?? AnalysisController();
+    _refreshController = controller;
     state = SourceState.loading;
+    try {
+      return await _refreshUris(changedUris, analysisController: controller);
+    } finally {
+      _refreshController = null;
+      if (analysisController == null) controller.dispose();
+      if (!_disposed) state = SourceState.ready;
+      _refreshing = false;
+      if (_disposed) {
+        _finishDisposeIfIdle();
+      } else {
+        _onStateChanged();
+      }
+    }
+  }
 
+  Future<Set<String>> _refreshUris(Set<String> changedUris, {AnalysisController? analysisController}) async {
     final changedUriDetails = changedUris.length < 5 ? ' (${changedUris.join(', ')})' : '';
     unawaited(reportService.log('$runtimeType refresh start for ${changedUris.length} uris$changedUriDetails'));
     final changedUriByContentId = Map.fromEntries(
@@ -315,104 +447,141 @@ class MediaStoreSource extends CollectionSource {
 
     // clean up obsolete entries
     final obsoleteContentIds = (await mediaStoreService.checkObsoleteContentIds(changedUriByContentId.keys.toList())).toSet();
+    if (_disposed) return {};
     final obsoleteUris = obsoleteContentIds.map((contentId) => changedUriByContentId[contentId]).nonNulls.toSet();
     await removeEntries(obsoleteUris, includeTrash: false);
+    if (_disposed) return {};
     obsoleteContentIds.forEach(changedUriByContentId.remove);
 
     // fetch new entries
     final tempUris = <String>{};
     final newEntries = <AvesEntry>{}, entriesToRefresh = <AvesEntry>{};
-    final existingDirectories = <String>{};
-    for (final kv in changedUriByContentId.entries) {
-      final contentId = kv.key;
-      final uri = kv.value;
-      final sourceEntry = await mediaFetchService.getEntry(uri, null);
-      if (sourceEntry != null) {
-        var isSourceEntryUsed = false;
-        final existingEntry = allEntries.firstWhereOrNull((entry) => entry.contentId == contentId);
-        // compare paths because some apps move files without updating their `last modified date`
-        if (existingEntry == null || (sourceEntry.dateModifiedMillis ?? 0) > (existingEntry.dateModifiedMillis ?? 0) || sourceEntry.path != existingEntry.path) {
-          final newPath = sourceEntry.path;
-          final volume = newPath != null ? androidFileUtils.getStorageVolume(newPath) : null;
-          if (volume != null) {
-            if (existingEntry != null) {
-              entriesToRefresh.add(existingEntry);
-            } else if (_canAnalyze) {
-              // it can discover new entries only if it can analyze them
-              sourceEntry.id = localMediaDb.nextId;
-              newEntries.add(sourceEntry);
-              isSourceEntryUsed = true;
+    try {
+      final existingDirectories = <String>{};
+      final existingEntryByContentId = <int?, AvesEntry>{};
+      for (final entry in allEntries) {
+        existingEntryByContentId.putIfAbsent(entry.contentId, () => entry);
+      }
+      for (final kv in changedUriByContentId.entries) {
+        final contentId = kv.key;
+        final uri = kv.value;
+        final sourceEntry = await mediaFetchService.getEntry(uri, null);
+        if (_disposed) {
+          sourceEntry?.dispose();
+          return {};
+        }
+        if (sourceEntry != null) {
+          var isSourceEntryUsed = false;
+          final existingEntry = existingEntryByContentId[contentId];
+          // compare paths because some apps move files without updating their `last modified date`
+          if (existingEntry == null || (sourceEntry.dateModifiedMillis ?? 0) > (existingEntry.dateModifiedMillis ?? 0) || sourceEntry.path != existingEntry.path) {
+            final newPath = sourceEntry.path;
+            final volume = newPath != null ? androidFileUtils.getStorageVolume(newPath) : null;
+            if (volume != null) {
+              if (existingEntry != null) {
+                entriesToRefresh.add(existingEntry);
+              } else if (_canAnalyze) {
+                // it can discover new entries only if it can analyze them
+                sourceEntry.id = localMediaDb.nextId;
+                newEntries.add(sourceEntry);
+                isSourceEntryUsed = true;
+              }
+              final existingDirectory = existingEntry?.directory;
+              if (existingDirectory != null) {
+                existingDirectories.add(existingDirectory);
+              }
+            } else {
+              debugPrint('$runtimeType refreshUris entry=$sourceEntry is not located on a known storage volume. Will retry soon...');
+              tempUris.add(uri);
             }
-            final existingDirectory = existingEntry?.directory;
-            if (existingDirectory != null) {
-              existingDirectories.add(existingDirectory);
-            }
-          } else {
-            debugPrint('$runtimeType refreshUris entry=$sourceEntry is not located on a known storage volume. Will retry soon...');
-            tempUris.add(uri);
+          }
+          if (!isSourceEntryUsed) {
+            sourceEntry.dispose();
           }
         }
-        if (!isSourceEntryUsed) {
-          sourceEntry.dispose();
-        }
-      }
-    }
-
-    await _refreshVaultEntries(
-      changedUris: changedUris.where(vaults.isVaultEntryUri).toSet(),
-      newEntries: newEntries,
-      entriesToRefresh: entriesToRefresh,
-      existingDirectories: existingDirectories,
-    );
-
-    invalidateAlbumFilterSummary(directories: existingDirectories);
-
-    if (newEntries.isNotEmpty) {
-      await localMediaDb.insertEntries(newEntries);
-
-      // TODO TLAD find duplication cause
-      final duplicates = await localMediaDb.searchLiveDuplicates(EntryOrigins.mediaStoreContent, newEntries);
-      if (duplicates.isNotEmpty) {
-        debugPrint('$runtimeType refreshUris duplicates=${duplicates.join(', ')}');
-        // post-error cleanup
-        await localMediaDb.removeIds(duplicates.map((v) => v.id).toSet());
-        for (final duplicate in duplicates) {
-          final duplicateId = duplicate.id;
-          newEntries.removeWhere((v) => duplicateId == v.id);
-          tempUris.add(duplicate.uri);
-        }
       }
 
-      addEntries(newEntries);
-      await analyze(analysisController, entries: newEntries);
+      await _refreshVaultEntries(
+        changedUris: changedUris.where(vaults.isVaultEntryUri).toSet(),
+        newEntries: newEntries,
+        entriesToRefresh: entriesToRefresh,
+        existingDirectories: existingDirectories,
+      );
+      if (_disposed) return {};
+
+      invalidateAlbumFilterSummary(directories: existingDirectories);
+
+      if (newEntries.isNotEmpty) {
+        await localMediaDb.insertEntries(newEntries);
+        if (_disposed) return {};
+
+        // TODO TLAD find duplication cause
+        final duplicates = await localMediaDb.searchLiveDuplicates(EntryOrigins.mediaStoreContent, newEntries);
+        if (_disposed) return {};
+        if (duplicates.isNotEmpty) {
+          debugPrint('$runtimeType refreshUris duplicates=${duplicates.join(', ')}');
+          // post-error cleanup
+          await localMediaDb.removeIds(duplicates.map((v) => v.id).toSet());
+          if (_disposed) return {};
+          for (final duplicate in duplicates) {
+            final duplicateId = duplicate.id;
+            newEntries.removeWhere((v) => duplicateId == v.id);
+            tempUris.add(duplicate.uri);
+          }
+        }
+
+        addEntries(newEntries);
+        await analyze(analysisController, entries: newEntries);
+        if (_disposed) return {};
+      }
+
+      if (entriesToRefresh.isNotEmpty) {
+        await refreshEntries(entriesToRefresh, EntryDataType.values.toSet());
+        if (_disposed) return {};
+      }
+
+      unawaited(reportService.log('$runtimeType refresh end for ${changedUris.length} uris$changedUriDetails'));
+
+      if (tempUris.isNotEmpty) {
+        final tempUriDetails = tempUris.length < 5 ? ' (${tempUris.join(', ')})' : '';
+        unawaited(reportService.log('$runtimeType refresh will retry ${tempUris.length} uris$tempUriDetails'));
+      }
+
+      return tempUris;
+    } finally {
+      for (final entry in newEntries) {
+        if (!identical(getEntryById(entry.id), entry) && !entry.isDisposed) entry.dispose();
+      }
     }
-
-    if (entriesToRefresh.isNotEmpty) {
-      await refreshEntries(entriesToRefresh, EntryDataType.values.toSet());
-    }
-
-    unawaited(reportService.log('$runtimeType refresh end for ${changedUris.length} uris$changedUriDetails'));
-
-    state = SourceState.ready;
-
-    if (tempUris.isNotEmpty) {
-      final tempUriDetails = tempUris.length < 5 ? ' (${tempUris.join(', ')})' : '';
-      unawaited(reportService.log('$runtimeType refresh will retry ${tempUris.length} uris$tempUriDetails'));
-    }
-
-    return tempUris;
   }
 
   void onStoreChanged(String? uri) {
-    if (uri != null) _changedUris.add(uri);
+    if (_disposed) return;
+    if (uri != null) {
+      _changedUris.add(uri);
+      _changeRetryCount = 0;
+    }
     if (_changedUris.isNotEmpty) {
       _changeDebouncer(() async {
         final todo = _changedUris.toSet();
         _changedUris.clear();
-        final tempUris = await refreshUris(todo);
-        if (tempUris.isNotEmpty) {
+        try {
+          final tempUris = await refreshUris(todo);
+          if (_disposed) return;
           _changedUris.addAll(tempUris);
+        } catch (error, stack) {
+          if (_disposed) return;
+          _changedUris.addAll(todo);
+          await reportService.recordError(error, stack);
+        }
+        if (_disposed) return;
+        if (_changedUris.isEmpty) {
+          _changeRetryCount = 0;
+        } else if (_changeRetryCount < _maxChangeRetries) {
+          _changeRetryCount++;
           onStoreChanged(null);
+        } else {
+          await reportService.log('$runtimeType deferred ${_changedUris.length} uris after $_maxChangeRetries retries; waiting for the next media change');
         }
       });
     }
@@ -444,8 +613,13 @@ class MediaStoreSource extends CollectionSource {
     required Set<AvesEntry> entriesToRefresh,
     required Set<String> existingDirectories,
   }) async {
+    if (changedUris.isEmpty) return;
+    final existingEntryByUri = <String, AvesEntry>{};
+    for (final entry in allEntries) {
+      existingEntryByUri.putIfAbsent(entry.uri, () => entry);
+    }
     for (final uri in changedUris) {
-      final existingEntry = allEntries.firstWhereOrNull((entry) => entry.uri == uri);
+      final existingEntry = existingEntryByUri[uri];
       if (existingEntry != null) {
         entriesToRefresh.add(existingEntry);
         final existingDirectory = existingEntry.directory;
@@ -454,13 +628,21 @@ class MediaStoreSource extends CollectionSource {
         }
       } else {
         final sourceEntry = await mediaFetchService.getEntry(uri, null, allowUnsized: true);
+        if (_disposed) {
+          sourceEntry?.dispose();
+          return;
+        }
         if (sourceEntry != null) {
-          newEntries.add(
-            sourceEntry.copyWith(
-              id: localMediaDb.nextId,
-              origin: EntryOrigins.vault,
-            ),
-          );
+          try {
+            newEntries.add(
+              sourceEntry.copyWith(
+                id: localMediaDb.nextId,
+                origin: EntryOrigins.vault,
+              ),
+            );
+          } finally {
+            sourceEntry.dispose();
+          }
         }
       }
     }

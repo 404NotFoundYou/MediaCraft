@@ -91,6 +91,7 @@ class FilterGrouping<T extends GroupBaseFilter> with ChangeNotifier {
     _sourceSubscriptions.remove(source)
       ?..forEach((sub) => sub.cancel())
       ..clear();
+    if (identical(_source, source)) _source = null;
   }
 
   void addToGroup(Set<Uri> childrenUris, Uri? destinationGroup) {

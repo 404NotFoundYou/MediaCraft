@@ -16,13 +16,32 @@ import 'package:material_ui/material_ui.dart';
 
 enum DuplicateScanScope { all, photos, videos }
 
+typedef DuplicateMoveAction = Future<bool> Function(
+  BuildContext context, {
+  required Set<AvesEntry> entries,
+  required Future<bool> Function() beforeMove,
+});
+
 class DuplicatePage extends StatefulWidget {
   static const routeName = '/duplicates';
 
-  const new({super.key, required this.source, required this.service});
+  const new({super.key, required this.source, required this.service, this.moveAction = _moveToBin});
 
   final CollectionSource source;
   final DuplicateService service;
+  final DuplicateMoveAction moveAction;
+
+  static Future<bool> _moveToBin(
+    BuildContext context, {
+    required Set<AvesEntry> entries,
+    required Future<bool> Function() beforeMove,
+  }) => EntrySetActionDelegate().doMove(
+    context,
+    moveType: MoveType.toBin,
+    entries: entries,
+    preserveFileBytes: true,
+    beforeMove: beforeMove,
+  );
 
   @override
   State<DuplicatePage> createState() => _DuplicatePageState();
@@ -173,11 +192,9 @@ class _DuplicatePageState extends State<DuplicatePage> {
     setState(() => _submitting = true);
     var operationFinished = false;
     try {
-      operationFinished = await EntrySetActionDelegate().doMove(
+      operationFinished = await widget.moveAction(
         context,
-        moveType: MoveType.toBin,
         entries: selectedEntriesSnapshot,
-        preserveFileBytes: true,
         beforeMove: () => _verifyBeforeMove(
           result: result,
           selection: selectionSnapshot,
@@ -437,7 +454,7 @@ class _ScanControls extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        p == null ? '准备扫描…' : '$stageLabel  ${p.processed}/${p.total}',
+                        p == null ? '准备扫描…' : (p.total == 0 ? '$stageLabel  ${p.processed}' : '$stageLabel  ${p.processed}/${p.total}'),
                       ),
                     ),
                     TextButton(onPressed: onCancel, child: const Text('取消')),

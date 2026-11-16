@@ -100,7 +100,6 @@ internal class DuplicateEngine(
         val groups = mutableListOf<DuplicateGroup>()
         val digestBuckets = digests.entries.groupBy { it.key.sizeBytes to it.value }.values.filter { it.size > 1 }
         var compared = 0
-        val comparisonTotal = digestBuckets.sumOf { bucket -> bucket.size * (bucket.size - 1) / 2 }
         for (bucket in digestBuckets) {
             val pending = bucket.map { it.key }.toMutableList()
             while (pending.size > 1) {
@@ -110,7 +109,7 @@ internal class DuplicateEngine(
                 val iterator = pending.iterator()
                 while (iterator.hasNext()) {
                     val candidate = iterator.next()
-                    onProgress(compared++, comparisonTotal, "verifying")
+                    onProgress(sizeCandidates.size + compared++, 0, "verifying")
                     val matches = try {
                         contentEquals(representative, candidate)
                     } catch (e: kotlinx.coroutines.CancellationException) {
@@ -129,7 +128,8 @@ internal class DuplicateEngine(
                 }
             }
         }
-        onProgress(sizeCandidates.size, sizeCandidates.size, "completed")
+        val totalWork = sizeCandidates.size + compared
+        onProgress(totalWork, totalWork, "completed")
         return DuplicateScanOutcome(groups, issues)
     }
 
@@ -145,30 +145,21 @@ internal class DuplicateEngine(
         if (candidates.map { it.entryId }.toSet().size != candidates.size || candidates.map { it.uri }.toSet().size != candidates.size) {
             return listOf(DuplicateIssue(candidates.first(), "invalid-selection", "保留项和待删除项不能重复"))
         }
-        val issues = mutableListOf<DuplicateIssue>()
-        for (candidate in candidates) {
-            val coroutineContext = currentCoroutineContext()
-            coroutineContext.ensureActive()
-            if (candidate.sizeBytes != expectedSizeBytes) {
-                issues += DuplicateIssue(candidate, "changed", "媒体大小已变化")
-                continue
-            }
-            try {
-                val digest = source.open(candidate).use { input ->
-                    digester.digest(input) { coroutineContext.ensureActive() }
-                }
-                if (digest != expectedDigest) issues += DuplicateIssue(candidate, "changed", "媒体内容已变化")
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                issues += DuplicateIssue(candidate, "read-failed", e.message ?: e.javaClass.simpleName)
-            }
-        }
+        val issues = candidates
+            .filter { it.sizeBytes != expectedSizeBytes }
+            .mapTo(mutableListOf()) { DuplicateIssue(it, "changed", "媒体大小已变化") }
         if (issues.isNotEmpty()) return issues
         val keeper = candidates.first()
         for (candidate in candidates.drop(1)) {
             try {
-                if (!contentEquals(keeper, candidate)) {
+                val comparison = compareAndDigest(keeper, candidate)
+                val keeperChanged = comparison.firstDigest != expectedDigest
+                val candidateChanged = comparison.secondDigest != expectedDigest
+                if (keeperChanged && issues.none { it.candidate == keeper && it.code == "changed" }) {
+                    issues += DuplicateIssue(keeper, "changed", "媒体内容已变化")
+                }
+                if (candidateChanged) issues += DuplicateIssue(candidate, "changed", "媒体内容已变化")
+                if (!keeperChanged && !candidateChanged && !comparison.equal) {
                     issues += DuplicateIssue(candidate, "content-mismatch", "媒体不再与保留项完全相同")
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -178,6 +169,42 @@ internal class DuplicateEngine(
             }
         }
         return issues
+    }
+
+    private data class ContentComparison(
+        val equal: Boolean,
+        val firstDigest: String,
+        val secondDigest: String,
+    )
+
+    private suspend fun compareAndDigest(first: DuplicateCandidate, second: DuplicateCandidate): ContentComparison {
+        source.open(first).use { left ->
+            source.open(second).use { right ->
+                val firstDigest = MessageDigest.getInstance("SHA-256")
+                val secondDigest = MessageDigest.getInstance("SHA-256")
+                val leftBuffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                val rightBuffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var equal = true
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    val leftCount = readChunk(left, leftBuffer)
+                    val rightCount = readChunk(right, rightBuffer)
+                    if (leftCount > 0) firstDigest.update(leftBuffer, 0, leftCount)
+                    if (rightCount > 0) secondDigest.update(rightBuffer, 0, rightCount)
+                    if (leftCount != rightCount) equal = false
+                    val sharedCount = minOf(leftCount.coerceAtLeast(0), rightCount.coerceAtLeast(0))
+                    for (i in 0 until sharedCount) {
+                        if (leftBuffer[i] != rightBuffer[i]) equal = false
+                    }
+                    if (leftCount < 0 && rightCount < 0) break
+                }
+                return ContentComparison(
+                    equal = equal,
+                    firstDigest = firstDigest.digest().toHex(),
+                    secondDigest = secondDigest.digest().toHex(),
+                )
+            }
+        }
     }
 
     private suspend fun contentEquals(first: DuplicateCandidate, second: DuplicateCandidate): Boolean {
@@ -210,4 +237,6 @@ internal class DuplicateEngine(
         }
         return total
     }
+
+    private fun ByteArray.toHex() = joinToString("") { "%02x".format(it) }
 }

@@ -18,6 +18,7 @@ class const MarkerGeneratorWidget<T extends Key>({
 
 class _MarkerGeneratorWidgetState<T extends Key> extends State<MarkerGeneratorWidget<T>> {
   final Set<_MarkerGeneratorItem<T>> _items = {};
+  bool _frameCheckPending = false;
 
   @override
   void initState() {
@@ -26,9 +27,22 @@ class _MarkerGeneratorWidgetState<T extends Key> extends State<MarkerGeneratorWi
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncItems();
+  }
+
+  @override
   void didUpdateWidget(covariant MarkerGeneratorWidget<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _syncItems();
+    _checkNextFrame();
+  }
+
+  void _syncItems() {
     final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final markerKeys = widget.markers.map((marker) => marker.key as T).toSet();
+    _items.removeWhere((item) => !markerKeys.contains(item.markerKey));
     widget.markers.forEach((markerWidget) {
       final item = _getOrCreate(
         markerKey: markerWidget.key as T,
@@ -36,23 +50,29 @@ class _MarkerGeneratorWidgetState<T extends Key> extends State<MarkerGeneratorWi
       );
       item.globalKey = GlobalKey();
     });
-    _checkNextFrame();
   }
 
   void _checkNextFrame() {
+    if (_frameCheckPending) return;
+    _frameCheckPending = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      final waitingItems = _items.where((v) => v.isWaiting).toSet();
-      final readyItems = waitingItems.where((v) => widget.isReadyToRender(v.markerKey)).toSet();
-      readyItems.forEach((v) async {
-        final bitmap = await v.render();
-        if (bitmap != null) {
-          widget.onRendered(v.markerKey, bitmap);
+      try {
+        if (!mounted) return;
+        final readyItems = _items.where((item) => item.isWaiting && widget.isReadyToRender(item.markerKey)).toSet();
+        await Future.wait(
+          readyItems.map((item) async {
+            final bitmap = await item.render();
+            if (bitmap != null && mounted && _items.contains(item)) {
+              widget.onRendered(item.markerKey, bitmap);
+            }
+          }),
+        );
+      } finally {
+        _frameCheckPending = false;
+        if (mounted && _items.any((item) => item.isWaiting)) {
+          setState(() {});
+          _checkNextFrame();
         }
-      });
-      if (readyItems.length < waitingItems.length) {
-        _checkNextFrame();
-        setState(() {});
       }
     });
   }
@@ -105,20 +125,25 @@ class _MarkerGeneratorItem<T extends Key>({
   Future<Uint8List?> render() async {
     Uint8List? bytes;
     final _globalKey = globalKey;
-    if (_globalKey != null) {
-      state = MarkerGeneratorItemState.rendering;
-      final boundary = _globalKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
-      if (boundary.hasSize && boundary.size != Size.zero) {
-        try {
+    state = MarkerGeneratorItemState.rendering;
+    try {
+      final renderObject = _globalKey?.currentContext?.findRenderObject();
+      if (renderObject is RenderRepaintBoundary) {
+        final boundary = renderObject;
+        if (boundary.hasSize && boundary.size != Size.zero) {
           final image = await boundary.toImage(pixelRatio: devicePixelRatio);
-          final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-          image.dispose();
-          bytes = byteData?.buffer.asUint8List();
-        } catch (error) {
-          // happens when widget is offscreen
-          debugPrint('failed to render image for key=$_globalKey with error=$error');
+          try {
+            final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+            bytes = byteData?.buffer.asUint8List();
+          } finally {
+            image.dispose();
+          }
         }
       }
+    } catch (error) {
+      // The render object may disappear or become temporarily unavailable between frames.
+      debugPrint('failed to render image for key=$_globalKey with error=$error');
+    } finally {
       state = bytes != null ? MarkerGeneratorItemState.done : MarkerGeneratorItemState.waiting;
     }
     return bytes;

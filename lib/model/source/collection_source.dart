@@ -44,6 +44,8 @@ import 'package:leak_tracker/leak_tracker.dart';
 typedef SourceScope = Set<CollectionFilter>?;
 
 mixin SourceBase {
+  bool _sourceDisposed = false;
+
   EventBus get eventBus;
 
   AvesEntry? getEntryById(int id);
@@ -58,7 +60,9 @@ mixin SourceBase {
 
   ValueNotifier<SourceState> stateNotifier = ValueNotifier(SourceState.ready);
 
-  set state(SourceState value) => stateNotifier.value = value;
+  set state(SourceState value) {
+    if (!_sourceDisposed) stateNotifier.value = value;
+  }
 
   SourceState get state => stateNotifier.value;
 
@@ -66,7 +70,9 @@ mixin SourceBase {
 
   ValueNotifier<ProgressEvent> progressNotifier = ValueNotifier(const ProgressEvent(done: 0, total: 0));
 
-  void setProgress({required int done, required int total}) => progressNotifier.value = ProgressEvent(done: done, total: total);
+  void setProgress({required int done, required int total}) {
+    if (!_sourceDisposed) progressNotifier.value = ProgressEvent(done: done, total: total);
+  }
 
   void invalidateEntries();
 
@@ -75,6 +81,7 @@ mixin SourceBase {
 
 abstract class CollectionSource with SourceBase, AlbumMixin, CountryMixin, PlaceMixin, StateMixin, LocationMixin, TagMixin, TrashMixin {
   static const fullScope = <CollectionFilter>{};
+  final Set<StreamSubscription> _subscriptions = {};
 
   new() {
     if (kFlutterMemoryAllocationsEnabled) {
@@ -84,27 +91,38 @@ abstract class CollectionSource with SourceBase, AlbumMixin, CountryMixin, Place
         object: this,
       );
     }
-    settings.updateStream.where((event) => event.key == SettingKeys.localeKey).listen((_) => invalidateStoredAlbumDisplayNames());
-    settings.updateStream.where((event) => event.key == SettingKeys.hiddenFiltersKey).listen((event) {
-      final oldValue = event.oldValue;
-      if (oldValue is List?) {
-        final oldHiddenFilters = (oldValue ?? []).map(CollectionFilter.fromJson).nonNulls.toSet();
-        final newlyVisibleFilters = oldHiddenFilters.whereNot(settings.hiddenFilters.contains).toSet();
-        _onFilterVisibilityChanged(newlyVisibleFilters);
-      }
-    });
+    _subscriptions.add(settings.updateStream.where((event) => event.key == SettingKeys.localeKey).listen((_) => invalidateStoredAlbumDisplayNames()));
+    _subscriptions.add(
+      settings.updateStream.where((event) => event.key == SettingKeys.hiddenFiltersKey).listen((event) {
+        final oldValue = event.oldValue;
+        if (oldValue is List?) {
+          final oldHiddenFilters = (oldValue ?? []).map(CollectionFilter.fromJson).nonNulls.toSet();
+          final newlyVisibleFilters = oldHiddenFilters.whereNot(settings.hiddenFilters.contains).toSet();
+          _onFilterVisibilityChanged(newlyVisibleFilters);
+        }
+      }),
+    );
     vaults.lockStateChangeNotifier.addListener(_onVaultsChanged);
   }
 
   @mustCallSuper
   void dispose() {
+    detachListeners();
     if (kFlutterMemoryAllocationsEnabled) {
       LeakTracking.dispatchObjectDisposed(object: this);
     }
     stateNotifier.dispose();
     progressNotifier.dispose();
-    vaults.lockStateChangeNotifier.removeListener(_onVaultsChanged);
     _disposeAllEntries();
+  }
+
+  @protected
+  void detachListeners() {
+    _sourceDisposed = true;
+    _subscriptions
+      ..forEach((sub) => sub.cancel())
+      ..clear();
+    vaults.lockStateChangeNotifier.removeListener(_onVaultsChanged);
   }
 
   set canAnalyze(bool enabled);

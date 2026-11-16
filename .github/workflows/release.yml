@@ -37,16 +37,55 @@ jobs:
         run: |
           chmod +x flutterw scripts/*.sh
           ./flutterw doctor -v
-          ./flutterw pub get
+
+      - name: Verify tag version
+        run: |
+          set -euo pipefail
+          package_version=$(awk '/^version:/ { print $2; exit }' pubspec.yaml)
+          package_version=${package_version%%+*}
+          test "${GITHUB_REF_NAME}" = "v${package_version}" || {
+            echo "Tag ${GITHUB_REF_NAME} does not match pubspec version ${package_version}." >&2
+            exit 1
+          }
+
+      - name: Configure Android NDK
+        run: |
+          set -euo pipefail
+          NDK_VERSION=28.2.13676358
+          NDK_PATH="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          test -d "$NDK_PATH"
+          echo "ANDROID_NDK=$NDK_PATH" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$NDK_PATH" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$NDK_PATH" >> "$GITHUB_ENV"
+
+      - name: Run libre quality checks
+        run: scripts/quality_flavor.sh libre
+
+      - name: Run Baidu quality checks
+        run: scripts/quality_flavor.sh baidu
+
+      - name: Restore release flavor
+        run: scripts/apply_flavor_libre.sh
 
       # cf https://github.com/deckerst/aves/issues/1521#issuecomment-5229015364
       - name: Remove build ID from native lib
         run: |
+          set -euo pipefail
           PUB_CACHE=$HOME/.pub-cache
           echo "PUB_CACHE=$PUB_CACHE"
           echo "Edit native lib build scripts from pub-cache hosted packages:"
-          ls ${PUB_CACHE}/hosted/*
-          sed -i -e 's/-Wl,/-Wl,--build-id=none,/' ${PUB_CACHE}/hosted/*/jni-*/src/CMakeLists.txt 2>/dev/null || true
+          mapfile -t cmake_files < <(find "$PUB_CACHE/hosted" -path '*/jni-*/src/CMakeLists.txt' -type f)
+          test "${#cmake_files[@]}" -gt 0 || {
+            echo "No jni package CMakeLists.txt found in the pub cache." >&2
+            exit 1
+          }
+          mapfile -t patch_files < <(grep -l -- '-Wl,' "${cmake_files[@]}")
+          test "${#patch_files[@]}" -gt 0 || {
+            echo "No native linker flags matched the required build-ID patch." >&2
+            exit 1
+          }
+          sed -i -e 's/-Wl,/-Wl,--build-id=none,/' "${patch_files[@]}"
+          grep -q -- '--build-id=none' "${patch_files[@]}"
 
       - name: Generate app localizations
         run: ./flutterw gen-l10n
@@ -65,11 +104,7 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
           echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
           echo "ANDROID_NDK_LATEST_HOME=$ANDROID_NDK_LATEST_HOME"
-          NDK_VERSION=28.2.13676358
-          echo "Set Android NDK to version $NDK_VERSION:"
-          ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION
-          ANDROID_NDK_HOME=$ANDROID_NDK
-          ANDROID_NDK_ROOT=$ANDROID_NDK
+          echo "Use the NDK configured before quality checks:"
           echo "ANDROID_NDK=$ANDROID_NDK"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
           echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
@@ -78,8 +113,7 @@ jobs:
           rm release.keystore.asc
           mkdir outputs
           export AVES_GOOGLE_API_KEY="NONE"
-          scripts/apply_flavor_libre.sh
-          ./flutterw build apk -t lib/main_libre.dart --flavor libre --split-per-abi
+          ./flutterw build apk --no-pub -t lib/main_libre.dart --flavor libre --split-per-abi
           cp build/app/outputs/flutter-apk/*-libre-release.apk outputs
           sha256sum outputs/*.apk > outputs/SHA256SUMS
           rm "$AVES_STORE_FILE"

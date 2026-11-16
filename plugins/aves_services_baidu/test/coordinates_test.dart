@@ -79,6 +79,36 @@ void main() {
     expect(cached[1].longitude, converted[0].longitude);
   });
 
+  test('camera inverse guesses do not accumulate in the long-lived forward cache', () async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      final points = ((call.arguments as Map)['points'] as List).cast<List>();
+      return points.map((point) => <double>[(point[0] as num).toDouble() + .006, (point[1] as num).toDouble() + .0065]).toList();
+    });
+    final coordinates = BaiduCoordinates();
+
+    for (var i = 0; i < 20; i++) {
+      await coordinates.fromMap(BMFCoordinate(30 + i / 1000 + .006, 120 + i / 1000 + .0065));
+    }
+
+    expect(coordinates.cachedCoordinateCount, 0, reason: 'Transient inverse-solver guesses must not grow the map-session cache while panning.');
+  });
+
+  test('forward conversion cache stays bounded while preserving the current batch result', () async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      final points = ((call.arguments as Map)['points'] as List).cast<List>();
+      return points.map((point) => <double>[(point[0] as num).toDouble() + .006, (point[1] as num).toDouble() + .0065]).toList();
+    });
+    final coordinates = BaiduCoordinates();
+    final locations = List.generate(5000, (i) => ll.LatLng(20 + i / 100000, 110 + i / 100000));
+
+    final converted = await coordinates.toMapMany(locations);
+
+    expect(converted, hasLength(locations.length));
+    expect(converted.first.latitude, closeTo(locations.first.latitude + .006, 1e-12));
+    expect(converted.last.longitude, closeTo(locations.last.longitude + .0065, 1e-12));
+    expect(coordinates.cachedCoordinateCount, 4096, reason: 'Browsing new regions must keep the forward conversion cache at its fixed capacity.');
+  });
+
   test('camera points between native float32 cells remain usable without saving BD09 as GPS', () async {
     double nativeValue(double value) => Float32List.fromList([value]).single;
     messenger.setMockMethodCallHandler(channel, (call) async {

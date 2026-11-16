@@ -7,4 +7,5 @@ if [ ! -f "$FLUTTER_DIR/bin/flutter" ]; then
   mkdir -p "$PROJECT_ROOT/.tooling"
   git clone --depth 1 --branch 3.47.8 https://github.com/flutter/flutter.git "$FLUTTER_DIR"
 fi
+sh "$PROJECT_ROOT/scripts/verify_flutter_sdk.sh"
 exec "$FLUTTER_DIR/bin/flutter" "$@"
