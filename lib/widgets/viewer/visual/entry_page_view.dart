@@ -53,6 +53,8 @@ class _EntryPageViewState extends State<EntryPageView> with TickerProviderStateM
   final Set<StreamSubscription> _subscriptions = {};
   final ValueNotifier<Widget?> _actionFeedbackChildNotifier = ValueNotifier(null);
   OverlayEntry? _actionFeedbackOverlayEntry;
+  ValueNotifier<double?>? _actionFeedbackValueNotifier;
+  int _actionFeedbackGeneration = 0;
 
   AvesEntry get mainEntry => widget.mainEntry;
 
@@ -78,6 +80,7 @@ class _EntryPageViewState extends State<EntryPageView> with TickerProviderStateM
 
   @override
   void dispose() {
+    _clearActionFeedback();
     _unregisterWidget(widget);
     widget.onDisposed?.call();
     _actionFeedbackChildNotifier.dispose();
@@ -106,6 +109,7 @@ class _EntryPageViewState extends State<EntryPageView> with TickerProviderStateM
   }
 
   void _unregisterWidget(EntryPageView oldWidget) {
+    _clearActionFeedback();
     viewerController.stopAutopilotAnimation(vsync: this);
     _magnifierController.dispose();
     _subscriptions
@@ -267,16 +271,22 @@ class _EntryPageViewState extends State<EntryPageView> with TickerProviderStateM
               var dropped = false;
               double? startValue;
               ValueNotifier<double?>? valueNotifier;
+              int? feedbackGeneration;
 
               onScaleStart = (details, doubleTap, boundaries) {
                 dropped = details.pointerCount > 1 || doubleTap;
                 if (dropped) return;
 
+                _clearActionFeedback();
+                feedbackGeneration = ++_actionFeedbackGeneration;
                 startValue = null;
                 valueNotifier = ValueNotifier<double?>(null);
+                _actionFeedbackValueNotifier = valueNotifier;
                 final alignmentX = details.focalPoint.dx / boundaries.viewportSize.width;
                 final action = alignmentX > .5 ? SwipeAction.volume : SwipeAction.brightness;
-                action.get().then((v) => startValue = v);
+                action.get().then((v) {
+                  if (mounted && feedbackGeneration == _actionFeedbackGeneration) startValue = v;
+                });
                 swipeAction = action;
                 move = Offset.zero;
                 _actionFeedbackOverlayEntry = OverlayEntry(
@@ -288,7 +298,7 @@ class _EntryPageViewState extends State<EntryPageView> with TickerProviderStateM
                 Overlay.of(context).insert(_actionFeedbackOverlayEntry!);
               };
               onScaleUpdate = (details) {
-                if (valueNotifier == null) return false;
+                if (valueNotifier == null || feedbackGeneration != _actionFeedbackGeneration) return false;
 
                 move += details.focalPointDelta;
                 dropped |= details.pointerCount > 1;
@@ -306,12 +316,7 @@ class _EntryPageViewState extends State<EntryPageView> with TickerProviderStateM
                 return true;
               };
               onScaleEnd = (details) {
-                valueNotifier?.dispose();
-
-                _actionFeedbackOverlayEntry
-                  ?..remove()
-                  ..dispose();
-                _actionFeedbackOverlayEntry = null;
+                _clearActionFeedback();
               };
             }
 
@@ -377,6 +382,16 @@ class _EntryPageViewState extends State<EntryPageView> with TickerProviderStateM
         );
       },
     );
+  }
+
+  void _clearActionFeedback() {
+    _actionFeedbackGeneration++;
+    _actionFeedbackValueNotifier?.dispose();
+    _actionFeedbackValueNotifier = null;
+    _actionFeedbackOverlayEntry
+      ?..remove()
+      ..dispose();
+    _actionFeedbackOverlayEntry = null;
   }
 
   Widget _buildMagnifier({

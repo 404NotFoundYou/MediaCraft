@@ -21,6 +21,8 @@ class MpvVideoController(
   late Player _mkPlayer;
   late PlaybackStatus _status;
   bool _firstFrameRendered = false, _abRepeatSeeking = false;
+  bool _disposed = false;
+  int _mediaGeneration = 0, _videoControllerGeneration = 0;
   final ValueNotifier<VideoController?> _mkControllerNotifier = ValueNotifier(null);
   final List<StreamSubscription> _subscriptions = [];
   final StreamController<PlaybackStatus> _statusStreamController = StreamController.broadcast();
@@ -72,16 +74,22 @@ class MpvVideoController(
       ),
     );
     _initController();
-    _init();
+    _startInitialization();
 
     _startListening();
   }
 
   @override
   Future<void> dispose() async {
-    _stopListening();
+    if (_disposed) return;
+    _disposed = true;
+    _mediaGeneration++;
+    _videoControllerGeneration++;
+    await _stopListening();
     _stopTrackFetchTimer();
+    await super.dispose();
     await _statusStreamController.close();
+    await _eventStreamController.close();
     await _timedTextStreamController.close();
     await _mkPlayer.dispose();
 
@@ -95,8 +103,25 @@ class MpvVideoController(
     canSetSpeedNotifier.dispose();
     canSelectTrackNotifier.dispose();
     sarNotifier.dispose();
+  }
 
-    await super.dispose();
+  void _startInitialization({int startMillis = 0}) {
+    final generation = ++_mediaGeneration;
+    if (_status == .error) {
+      _status = .idle;
+      _statusStreamController.add(.idle);
+    }
+    unawaited(
+      () async {
+        try {
+          await _init(startMillis: startMillis, generation: generation);
+        } catch (error, stack) {
+          if (!_disposed && generation == _mediaGeneration) {
+            _reportPlayerError('failed to initialize video entry=$entry', error, stack);
+          }
+        }
+      }(),
+    );
   }
 
   void _startListening() {
@@ -105,7 +130,7 @@ class MpvVideoController(
     final playerStream = _mkPlayer.stream;
     _subscriptions.add(
       playerStream.completed.listen((completed) {
-        if (completed) {
+        if (completed && status != .error) {
           _statusStreamController.add(.completed);
           _completedNotifier.notify();
 
@@ -121,7 +146,7 @@ class MpvVideoController(
     );
     _subscriptions.add(
       playerStream.playing.listen((playing) {
-        if (status == .idle) return;
+        if (status == .idle || status == .error) return;
         _statusStreamController.add(playing ? .playing : .paused);
       }),
     );
@@ -158,7 +183,12 @@ class MpvVideoController(
     _subscriptions.add(playerStream.error.listen(_onPlayerError));
 
     final settingsStream = settings.updateStream;
-    _subscriptions.add(settingsStream.where((event) => event.key == SettingKeys.videoHardwareAccelerationKey).listen((_) => _initController()));
+    _subscriptions.add(
+      settingsStream.where((event) => event.key == SettingKeys.videoHardwareAccelerationKey).listen((_) {
+        _initController();
+        _startInitialization(startMillis: currentPosition);
+      }),
+    );
     _subscriptions.add(settingsStream.where((event) => event.key == SettingKeys.videoLoopModeKey).listen((_) => _applyLoop()));
 
     final path = entry.path;
@@ -183,23 +213,24 @@ class MpvVideoController(
     }
   }
 
-  void _stopListening() {
-    _subscriptions
-      ..forEach((sub) => sub.cancel())
-      ..clear();
+  Future<void> _stopListening() async {
+    final subscriptions = _subscriptions.toList();
+    _subscriptions.clear();
+    await Future.wait(subscriptions.map((sub) => sub.cancel()));
   }
 
-  Future<void> _updateSlowMotionFactor() async {
+  Future<void> _updateSlowMotionFactor(int generation) async {
     final playbackFps = _videoTracks.firstOrNull?.fps;
     if (entry.isSlowMotion) {
       slowMotionFactor = await MpvVideoMetadataFetcher.computeSlowMotionFactor(_mkPlayer, playbackFps);
     }
+    if (!_isCurrentVideoController(generation)) return;
     canSetSpeedNotifier.value = !isSlowMotion;
   }
 
   Future<void> _applyLoop() => enableLoop(settings.videoLoopMode.shouldLoop(entry));
 
-  Future<void> _init({int startMillis = 0}) async {
+  Future<void> _init({required int startMillis, required int generation}) async {
     final playing = _mkPlayer.state.playing;
 
     // Audio quality is better with `audiotrack` than `opensles` (the default).
@@ -209,10 +240,14 @@ class MpvVideoController(
     // cf https://github.com/media-kit/media-kit/issues/1061
 
     await _applyLoop();
+    if (!_isCurrentMedia(generation)) return;
     await _mkPlayer.open(Media(entry.uri), play: playing);
+    if (!_isCurrentMedia(generation)) return;
     await _mkPlayer.setSubtitleTrack(SubtitleTrack.no());
+    if (!_isCurrentMedia(generation)) return;
     if (startMillis > 0) {
       await seekTo(startMillis);
+      if (!_isCurrentMedia(generation)) return;
     }
 
     _fetchTracks();
@@ -221,18 +256,29 @@ class MpvVideoController(
 
   void _initController() {
     _firstFrameRendered = false;
+    final generation = ++_videoControllerGeneration;
 
     final oldController = _mkControllerNotifier.value;
-    final newController =
-        VideoController(
-            _mkPlayer,
-            configuration: _toControllerConfiguration(settings.videoHardwareAcceleration),
-          )
-          ..waitUntilFirstFrameRendered.then((v) {
-            _updateSlowMotionFactor();
-            _firstFrameRendered = true;
-            _statusStreamController.add(_status);
-          });
+    final newController = VideoController(
+      _mkPlayer,
+      configuration: _toControllerConfiguration(settings.videoHardwareAcceleration),
+    );
+    unawaited(
+      () async {
+        try {
+          await newController.waitUntilFirstFrameRendered;
+          if (!_isCurrentVideoController(generation)) return;
+          await _updateSlowMotionFactor(generation);
+          if (!_isCurrentVideoController(generation)) return;
+          _firstFrameRendered = true;
+          _statusStreamController.add(_status);
+        } catch (error, stack) {
+          if (!_disposed && generation == _videoControllerGeneration) {
+            _reportPlayerError('failed to initialize video surface for entry=$entry', error, stack);
+          }
+        }
+      }(),
+    );
     _mkControllerNotifier.value = newController;
     oldController?.dispose();
   }
@@ -263,7 +309,7 @@ class MpvVideoController(
   }
 
   @override
-  void onVisualChanged() => _init(startMillis: currentPosition);
+  void onVisualChanged() => _startInitialization(startMillis: currentPosition);
 
   void _onPlayerLog(PlayerLog log) {
     debugPrint('libmpv log: $log');
@@ -273,8 +319,19 @@ class MpvVideoController(
   }
 
   void _onPlayerError(String error) {
-    debugPrint('libmpv error: $error');
+    _reportPlayerError('libmpv error', error, StackTrace.current);
   }
+
+  void _reportPlayerError(String message, Object error, StackTrace stack) {
+    debugPrint('$message: $error\n$stack');
+    if (_disposed || _statusStreamController.isClosed) return;
+    _status = .error;
+    _statusStreamController.add(.error);
+  }
+
+  bool _isCurrentMedia(int generation) => !_disposed && generation == _mediaGeneration && _status != .error;
+
+  bool _isCurrentVideoController(int generation) => !_disposed && generation == _videoControllerGeneration && _status != .error;
 
   @override
   Future<void> enableLoop(bool enabled) => _mkPlayer.setPlaylistMode(enabled ? .single : .none);

@@ -9,6 +9,7 @@ extension ExtraSourceStateView on SourceState {
       .locatingCountries => l10n.sourceStateLocatingCountries,
       .locatingPlaces => l10n.sourceStateLocatingPlaces,
       .ready => null,
+      .failed => l10n.collectionLoadFailure,
     };
   }
 }

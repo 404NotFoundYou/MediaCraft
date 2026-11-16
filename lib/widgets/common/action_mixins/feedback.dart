@@ -142,23 +142,32 @@ mixin FeedbackMixin {
     VoidCallback? onCancel,
     Future<void> Function(Set<T> processed)? onDone,
   }) async {
-    final opCompleter = Completer();
-    await showAvesDialog<void>(
+    final opCompleter = Completer<void>();
+    final dialogFuture = showAvesDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (context) => ReportOverlay<T>(
         opStream: opStream,
         itemCount: itemCount,
         onCancel: onCancel,
-        onDone: (processed) async {
+        onDone: (processed, streamError, streamStack) async {
           Navigator.maybeOf(context)?.pop();
-          await onDone?.call(processed);
-          opCompleter.complete();
+          try {
+            await onDone?.call(processed);
+            if (streamError != null) {
+              Error.throwWithStackTrace(streamError, streamStack ?? StackTrace.current);
+            }
+            if (!opCompleter.isCompleted) opCompleter.complete();
+          } catch (error, stack) {
+            if (!opCompleter.isCompleted) opCompleter.completeError(error, stack);
+          }
         },
       ),
       routeSettings: const RouteSettings(name: ReportOverlay.routeName),
     );
-    return opCompleter.future;
+    // Register consumers for both futures immediately. The operation callback can
+    // fail while the dialog pop transition is still completing.
+    await Future.wait([dialogFuture, opCompleter.future]);
   }
 }
 
@@ -167,7 +176,7 @@ class const ReportOverlay<T>({
   required final Stream<T> opStream,
   required final int? itemCount,
   required final VoidCallback? onCancel,
-  required final void Function(Set<T> processed) onDone,
+  required final Future<void> Function(Set<T> processed, Object? error, StackTrace? stack) onDone,
 }) extends StatefulWidget {
   static const routeName = '/dialog/report_overlay';
 
@@ -182,6 +191,8 @@ class _ReportOverlayState<T> extends State<ReportOverlay<T>> with SingleTickerPr
   final processed = <T>{};
   late AnimationController _animationController;
   late CurvedAnimation _animation;
+  Object? _streamError;
+  StackTrace? _streamStack;
 
   Stream<T> get opStream => widget.opStream;
 
@@ -203,10 +214,18 @@ class _ReportOverlayState<T> extends State<ReportOverlay<T>> with SingleTickerPr
 
     // do not handle completion inside `StreamBuilder`
     // as it could be called multiple times
-    Future<void> onComplete() => _animationController.reverse().then((_) => widget.onDone(processed));
+    Future<void> onComplete() async {
+      await _animationController.reverse();
+      await widget.onDone(processed, _streamError, _streamStack);
+    }
+
     opStream.listen(
       processed.add,
-      onError: (error) => debugPrint('_showOpReport error=$error'),
+      onError: (Object error, StackTrace stack) {
+        _streamError ??= error;
+        _streamStack ??= stack;
+        debugPrint('_showOpReport error=$error');
+      },
       onDone: onComplete,
     );
   }

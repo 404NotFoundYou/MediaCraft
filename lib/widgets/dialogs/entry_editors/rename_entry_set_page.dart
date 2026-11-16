@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:aves/model/entry/entry.dart';
@@ -41,7 +42,12 @@ class RenameEntrySetPage extends StatefulWidget {
 class _RenameEntrySetPageState extends State<RenameEntrySetPage> {
   final TextEditingController _patternTextController = TextEditingController();
   final ValueNotifier<NamingPattern> _namingPatternNotifier = ValueNotifier<NamingPattern>(const NamingPattern([]));
-  late final KnownLocale locale;
+  final ValueNotifier<String?> _patternErrorNotifier = ValueNotifier(null);
+  final ValueNotifier<bool> _canSubmitNotifier = ValueNotifier(false);
+  final Map<int, Future<String>> _previewFutures = {};
+  KnownLocale locale = KnownLocale.english;
+  int _patternGeneration = 0;
+  bool _initialized = false;
 
   static const int previewMax = 10;
   static const double thumbnailExtent = 48;
@@ -55,17 +61,25 @@ class _RenameEntrySetPageState extends State<RenameEntrySetPage> {
     super.initState();
     _patternTextController.text = settings.entryRenamingPattern;
     _patternTextController.addListener(_onUserPatternChanged);
+  }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      locale = context.knownLocale ?? KnownLocale.english;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final newLocale = context.knownLocale ?? KnownLocale.english;
+    if (!_initialized || newLocale != locale) {
+      locale = newLocale;
+      _initialized = true;
       _onUserPatternChanged();
-    });
+    }
   }
 
   @override
   void dispose() {
     _patternTextController.dispose();
     _namingPatternNotifier.dispose();
+    _patternErrorNotifier.dispose();
+    _canSubmitNotifier.dispose();
     super.dispose();
   }
 
@@ -89,12 +103,16 @@ class _RenameEntrySetPageState extends State<RenameEntrySetPage> {
                 crossAxisAlignment: .end,
                 children: [
                   Expanded(
-                    child: TextField(
-                      controller: _patternTextController,
-                      decoration: InputDecoration(
-                        labelText: l10n.renameEntrySetPagePatternFieldLabel,
+                    child: ValueListenableBuilder<String?>(
+                      valueListenable: _patternErrorNotifier,
+                      builder: (context, error, child) => TextField(
+                        controller: _patternTextController,
+                        decoration: InputDecoration(
+                          labelText: l10n.renameEntrySetPagePatternFieldLabel,
+                          errorText: error,
+                        ),
+                        autofocus: true,
                       ),
-                      autofocus: true,
                     ),
                   ),
                   FontSizeIconTheme(
@@ -199,9 +217,9 @@ class _RenameEntrySetPageState extends State<RenameEntrySetPage> {
                                 valueListenable: _namingPatternNotifier,
                                 builder: (context, pattern, child) {
                                   return FutureBuilder<String>(
-                                    future: pattern.apply(entry, index),
+                                    future: _previewFutures[index],
                                     builder: (context, snapshot) {
-                                      final info = snapshot.data;
+                                      final info = snapshot.hasError ? snapshot.error.toString() : snapshot.data;
                                       return FadingLine(info ?? '…');
                                     },
                                   );
@@ -224,12 +242,17 @@ class _RenameEntrySetPageState extends State<RenameEntrySetPage> {
             Center(
               child: Padding(
                 padding: const EdgeInsets.all(8),
-                child: AvesOutlinedButton(
-                  label: l10n.entryActionRename,
-                  onPressed: () {
-                    settings.entryRenamingPattern = _patternTextController.text;
-                    Navigator.maybeOf(context)?.pop<NamingPattern>(_namingPatternNotifier.value);
-                  },
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: _canSubmitNotifier,
+                  builder: (context, canSubmit, child) => AvesOutlinedButton(
+                    label: l10n.entryActionRename,
+                    onPressed: canSubmit
+                        ? () {
+                            settings.entryRenamingPattern = _patternTextController.text;
+                            Navigator.maybeOf(context)?.pop<NamingPattern>(_namingPatternNotifier.value);
+                          }
+                        : null,
+                  ),
                 ),
               ),
             ),
@@ -240,11 +263,50 @@ class _RenameEntrySetPageState extends State<RenameEntrySetPage> {
   }
 
   void _onUserPatternChanged() {
-    _namingPatternNotifier.value = NamingPattern.from(
+    if (!_initialized) return;
+    final pattern = NamingPattern.from(
       userPattern: _patternTextController.text,
       entryCount: entryCount,
       localeBcp47: locale.bcp47,
     );
+    _namingPatternNotifier.value = pattern;
+    final generation = ++_patternGeneration;
+    _previewFutures.clear();
+    _canSubmitNotifier.value = false;
+    if (!pattern.isValid) {
+      _patternErrorNotifier.value = pattern.errors.first;
+      return;
+    }
+
+    _patternErrorNotifier.value = null;
+    final previewCount = min(entryCount, previewMax);
+    for (var index = 0; index < previewCount; index++) {
+      _previewFutures[index] = pattern.apply(entries[index], index);
+    }
+    unawaited(_validatePreviews(generation, List.of(_previewFutures.values)));
+  }
+
+  Future<void> _validatePreviews(int generation, List<Future<String>> previews) async {
+    Object? firstError;
+    final errors = await Future.wait<Object?>(
+      previews.map((preview) async {
+        try {
+          await preview;
+          return null;
+        } catch (error) {
+          return error;
+        }
+      }),
+    );
+    for (final error in errors) {
+      if (error != null) {
+        firstError = error;
+        break;
+      }
+    }
+    if (!mounted || generation != _patternGeneration) return;
+    _patternErrorNotifier.value = firstError?.toString();
+    _canSubmitNotifier.value = firstError == null;
   }
 
   void _insertProcessor(String key) {

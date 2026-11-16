@@ -182,7 +182,7 @@ class Analyzer with WidgetsBindingObserver {
   }
 
   void _onSourceStateChanged() {
-    if (_source.isReady) {
+    if (_source.isReady || sourceState == SourceState.failed) {
       _serviceStateNotifier.value = AnalyzerState.stopping;
     }
   }

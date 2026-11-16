@@ -29,6 +29,7 @@ class const RasterImageView({
 class _RasterImageViewState extends State<RasterImageView> {
   Size? _viewportSize;
   RasterTiling? _tiling;
+  late (int, int, int, bool, String, int?) _visualSignature;
   ImageStream? _fullImageStream;
   late ImageStreamListener _fullImageListener;
   final ValueNotifier<bool> _fullImageLoaded = ValueNotifier(false);
@@ -57,6 +58,7 @@ class _RasterImageViewState extends State<RasterImageView> {
     super.initState();
     _fullImageListener = ImageStreamListener(_onFullImageCompleted);
     _viewportSize = widget.viewStateNotifier.value.viewportSize;
+    _visualSignature = _getVisualSignature(widget.entry);
     _registerWidget(widget);
     _initFullImage();
   }
@@ -69,10 +71,14 @@ class _RasterImageViewState extends State<RasterImageView> {
 
     final oldViewState = oldWidget.viewStateNotifier.value;
     final viewState = widget.viewStateNotifier.value;
-    if (oldWidget.entry != widget.entry || oldViewState.viewportSize != viewState.viewportSize || oldWidget.devicePixelRatio != widget.devicePixelRatio) {
+    final visualSignature = _getVisualSignature(widget.entry);
+    if (oldWidget.entry != widget.entry || _visualSignature != visualSignature || oldViewState.viewportSize != viewState.viewportSize || oldWidget.devicePixelRatio != widget.devicePixelRatio) {
+      _visualSignature = visualSignature;
       _initFullImage();
     }
   }
+
+  static (int, int, int, bool, String, int?) _getVisualSignature(AvesEntry entry) => (entry.width, entry.height, entry.rotationDegrees, entry.isFlipped, entry.mimeType, entry.dateModifiedMillis);
 
   void _initFullImage() {
     if (widget.entry.useTiles) {
@@ -140,6 +146,7 @@ class _RasterImageViewState extends State<RasterImageView> {
 
   // implementer is responsible for disposing the provided `ImageInfo`
   void _onFullImageCompleted(ImageInfo image, bool synchronousCall) {
+    if (!identical(_fullImageInfo, image)) _fullImageInfo?.dispose();
     _fullImageInfo = image;
     _fullImageLoaded.value = true;
     FullImageLoadedNotification(entry, fullImageProvider).dispatch(context);
@@ -431,7 +438,7 @@ class _RegionTileState extends State<_RegionTile> {
   @override
   void didUpdateWidget(covariant _RegionTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.entry != widget.entry || oldWidget.tileRect != widget.tileRect || oldWidget.sampleSize != widget.sampleSize || oldWidget.sampleSize != widget.sampleSize) {
+    if (oldWidget.entry != widget.entry || oldWidget.tileRect != widget.tileRect || oldWidget.regionRect != widget.regionRect || oldWidget.sampleSize != widget.sampleSize) {
       _unregisterWidget(oldWidget);
       _registerWidget(widget);
     }

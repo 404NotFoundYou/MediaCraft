@@ -107,10 +107,15 @@ class MediaStoreSource extends CollectionSource {
     if (_disposed) return;
     _beginLoad();
     try {
+      loadError = null;
+      state = SourceState.loading;
       _targetScope = scope;
       await reportService.log('$runtimeType init target scope=$scope');
       if (_disposed) return;
-      _essentialLoader ??= _loadEssentials();
+      _essentialLoader ??= _loadEssentials().catchError((Object error, StackTrace stack) {
+        _essentialLoader = null;
+        Error.throwWithStackTrace(error, stack);
+      });
       await _essentialLoader;
       if (_disposed) return;
       addDirectories(albums: settings.pinnedFilters.whereType<StoredAlbumFilter>().map((v) => v.album).toSet());
@@ -125,7 +130,7 @@ class MediaStoreSource extends CollectionSource {
               loadTopEntriesFirst: loadTopEntriesFirst,
             )
             .catchError((Object error, StackTrace stack) async {
-              await reportService.recordError(error, stack);
+              await _onLoadFailed(error, stack);
             })
             .whenComplete(() {
               _loadControllers.remove(loadController);
@@ -133,9 +138,20 @@ class MediaStoreSource extends CollectionSource {
               _endLoad();
             }),
       );
+    } catch (error, stack) {
+      await _onLoadFailed(error, stack);
+      rethrow;
     } finally {
       _endLoad();
     }
+  }
+
+  Future<void> _onLoadFailed(Object error, StackTrace stack) async {
+    if (_disposed) return;
+    _loadedScope = null;
+    loadError = AsyncError(error, stack);
+    state = SourceState.failed;
+    await reportService.recordError(error, stack);
   }
 
   Future<void> _loadEssentials() async {

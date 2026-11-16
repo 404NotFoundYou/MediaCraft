@@ -54,4 +54,42 @@ void main() {
     expect(NamingPattern.getInsertionOffset(userPattern, 4), 26);
     expect(NamingPattern.getInsertionOffset(userPattern, 30), 30);
   });
+
+  test('invalid fields fail explicitly instead of disappearing from the generated name', () {
+    final locale = IntlUtils.rootLocaleName;
+
+    expect(NamingPattern.from(userPattern: '<nam>', entryCount: 1, localeBcp47: locale).errors, contains('Unknown naming field: <nam>'));
+    expect(NamingPattern.from(userPattern: '<date>', entryCount: 1, localeBcp47: locale).errors, contains('Date field requires a format'));
+    expect(NamingPattern.from(userPattern: '<hash,crc32>', entryCount: 1, localeBcp47: locale).errors, contains('Unknown hash algorithm: crc32'));
+    expect(NamingPattern.from(userPattern: '<field,unknown>', entryCount: 1, localeBcp47: locale).errors, contains('Unknown metadata field: unknown'));
+    expect(NamingPattern.from(userPattern: '<counter,padding=-1>', entryCount: 1, localeBcp47: locale).errors, contains('Counter padding cannot be negative'));
+    expect(
+      NamingPattern.from(userPattern: '<counter,padding=2147483647>', entryCount: 1, localeBcp47: locale).isValid,
+      isFalse,
+      reason: '输入错误不能让预览分配巨量字符串',
+    );
+    expect(NamingPattern.from(userPattern: '<counter,padding=255>', entryCount: 1, localeBcp47: locale).isValid, isTrue);
+    expect(NamingPattern.from(userPattern: '<name', entryCount: 1, localeBcp47: locale).errors, contains('Malformed naming field'));
+    expect(NamingPattern.from(userPattern: '   ', entryCount: 1, localeBcp47: locale).errors, contains('Naming pattern cannot be empty'));
+  });
+
+  test('date formats are validated before the rename action starts', () {
+    final pattern = NamingPattern.from(
+      userPattern: '<date,EEEEEE>',
+      entryCount: 1,
+      localeBcp47: IntlUtils.rootLocaleName,
+    );
+
+    expect(pattern.isValid, isFalse);
+    expect(pattern.errors, contains('Invalid date format: EEEEEE'));
+  });
+
+  test('generated names cannot escape the source directory', () {
+    expect(NamingPattern.validateGeneratedName('photo 001'), isNull);
+    expect(NamingPattern.validateGeneratedName(''), isNotNull);
+    expect(NamingPattern.validateGeneratedName('../other/photo'), isNotNull);
+    expect(NamingPattern.validateGeneratedName(r'sub\photo'), isNotNull);
+    expect(NamingPattern.validateGeneratedName('.hidden'), isNotNull);
+    expect(NamingPattern.validateGeneratedName('line\nbreak'), isNotNull);
+  });
 }

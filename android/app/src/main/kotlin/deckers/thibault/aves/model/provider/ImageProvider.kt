@@ -87,6 +87,21 @@ import kotlin.math.roundToInt
 import kotlin.time.Clock
 import androidx.exifinterface.media.ExifInterfaceFork as ExifInterface
 
+internal fun validateRenameName(name: String): String {
+    require(name.isNotBlank()) { "Rename target cannot be empty" }
+    require(name != "." && name != "..") { "Rename target cannot be a relative path" }
+    require(!name.startsWith(".")) { "Rename target cannot create a hidden file" }
+    require(name.none { it == '/' || it == '\\' || it.code < 0x20 }) { "Rename target contains an invalid character" }
+    return name
+}
+
+internal fun buildRenameTarget(dir: String, fileName: String): File {
+    val sourceDir = File(dir).canonicalFile
+    val target = File(sourceDir, fileName).canonicalFile
+    require(target.parentFile == sourceDir) { "Rename target must stay in the source directory" }
+    return target
+}
+
 abstract class ImageProvider {
     open fun fetchSingle(
         context: Context,
@@ -586,7 +601,7 @@ abstract class ImageProvider {
                 try {
                     var newFields: FieldMap = skippedFieldMap
                     if (!isCancelledOp()) {
-                        val desiredNameWithoutExtension = desiredName.substringBeforeLast(".")
+                        val desiredNameWithoutExtension = validateRenameName(desiredName.substringBeforeLast("."))
 
                         val oldFile = File(sourcePath)
                         if (oldFile.nameWithoutExtension != desiredNameWithoutExtension) {
@@ -602,7 +617,7 @@ abstract class ImageProvider {
                                 )
                                 resolution.nameWithoutExtension?.let { targetNameWithoutExtension ->
                                     val targetFileName = "$targetNameWithoutExtension${extensionFor(mimeType, defaultExtension)}"
-                                    val newFile = File(dir, targetFileName)
+                                    val newFile = buildRenameTarget(dir, targetFileName)
                                     if (oldFile != newFile) {
                                         newFields = renameSingle(
                                             context = context,

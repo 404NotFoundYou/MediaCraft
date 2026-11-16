@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:aves/model/entry/entry.dart';
+import 'package:aves/model/entry/extensions/props.dart';
 import 'package:aves/model/settings/settings.dart';
 import 'package:aves/services/common/services.dart';
 import 'package:aves/utils/android_file_utils.dart';
@@ -15,6 +16,27 @@ import 'package:collection/collection.dart';
 import 'package:material_ui/material_ui.dart';
 
 mixin SizeAwareMixin {
+  Future<bool> checkFreeSpaceForMoves(
+    BuildContext context,
+    Map<String, Set<AvesEntry>> entriesByDestination,
+    MoveType moveType,
+  ) async {
+    if (moveType == MoveType.toBin) return true;
+
+    final entriesByVolume = <StorageVolume, Set<AvesEntry>>{};
+    final destinationByVolume = <StorageVolume, String>{};
+    for (final kv in entriesByDestination.entries) {
+      final volume = androidFileUtils.getStorageVolume(kv.key);
+      if (volume == null) continue;
+      entriesByVolume.putIfAbsent(volume, () => {}).addAll(kv.value);
+      destinationByVolume.putIfAbsent(volume, () => kv.key);
+    }
+    final results = await Future.wait(
+      entriesByVolume.entries.map((kv) => checkFreeSpaceForMove(context, kv.value, destinationByVolume[kv.key]!, moveType)),
+    );
+    return results.every((result) => result);
+  }
+
   Future<bool> checkFreeSpaceForMove(
     BuildContext context,
     Set<AvesEntry> selection,
@@ -39,7 +61,7 @@ mixin SizeAwareMixin {
       case .toBin:
       case .fromBin:
         // when moving, we only need space for the entries that are not already on the destination volume
-        final byVolume = groupBy<AvesEntry, StorageVolume?>(selection, (entry) => androidFileUtils.getStorageVolume(entry.path)).whereNotNullKey();
+        final byVolume = groupBy<AvesEntry, StorageVolume?>(selection, (entry) => androidFileUtils.getStorageVolume(entry.storagePath)).whereNotNullKey();
         final otherVolumes = byVolume.keys.where((volume) => volume != destinationVolume);
         final fromOtherVolumes = otherVolumes.map((volume) => byVolume[volume]!.map((entry) => entry.sizeBytes).sum).sum;
         // and we need at least as much space as the largest entry because individual entries are copied then deleted

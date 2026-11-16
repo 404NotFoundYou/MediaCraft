@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:aves/app_mode.dart';
 import 'package:aves/locale/intl.dart';
@@ -58,7 +59,6 @@ import 'package:aves/widgets/stats/stats_page.dart';
 import 'package:aves/widgets/viewer/slideshow_page.dart';
 import 'package:aves_map/aves_map.dart';
 import 'package:aves_model/aves_model.dart';
-import 'package:aves_utils/aves_utils.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:gpx/gpx.dart';
@@ -357,30 +357,29 @@ class EntrySetActionDelegate with FeedbackMixin, PermissionAwareMixin, SizeAware
 
     if (!await checkStoragePermissionForAlbums(context, storageDirs, entries: entries)) return false;
 
-    source.pauseMonitoring();
     final opId = mediaEditService.newOpId;
-    await showOpReport<ImageOpEvent>(
-      context: context,
-      opStream: mediaEditService.delete(opId: opId, entries: entries),
-      itemCount: todoCount,
-      onCancel: () => mediaEditService.cancelFileOp(opId),
-      onDone: (processed) async {
-        final successOps = processed.where((op) => op.success).toSet();
-        final deletedOps = successOps.where((op) => !op.skipped).toSet();
-        final deletedUris = deletedOps.map((op) => op.uri).toSet();
-        await source.removeEntries(deletedUris, includeTrash: true);
-        source.resumeMonitoring();
+    await runWithMonitoringPaused(source, () async {
+      await showOpReport<ImageOpEvent>(
+        context: context,
+        opStream: mediaEditService.delete(opId: opId, entries: entries),
+        itemCount: todoCount,
+        onCancel: () => mediaEditService.cancelFileOp(opId),
+        onDone: (processed) async {
+          final successOps = processed.where((op) => op.success).toSet();
+          final deletedOps = successOps.where((op) => !op.skipped).toSet();
+          final deletedUris = deletedOps.map((op) => op.uri).toSet();
+          await source.removeEntries(deletedUris, includeTrash: true);
+          final successCount = successOps.length;
+          if (successCount < todoCount) {
+            final count = todoCount - successCount;
+            showFeedback(context, FeedbackType.warn, context.l10n.collectionDeleteFailureFeedback(count));
+          }
 
-        final successCount = successOps.length;
-        if (successCount < todoCount) {
-          final count = todoCount - successCount;
-          showFeedback(context, FeedbackType.warn, context.l10n.collectionDeleteFailureFeedback(count));
-        }
-
-        // cleanup
-        await storageService.deleteEmptyRegularDirectories(storageDirs);
-      },
-    );
+          // cleanup
+          await storageService.deleteEmptyRegularDirectories(storageDirs);
+        },
+      );
+    });
     return true;
   }
 
@@ -413,13 +412,29 @@ class EntrySetActionDelegate with FeedbackMixin, PermissionAwareMixin, SizeAware
         ),
       ),
     );
-    if (pattern == null) return;
+    if (pattern == null || !context.mounted) return;
 
-    final namingFutures = entries.mapIndexed((index, entry) async {
-      final newName = await pattern.apply(entry, index);
-      return MapEntry(entry, '$newName${entry.extension}');
-    });
-    final entriesToNewName = Map.fromEntries(await Future.wait(namingFutures)).whereNotNullValue();
+    const concurrency = 4;
+    final names = List<String?>.filled(entries.length, null);
+    try {
+      for (var offset = 0; offset < entries.length; offset += concurrency) {
+        final end = min(offset + concurrency, entries.length);
+        await Future.wait(
+          [
+            for (var index = offset; index < end; index++)
+              pattern.apply(entries[index], index).then((name) {
+                names[index] = '$name${entries[index].extension}';
+              }),
+          ],
+        );
+      }
+    } catch (error, stack) {
+      if (error is! FormatException) await reportService.recordError(error, stack);
+      if (context.mounted) showFeedback(context, FeedbackType.warn, error.toString());
+      return;
+    }
+    if (!context.mounted) return;
+    final entriesToNewName = {for (var index = 0; index < entries.length; index++) entries[index]: names[index]!};
     await rename(context, entriesToNewName: entriesToNewName, persist: true);
   }
 

@@ -47,7 +47,9 @@ class Covers {
   new _private();
 
   Future<void> init() async {
-    _rows = await localMediaDb.loadAllCovers();
+    final rows = await localMediaDb.loadAllCovers();
+    _unregisterListeners();
+    _rows = rows;
     _subscriptions.add(dynamicAlbums.eventBus.on<DynamicAlbumChangedEvent>().listen((e) => _updateCoveredDynamicAlbums(e.changes)));
     _subscriptions.add(albumGrouping.eventBus.on<GroupUriChangedEvent>().listen((e) => _updateCoveredGroup(e.oldGroupUri, e.newGroupUri)));
     _subscriptions.add(tagGrouping.eventBus.on<GroupUriChangedEvent>().listen((e) => _updateCoveredGroup(e.oldGroupUri, e.newGroupUri)));
@@ -56,6 +58,15 @@ class Covers {
     appInventory.areAppNamesReadyNotifier.addListener(_invalidateEffectiveAlbumPropCache);
     vaults.lockStateChangeNotifier.addListener(_invalidateEffectiveAlbumPropCache);
     _invalidateEffectiveAlbumPropCache();
+  }
+
+  void _unregisterListeners() {
+    _subscriptions
+      ..forEach((sub) => sub.cancel())
+      ..clear();
+    androidFileUtils.albumTypesChangeNotifier.removeListener(_invalidateEffectiveAlbumPropCache);
+    appInventory.areAppNamesReadyNotifier.removeListener(_invalidateEffectiveAlbumPropCache);
+    vaults.lockStateChangeNotifier.removeListener(_invalidateEffectiveAlbumPropCache);
   }
 
   int get count => _rows.length;

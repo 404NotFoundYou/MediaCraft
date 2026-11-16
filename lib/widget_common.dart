@@ -106,16 +106,10 @@ Future<AvesEntry?> _getWidgetEntry(int widgetId, bool reuseEntry) async {
   final filters = settings.getWidgetCollectionFilters(widgetId);
   final source = MediaStoreSource();
   CollectionLens? collection;
-  final readyCompleter = Completer();
-  source.stateNotifier.addListener(() {
-    if (source.isReady && !readyCompleter.isCompleted) {
-      readyCompleter.complete();
-    }
-  });
   try {
     source.canAnalyze = false;
     await source.init(scope: filters);
-    await readyCompleter.future;
+    await source.waitUntilReady();
 
     collection = CollectionLens(source: source, filters: filters);
     final entries = List.of(collection.sortedEntries);

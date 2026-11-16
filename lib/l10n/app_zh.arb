@@ -764,5 +764,7 @@
     "settingsThumbnailShowCredentialValidity": "显示凭据有效性",
     "aboutCreditsStateFlags": "来自 Wikimedia Commons 的地区旗帜。它们位于公共领域，除了：",
     "exportEntryDialogDimension": "尺寸：",
-    "sortRandomly": "随机"
+    "sortRandomly": "随机",
+    "collectionLoadFailure": "媒体加载失败，请重试。",
+    "retryButtonLabel": "重试"
 }

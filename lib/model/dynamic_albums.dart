@@ -28,7 +28,11 @@ class DynamicAlbums with ChangeNotifier {
   }
 
   Future<void> init() async {
-    _rows = (await localMediaDb.loadAllDynamicAlbums()).map((v) => DynamicAlbumFilter(v.name, v.filter)).toSet();
+    final rows = (await localMediaDb.loadAllDynamicAlbums()).map((v) => DynamicAlbumFilter(v.name, v.filter)).toSet();
+    _subscriptions
+      ..forEach((sub) => sub.cancel())
+      ..clear();
+    _rows = rows;
     _subscriptions.add(albumGrouping.eventBus.on<GroupUriChangedEvent>().listen((e) => _onGroupUriChanged(e.oldGroupUri, e.newGroupUri)));
   }
 

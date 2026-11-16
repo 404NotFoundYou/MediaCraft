@@ -40,7 +40,52 @@ import 'package:collection/collection.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
+Future<T> runWithMonitoringPaused<T>(CollectionSource source, Future<T> Function() operation) async {
+  source.pauseMonitoring();
+  try {
+    return await operation();
+  } finally {
+    source.resumeMonitoring();
+  }
+}
+
+Future<bool> hasFileNameConflict(Directory directory, Iterable<String> desiredNames) async {
+  final names = desiredNames.map((name) => name.toLowerCase()).toList();
+  final desired = names.toSet();
+  if (desired.length != names.length) return true;
+  if (!await directory.exists()) return false;
+  await for (final entity in directory.list()) {
+    if (desired.contains(pContext.basename(entity.path).toLowerCase())) return true;
+  }
+  return false;
+}
+
+Future<Set<AvesEntry>> refreshExportedEntries(
+  CollectionSource source,
+  Set<String> uris, {
+  required int attempts,
+  required Duration retryDelay,
+}) async {
+  var pending = Set.of(uris);
+  var found = <AvesEntry>{};
+  for (var attempt = 0; attempt < attempts && pending.isNotEmpty; attempt++) {
+    final loadFailure = source.loadError;
+    if (loadFailure != null) Error.throwWithStackTrace(loadFailure.error, loadFailure.stackTrace);
+    await source.refreshUris(pending);
+    final refreshFailure = source.loadError;
+    if (refreshFailure != null) Error.throwWithStackTrace(refreshFailure.error, refreshFailure.stackTrace);
+    found = source.allEntries.where((entry) => uris.contains(entry.uri)).toSet();
+    pending = uris.difference(found.map((entry) => entry.uri).toSet());
+    if (pending.isNotEmpty && attempt + 1 < attempts) await Future.pause(retryDelay);
+  }
+  if (pending.isNotEmpty) throw StateError('Exported media did not appear after $attempts refresh attempts: $pending');
+  return found;
+}
+
 mixin EntryStorageMixin on FeedbackMixin, PermissionAwareMixin, SizeAwareMixin, EntryEditorMixin {
+  static const _exportRefreshAttempts = 3;
+  static const _exportRefreshDelay = Duration(milliseconds: 250);
+
   // returns whether it completed the action (with or without failures)
   Future<bool> doExport(BuildContext context, Set<AvesEntry> targetEntries, EntryConvertOptions options) async {
     final destinationAlbumFilter = await pickAlbum(
@@ -80,15 +125,8 @@ mixin EntryStorageMixin on FeedbackMixin, PermissionAwareMixin, SizeAwareMixin, 
     var nameConflictStrategy = NameConflictStrategy.rename;
     final destinationDirectory = Directory(destinationAlbum);
     final destinationExtension = MimeTypes.extensionFor(options.mimeType);
-    final names = [
-      ...selection.map((v) => '${v.fileNameWithoutExtension}$destinationExtension'),
-      // do not guard up front based on directory existence,
-      // as conflicts could be within moved entries scattered across multiple albums
-      if (await destinationDirectory.exists()) ...destinationDirectory.listSync().map((v) => pContext.basename(v.path)),
-    ].map((v) => v.toLowerCase()).toList();
-    // case insensitive comparison
-    final uniqueNames = names.toSet();
-    if (uniqueNames.length < names.length) {
+    final desiredNames = selection.map((v) => '${v.fileNameWithoutExtension}$destinationExtension');
+    if (await hasFileNameConflict(destinationDirectory, desiredNames)) {
       final value = await showAvesDialog<NameConflictStrategy>(
         context: context,
         builder: (context) => AvesSingleSelectionDialog<NameConflictStrategy>(
@@ -105,85 +143,93 @@ mixin EntryStorageMixin on FeedbackMixin, PermissionAwareMixin, SizeAwareMixin, 
 
     final selectionCount = selection.length;
     final source = context.read<CollectionSource>();
-    source.pauseMonitoring();
-    await showOpReport<ExportOpEvent>(
-      context: context,
-      opStream: mediaEditService.export(
-        selection,
-        options: options,
-        destinationAlbum: destinationAlbum,
-        nameConflictStrategy: nameConflictStrategy,
-      ),
-      itemCount: selectionCount,
-      onDone: (processed) async {
-        final successOps = processed.where((op) => op.success).toSet();
-        final exportedOps = successOps.where((op) => !op.skipped && op.newFields[EntryFields.uri] != null).toSet();
-        final newUris = exportedOps.map((op) => op.newFields[EntryFields.uri] as String).toSet();
-        final isMainMode = context.read<ValueNotifier<AppMode>>().value == .main;
+    await runWithMonitoringPaused(source, () async {
+      await showOpReport<ExportOpEvent>(
+        context: context,
+        opStream: mediaEditService.export(
+          selection,
+          options: options,
+          destinationAlbum: destinationAlbum,
+          nameConflictStrategy: nameConflictStrategy,
+        ),
+        itemCount: selectionCount,
+        onDone: (processed) async {
+          final successOps = processed.where((op) => op.success).toSet();
+          final exportedOps = successOps.where((op) => !op.skipped && op.newFields[EntryFields.uri] != null).toSet();
+          final newUris = exportedOps.map((op) => op.newFields[EntryFields.uri] as String).toSet();
+          final isMainMode = context.read<ValueNotifier<AppMode>>().value == .main;
 
-        // check source favourite status
-        final favouriteSourceUris = selection.where((entry) => entry.isFavourite).map((entry) => entry.uri).toSet();
-        final favouriteNewUris = <String>{};
-        exportedOps.forEach((op) {
-          final sourceUri = op.uri;
-          if (favouriteSourceUris.contains(sourceUri)) {
-            final newUri = op.newFields[EntryFields.uri] as String;
-            favouriteNewUris.add(newUri);
+          // check source favourite status
+          final favouriteSourceUris = selection.where((entry) => entry.isFavourite).map((entry) => entry.uri).toSet();
+          final favouriteNewUris = <String>{};
+          exportedOps.forEach((op) {
+            final sourceUri = op.uri;
+            if (favouriteSourceUris.contains(sourceUri)) {
+              final newUri = op.newFields[EntryFields.uri] as String;
+              favouriteNewUris.add(newUri);
+            }
+          });
+
+          source.resumeMonitoring();
+          final Set<AvesEntry> newEntries;
+          try {
+            newEntries = await refreshExportedEntries(
+              source,
+              newUris,
+              attempts: _exportRefreshAttempts,
+              retryDelay: _exportRefreshDelay,
+            );
+          } catch (error, stack) {
+            await reportService.recordError(error, stack);
+            showFeedback(context, FeedbackType.warn, l10n.genericFailureFeedback);
+            return;
           }
-        });
+          final newFavouriteEntries = newEntries.where((entry) => favouriteNewUris.contains(entry.uri)).toSet();
+          await favourites.add(newFavouriteEntries);
 
-        source.resumeMonitoring();
-        unawaited(
-          source.refreshUris(newUris).then((_) {
-            // transfer favourite status on exports
-            final newFavouriteEntries = source.allEntries.where((entry) => favouriteNewUris.contains(entry.uri)).toSet();
-            favourites.add(newFavouriteEntries);
-          }),
-        );
-
-        // get navigator beforehand because
-        // local context may be deactivated when action is triggered after navigation
-        final navigator = Navigator.maybeOf(context);
-        final showAction = isMainMode && newUris.isNotEmpty
-            ? SnackBarAction(
-                label: l10n.showButtonLabel,
-                onPressed: () {
-                  if (navigator != null) {
-                    navigator.pushAndRemoveUntil(
-                      MaterialPageRoute(
-                        settings: const RouteSettings(name: CollectionPage.routeName),
-                        builder: (context) => CollectionPage(
-                          source: source,
-                          filters: {StoredAlbumFilter(destinationAlbum, source.getStoredAlbumDisplayName(context, destinationAlbum))},
-                          highlightTest: (entry) => newUris.contains(entry.uri),
+          // get navigator beforehand because
+          // local context may be deactivated when action is triggered after navigation
+          final navigator = Navigator.maybeOf(context);
+          final showAction = isMainMode && newUris.isNotEmpty
+              ? SnackBarAction(
+                  label: l10n.showButtonLabel,
+                  onPressed: () {
+                    if (navigator != null) {
+                      navigator.pushAndRemoveUntil(
+                        MaterialPageRoute(
+                          settings: const RouteSettings(name: CollectionPage.routeName),
+                          builder: (context) => CollectionPage(
+                            source: source,
+                            filters: {StoredAlbumFilter(destinationAlbum, source.getStoredAlbumDisplayName(context, destinationAlbum))},
+                            highlightTest: (entry) => newUris.contains(entry.uri),
+                          ),
                         ),
-                      ),
-                      (route) => false,
-                    );
-                  }
-                },
-              )
-            : null;
-        final successCount = successOps.length;
-        if (successCount < selectionCount) {
-          final count = selectionCount - successCount;
-          showFeedback(
-            context,
-            FeedbackType.warn,
-            l10n.collectionExportFailureFeedback(count),
-            showAction,
-          );
-        } else {
-          showFeedback(
-            context,
-            FeedbackType.info,
-            l10n.genericSuccessFeedback,
-            showAction,
-          );
-        }
-      },
-    );
-    transientMultiPageInfo.forEach((v) => v.dispose());
+                        (route) => false,
+                      );
+                    }
+                  },
+                )
+              : null;
+          final successCount = successOps.length;
+          if (successCount < selectionCount) {
+            final count = selectionCount - successCount;
+            showFeedback(
+              context,
+              FeedbackType.warn,
+              l10n.collectionExportFailureFeedback(count),
+              showAction,
+            );
+          } else {
+            showFeedback(
+              context,
+              FeedbackType.info,
+              l10n.genericSuccessFeedback,
+              showAction,
+            );
+          }
+        },
+      );
+    }).whenComplete(() => transientMultiPageInfo.forEach((v) => v.dispose()));
     return true;
   }
 
@@ -242,26 +288,14 @@ mixin EntryStorageMixin on FeedbackMixin, PermissionAwareMixin, SizeAwareMixin, 
     final originAlbums = entries.map((entry) => entry.storageDirectory).nonNulls.toSet();
     if ({MoveType.move, MoveType.toBin}.contains(moveType) && !await checkStoragePermissionForAlbums(context, originAlbums, entries: entries)) return false;
 
-    final hasEnoughSpaceByDestination = await Future.wait(
-      destinationAlbums.map((destinationAlbum) {
-        return checkFreeSpaceForMove(context, entries, destinationAlbum, moveType);
-      }),
-    );
-    if (hasEnoughSpaceByDestination.any((v) => !v)) return false;
+    if (!await checkFreeSpaceForMoves(context, entriesByDestination, moveType)) return false;
 
     final l10n = context.l10n;
     var nameConflictStrategy = NameConflictStrategy.rename;
     if (!toBin && destinationAlbums.length == 1) {
       final destinationDirectory = Directory(destinationAlbums.single);
-      final names = [
-        ...entries.map((v) => '${v.fileNameWithoutExtension}${v.extension}'),
-        // do not guard up front based on directory existence,
-        // as conflicts could be within moved entries scattered across multiple albums
-        if (await destinationDirectory.exists()) ...destinationDirectory.listSync().map((v) => pContext.basename(v.path)),
-      ].map((v) => v.toLowerCase()).toList();
-      // case insensitive comparison
-      final uniqueNames = names.toSet();
-      if (uniqueNames.length < names.length) {
+      final desiredNames = entries.map((v) => '${v.fileNameWithoutExtension}${v.extension}');
+      if (await hasFileNameConflict(destinationDirectory, desiredNames)) {
         final value = await showAvesDialog<NameConflictStrategy>(
           context: context,
           builder: (context) => AvesSingleSelectionDialog<NameConflictStrategy>(
@@ -288,96 +322,95 @@ mixin EntryStorageMixin on FeedbackMixin, PermissionAwareMixin, SizeAwareMixin, 
 
     final appMode = context.read<ValueNotifier<AppMode>?>()?.value;
     final source = context.read<CollectionSource>();
-    source.pauseMonitoring();
     final opId = mediaEditService.newOpId;
-    await showOpReport<MoveOpEvent>(
-      context: context,
-      opStream: mediaEditService.move(
-        opId: opId,
-        entriesByDestination: entriesByDestination,
-        copy: copy,
-        nameConflictStrategy: nameConflictStrategy,
-      ),
-      itemCount: todoCount,
-      onCancel: () => mediaEditService.cancelFileOp(opId),
-      onDone: (processed) async {
-        final successOps = processed.where((op) => op.success).toSet();
+    await runWithMonitoringPaused(source, () async {
+      await showOpReport<MoveOpEvent>(
+        context: context,
+        opStream: mediaEditService.move(
+          opId: opId,
+          entriesByDestination: entriesByDestination,
+          copy: copy,
+          nameConflictStrategy: nameConflictStrategy,
+        ),
+        itemCount: todoCount,
+        onCancel: () => mediaEditService.cancelFileOp(opId),
+        onDone: (processed) async {
+          final successOps = processed.where((op) => op.success).toSet();
 
-        // move
-        final movedOps = successOps.where((op) => !op.skipped && !op.deleted).toSet();
-        final movedEntries = movedOps.map((op) => op.uri).map((uri) => entries.firstWhereOrNull((entry) => entry.uri == uri)).nonNulls.toSet();
-        await source.updateAfterMove(
-          todoEntries: entries,
-          moveType: moveType,
-          destinationAlbums: destinationAlbums,
-          movedOps: movedOps,
-        );
-
-        // delete (when trying to move to bin obsolete entries)
-        final deletedOps = successOps.where((op) => op.deleted).toSet();
-        final deletedUris = deletedOps.map((op) => op.uri).toSet();
-        await source.removeEntries(deletedUris, includeTrash: true);
-
-        source.resumeMonitoring();
-
-        // cleanup
-        if ({MoveType.move, MoveType.toBin}.contains(moveType)) {
-          await storageService.deleteEmptyRegularDirectories(originAlbums);
-        }
-
-        // use navigation context for top-level messaging
-        final successCount = successOps.length;
-        if (successCount < todoCount) {
-          final count = todoCount - successCount;
-          showFeedback(
-            navContext,
-            FeedbackType.warn,
-            copy ? l10n.collectionCopyFailureFeedback(count) : l10n.collectionMoveFailureFeedback(count),
+          // move
+          final movedOps = successOps.where((op) => !op.skipped && !op.deleted).toSet();
+          final movedEntries = movedOps.map((op) => op.uri).map((uri) => entries.firstWhereOrNull((entry) => entry.uri == uri)).nonNulls.toSet();
+          await source.updateAfterMove(
+            todoEntries: entries,
+            moveType: moveType,
+            destinationAlbums: destinationAlbums,
+            movedOps: movedOps,
           );
-        } else {
-          final count = movedOps.length;
 
-          SnackBarAction? action;
-          if (count > 0 && appMode == .main) {
-            if (toBin) {
-              if (movedEntries.isNotEmpty) {
+          // delete (when trying to move to bin obsolete entries)
+          final deletedOps = successOps.where((op) => op.deleted).toSet();
+          final deletedUris = deletedOps.map((op) => op.uri).toSet();
+          await source.removeEntries(deletedUris, includeTrash: true);
+
+          // cleanup
+          if ({MoveType.move, MoveType.toBin}.contains(moveType)) {
+            await storageService.deleteEmptyRegularDirectories(originAlbums);
+          }
+
+          // use navigation context for top-level messaging
+          final successCount = successOps.length;
+          if (successCount < todoCount) {
+            final count = todoCount - successCount;
+            showFeedback(
+              navContext,
+              FeedbackType.warn,
+              copy ? l10n.collectionCopyFailureFeedback(count) : l10n.collectionMoveFailureFeedback(count),
+            );
+          } else {
+            final count = movedOps.length;
+
+            SnackBarAction? action;
+            if (count > 0 && appMode == .main) {
+              if (toBin) {
+                if (movedEntries.isNotEmpty) {
+                  action = SnackBarAction(
+                    label: Themes.asButtonLabel(l10n.entryActionRestore),
+                    onPressed: () {
+                      doMove(
+                        navContext,
+                        moveType: MoveType.fromBin,
+                        entries: movedEntries,
+                        hideShowAction: true,
+                      );
+                    },
+                  );
+                }
+              } else if (!hideShowAction) {
                 action = SnackBarAction(
-                  label: Themes.asButtonLabel(l10n.entryActionRestore),
+                  label: l10n.showButtonLabel,
                   onPressed: () {
-                    doMove(
-                      navContext,
-                      moveType: MoveType.fromBin,
-                      entries: movedEntries,
-                      hideShowAction: true,
-                    );
+                    _showMovedItems(navContext, destinationAlbums, movedOps);
                   },
                 );
               }
-            } else if (!hideShowAction) {
-              action = SnackBarAction(
-                label: l10n.showButtonLabel,
-                onPressed: () {
-                  _showMovedItems(navContext, destinationAlbums, movedOps);
-                },
+            }
+
+            if (!toBin || (toBin && settings.confirmAfterMoveToBin)) {
+              showFeedback(
+                navContext,
+                FeedbackType.info,
+                copy ? l10n.collectionCopySuccessFeedback(count) : l10n.collectionMoveSuccessFeedback(count),
+                action,
               );
             }
-          }
 
-          if (!toBin || (toBin && settings.confirmAfterMoveToBin)) {
-            showFeedback(
-              navContext,
-              FeedbackType.info,
-              copy ? l10n.collectionCopySuccessFeedback(count) : l10n.collectionMoveSuccessFeedback(count),
-              action,
-            );
+            // use local context for handling up the tree
+            EntryMovedNotification(moveType, movedEntries).dispatch(context);
+            onSuccess?.call();
           }
-
-          // use local context for handling up the tree
-          EntryMovedNotification(moveType, movedEntries).dispatch(context);
-          onSuccess?.call();
-        }
-      },
-    );
+        },
+      );
+    });
     return true;
   }
 
@@ -457,38 +490,37 @@ mixin EntryStorageMixin on FeedbackMixin, PermissionAwareMixin, SizeAwareMixin, 
     if (!await checkUndatedItems(context, entries)) return false;
 
     final source = context.read<CollectionSource>();
-    source.pauseMonitoring();
     final opId = mediaEditService.newOpId;
-    await showOpReport<MoveOpEvent>(
-      context: context,
-      opStream: mediaEditService.rename(
-        opId: opId,
-        entriesToNewName: entriesToNewName,
-      ),
-      itemCount: todoCount,
-      onCancel: () => mediaEditService.cancelFileOp(opId),
-      onDone: (processed) async {
-        final successOps = processed.where((op) => op.success).toSet();
-        final movedOps = successOps.where((op) => !op.skipped).toSet();
-        await source.updateAfterRename(
-          todoEntries: entries,
-          movedOps: movedOps,
-          persist: persist,
-        );
-        source.resumeMonitoring();
-
-        final l10n = context.l10n;
-        final successCount = successOps.length;
-        if (successCount < todoCount) {
-          final count = todoCount - successCount;
-          showFeedback(context, FeedbackType.warn, l10n.collectionRenameFailureFeedback(count));
-        } else {
-          final count = movedOps.length;
-          showFeedback(context, FeedbackType.info, l10n.collectionRenameSuccessFeedback(count));
-          onSuccess?.call();
-        }
-      },
-    );
+    await runWithMonitoringPaused(source, () async {
+      await showOpReport<MoveOpEvent>(
+        context: context,
+        opStream: mediaEditService.rename(
+          opId: opId,
+          entriesToNewName: entriesToNewName,
+        ),
+        itemCount: todoCount,
+        onCancel: () => mediaEditService.cancelFileOp(opId),
+        onDone: (processed) async {
+          final successOps = processed.where((op) => op.success).toSet();
+          final movedOps = successOps.where((op) => !op.skipped).toSet();
+          await source.updateAfterRename(
+            todoEntries: entries,
+            movedOps: movedOps,
+            persist: persist,
+          );
+          final l10n = context.l10n;
+          final successCount = successOps.length;
+          if (successCount < todoCount) {
+            final count = todoCount - successCount;
+            showFeedback(context, FeedbackType.warn, l10n.collectionRenameFailureFeedback(count));
+          } else {
+            final count = movedOps.length;
+            showFeedback(context, FeedbackType.info, l10n.collectionRenameSuccessFeedback(count));
+            onSuccess?.call();
+          }
+        },
+      );
+    });
     return true;
   }
 

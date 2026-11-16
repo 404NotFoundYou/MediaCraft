@@ -13,6 +13,8 @@ import 'package:test/fake.dart';
 
 class FakeAvesDb extends Fake implements LocalMediaDb {
   static int _lastId = 0;
+  Set<DynamicAlbumRow> dynamicAlbumRows = {};
+  int addDynamicAlbumsCalls = 0, removeDynamicAlbumsCalls = 0;
 
   @override
   int get nextId => ++_lastId;
@@ -121,7 +123,7 @@ class FakeAvesDb extends Fake implements LocalMediaDb {
   Future<void> removeCovers(Set<CollectionFilter> filters) => SynchronousFuture(null);
 
   @override
-  Future<Set<DynamicAlbumRow>> loadAllDynamicAlbums() => SynchronousFuture({});
+  Future<Set<DynamicAlbumRow>> loadAllDynamicAlbums() => SynchronousFuture(dynamicAlbumRows);
 
   // dynamic albums
 
@@ -129,10 +131,18 @@ class FakeAvesDb extends Fake implements LocalMediaDb {
   Future<int> clearDynamicAlbums() => SynchronousFuture(0);
 
   @override
-  Future<void> addDynamicAlbums(Set<DynamicAlbumRow> rows) => SynchronousFuture(null);
+  Future<void> addDynamicAlbums(Set<DynamicAlbumRow> rows) {
+    addDynamicAlbumsCalls++;
+    dynamicAlbumRows.addAll(rows);
+    return SynchronousFuture(null);
+  }
 
   @override
-  Future<void> removeDynamicAlbums(Set<String> names) => SynchronousFuture(null);
+  Future<void> removeDynamicAlbums(Set<String> names) {
+    removeDynamicAlbumsCalls++;
+    dynamicAlbumRows.removeWhere((row) => names.contains(row.name));
+    return SynchronousFuture(null);
+  }
 
   // video playback
 

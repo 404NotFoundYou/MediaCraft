@@ -45,6 +45,7 @@ typedef SourceScope = Set<CollectionFilter>?;
 
 mixin SourceBase {
   bool _sourceDisposed = false;
+  final Set<Completer<void>> _readyWaiters = {};
 
   EventBus get eventBus;
 
@@ -67,6 +68,30 @@ mixin SourceBase {
   SourceState get state => stateNotifier.value;
 
   bool get isReady => state == SourceState.ready;
+
+  AsyncError? loadError;
+
+  Future<void> waitUntilReady() {
+    if (_sourceDisposed) return Future.error(StateError('Media source is disposed'));
+    final completer = Completer<void>();
+    _readyWaiters.add(completer);
+    void checkState() {
+      if (completer.isCompleted) return;
+      if (isReady) {
+        completer.complete();
+      } else if (state == SourceState.failed) {
+        final failure = loadError;
+        completer.completeError(failure?.error ?? StateError('Media loading failed'), failure?.stackTrace);
+      }
+    }
+
+    stateNotifier.addListener(checkState);
+    checkState();
+    return completer.future.whenComplete(() {
+      stateNotifier.removeListener(checkState);
+      _readyWaiters.remove(completer);
+    });
+  }
 
   ValueNotifier<ProgressEvent> progressNotifier = ValueNotifier(const ProgressEvent(done: 0, total: 0));
 
@@ -119,6 +144,10 @@ abstract class CollectionSource with SourceBase, AlbumMixin, CountryMixin, Place
   @protected
   void detachListeners() {
     _sourceDisposed = true;
+    for (final waiter in _readyWaiters) {
+      if (!waiter.isCompleted) waiter.completeError(StateError('Media source is disposed'));
+    }
+    _readyWaiters.clear();
     _subscriptions
       ..forEach((sub) => sub.cancel())
       ..clear();

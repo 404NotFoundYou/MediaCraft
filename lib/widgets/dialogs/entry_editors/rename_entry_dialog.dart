@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:aves/model/entry/entry.dart';
+import 'package:aves/model/naming_pattern.dart';
 import 'package:aves/services/common/services.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/dialogs/aves_dialog.dart';
@@ -24,6 +25,8 @@ class RenameEntryDialog extends StatefulWidget {
 class _RenameEntryDialogState extends State<RenameEntryDialog> {
   final TextEditingController _nameController = TextEditingController();
   final ValueNotifier<bool> _isValidNotifier = ValueNotifier(false);
+  final ValueNotifier<String?> _validationErrorNotifier = ValueNotifier(null);
+  int _validationGeneration = 0;
 
   AvesEntry get entry => widget.entry;
 
@@ -38,6 +41,7 @@ class _RenameEntryDialogState extends State<RenameEntryDialog> {
   void dispose() {
     _nameController.dispose();
     _isValidNotifier.dispose();
+    _validationErrorNotifier.dispose();
     super.dispose();
   }
 
@@ -48,15 +52,19 @@ class _RenameEntryDialogState extends State<RenameEntryDialog> {
         crossAxisAlignment: .end,
         children: [
           Expanded(
-            child: TextField(
-              controller: _nameController,
-              decoration: InputDecoration(
-                labelText: context.l10n.renameEntryDialogLabel,
+            child: ValueListenableBuilder<String?>(
+              valueListenable: _validationErrorNotifier,
+              builder: (context, error, child) => TextField(
+                controller: _nameController,
+                decoration: InputDecoration(
+                  labelText: context.l10n.renameEntryDialogLabel,
+                  errorText: error,
+                ),
+                autofocus: true,
+                maxLines: null,
+                onChanged: (_) => _validate(),
+                onSubmitted: (_) => _submit(context),
               ),
-              autofocus: true,
-              maxLines: null,
-              onChanged: (_) => _validate(),
-              onSubmitted: (_) => _submit(context),
             ),
           ),
           Padding(
@@ -91,9 +99,18 @@ class _RenameEntryDialogState extends State<RenameEntryDialog> {
   String get newName => _nameController.text.trimLeft().replaceAll('\n', '');
 
   Future<void> _validate() async {
+    final generation = ++_validationGeneration;
     final _newName = newName;
+    final validationError = NamingPattern.validateGeneratedName(_newName);
+    if (validationError != null) {
+      _validationErrorNotifier.value = validationError;
+      _isValidNotifier.value = false;
+      return;
+    }
     final path = _buildEntryPath(_newName);
     final exists = _newName.isNotEmpty && await FileSystemEntity.type(path) != FileSystemEntityType.notFound;
+    if (!mounted || generation != _validationGeneration) return;
+    _validationErrorNotifier.value = exists ? 'A file with this name already exists' : null;
     _isValidNotifier.value = _newName.isNotEmpty && !exists;
   }
 

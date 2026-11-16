@@ -1161,5 +1161,7 @@
   "panoramaEnableSensorControl": "Enable sensor control",
   "panoramaDisableSensorControl": "Disable sensor control",
 
-  "sourceViewerPageTitle": "Source"
+  "sourceViewerPageTitle": "Source",
+  "collectionLoadFailure": "Could not load your media. Please try again.",
+  "retryButtonLabel": "Retry"
 }

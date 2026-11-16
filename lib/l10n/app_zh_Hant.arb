@@ -982,5 +982,7 @@
     "mapHideItemTracks": "隱藏路徑",
     "tileLayoutCalendar": "日曆",
     "collectionActionShowLayoutBar": "顯示版面列",
-    "collectionActionHideLayoutBar": "隱藏版面列"
+    "collectionActionHideLayoutBar": "隱藏版面列",
+    "collectionLoadFailure": "媒體載入失敗，請重試。",
+    "retryButtonLabel": "重試"
 }

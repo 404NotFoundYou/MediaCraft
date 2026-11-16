@@ -23,6 +23,7 @@ import 'package:aves/widgets/collection/grid/list_details_theme.dart';
 import 'package:aves/widgets/collection/grid/section_layout.dart';
 import 'package:aves/widgets/collection/grid/tile.dart';
 import 'package:aves/widgets/collection/loading.dart';
+import 'package:aves/widgets/collection/load_error.dart';
 import 'package:aves/widgets/common/basic/draggable_scrollbar/scrollbar.dart';
 import 'package:aves/widgets/common/basic/insets.dart';
 import 'package:aves/widgets/common/behaviour/routes.dart';
@@ -579,29 +580,33 @@ class _CollectionScrollViewState extends State<_CollectionScrollView> with Widge
   }
 
   Widget _buildScrollView(Widget appBar, CollectionLens collection) {
-    return CustomScrollView(
-      key: widget.scrollableKey,
-      primary: true,
-      // workaround to prevent scrolling the app bar away
-      // when there is no content and we use `SliverFillRemaining`
-      physics: collection.isEmpty
-          ? const NeverScrollableScrollPhysics()
-          : SloppyScrollPhysics(
-              gestureSettings: MediaQuery.gestureSettingsOf(context),
-              parent: const AlwaysScrollableScrollPhysics(),
-            ),
-      scrollCacheExtent: ScrollCacheExtent.pixels(context.select<TileExtentController, double>((controller) => controller.effectiveExtentMax)),
-      slivers: [
-        appBar,
-        collection.isEmpty
-            ? SliverFillRemaining(
-                hasScrollBody: false,
-                child: _buildEmptyContent(collection),
-              )
-            : const SectionedListSliver<AvesEntry>(),
-        const NavBarPaddingSliver(),
-        const TvTileGridBottomPaddingSliver(),
-      ],
+    return ValueListenableBuilder<SourceState>(
+      valueListenable: collection.source.stateNotifier,
+      builder: (context, sourceState, _) => CustomScrollView(
+        key: widget.scrollableKey,
+        primary: true,
+        // workaround to prevent scrolling the app bar away
+        // when there is no content and we use `SliverFillRemaining`
+        physics: collection.isEmpty
+            ? const NeverScrollableScrollPhysics()
+            : SloppyScrollPhysics(
+                gestureSettings: MediaQuery.gestureSettingsOf(context),
+                parent: const AlwaysScrollableScrollPhysics(),
+              ),
+        scrollCacheExtent: ScrollCacheExtent.pixels(context.select<TileExtentController, double>((controller) => controller.effectiveExtentMax)),
+        slivers: [
+          appBar,
+          if (sourceState == SourceState.failed) SliverToBoxAdapter(child: CollectionLoadError(source: collection.source)),
+          collection.isEmpty
+              ? SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: sourceState == SourceState.failed ? const SizedBox() : _buildEmptyContent(collection),
+                )
+              : const SectionedListSliver<AvesEntry>(),
+          const NavBarPaddingSliver(),
+          const TvTileGridBottomPaddingSliver(),
+        ],
+      ),
     );
   }
 

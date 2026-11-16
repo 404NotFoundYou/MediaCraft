@@ -25,6 +25,7 @@ import 'package:provider/provider.dart';
 mixin EntryViewControllerMixin<T extends StatefulWidget> on State<T> {
   final Map<AvesEntry, VoidCallback> _metadataChangeListeners = {};
   final Map<MultiPageController, Future<void> Function()> _multiPageControllerPageListeners = {};
+  int _entryControllerGeneration = 0;
 
   bool? videoMutedOverride;
 
@@ -34,12 +35,15 @@ mixin EntryViewControllerMixin<T extends StatefulWidget> on State<T> {
 
   Future<void> initEntryControllers(AvesEntry? entry) async {
     if (!mounted || entry == null) return;
+    final generation = ++_entryControllerGeneration;
 
     if (entry.isVideo) {
-      await _initVideoController(entry);
+      await _initVideoController(entry, generation);
+      if (!_isCurrentEntryController(entry, generation)) return;
     }
     if (entry.isMultiPage) {
-      await _initMultiPageController(entry);
+      await _initMultiPageController(entry, generation);
+      if (!_isCurrentEntryController(entry, generation)) return;
     }
     void listener() => _onMetadataChanged(entry);
     _metadataChangeListeners[entry] = listener;
@@ -47,6 +51,7 @@ mixin EntryViewControllerMixin<T extends StatefulWidget> on State<T> {
   }
 
   void cleanEntryControllers(AvesEntry? entry) {
+    _entryControllerGeneration++;
     if (entry == null) return;
 
     final listener = _metadataChangeListeners.remove(entry);
@@ -129,41 +134,63 @@ mixin EntryViewControllerMixin<T extends StatefulWidget> on State<T> {
     return settings.enableMotionPhotoAutoPlay;
   }
 
-  Future<void> _initVideoController(AvesEntry entry) async {
-    final controller = await context.read<VideoConductor>().getOrCreateController(entry);
+  bool _isCurrentEntryController(AvesEntry entry, int generation) => mounted && generation == _entryControllerGeneration && entry == entryNotifier.value;
+
+  Future<void> _initVideoController(AvesEntry entry, int generation) async {
+    final videoConductor = context.read<VideoConductor>();
+    final AvesVideoController controller;
+    try {
+      controller = await videoConductor.getOrCreateController(entry);
+    } catch (_) {
+      if (!_isCurrentEntryController(entry, generation) || videoConductor.isDisposed) return;
+      rethrow;
+    }
+    if (!_isCurrentEntryController(entry, generation)) return;
     setState(() {});
 
     if (videoAutoPlayEnabled || entry.isAnimated) {
       final resumeTimeMillis = await controller.getResumeTime(context);
-      await _autoPlayVideo(controller, () => entry == entryNotifier.value, resumeTimeMillis: resumeTimeMillis);
+      if (!_isCurrentEntryController(entry, generation)) return;
+      await _autoPlayVideo(controller, () => _isCurrentEntryController(entry, generation), resumeTimeMillis: resumeTimeMillis);
     }
   }
 
-  Future<void> _initMultiPageController(AvesEntry entry) async {
-    if (!mounted) return;
-
-    final multiPageController = context.read<MultiPageConductor>().getOrCreateController(entry);
+  Future<void> _initMultiPageController(AvesEntry entry, int generation) async {
+    final multiPageConductor = context.read<MultiPageConductor>();
+    final videoConductor = context.read<VideoConductor>();
+    final multiPageController = multiPageConductor.getOrCreateController(entry);
+    if (!_isCurrentEntryController(entry, generation)) return;
     setState(() {});
 
     final multiPageInfo = multiPageController.info ?? await multiPageController.infoStream.first;
+    if (!_isCurrentEntryController(entry, generation)) return;
     assert(multiPageInfo != null);
     if (multiPageInfo == null) return;
 
     if (entry.isMotionPhoto) {
       await multiPageInfo.extractMotionPhotoVideo();
+      if (!_isCurrentEntryController(entry, generation)) return;
     }
 
     final videoPageEntries = multiPageInfo.videoPageEntries;
     if (videoPageEntries.isNotEmpty) {
       // init video controllers for all pages that could need it
-      final videoConductor = context.read<VideoConductor>();
-      await Future.forEach(videoPageEntries, (entry) async {
-        await videoConductor.getOrCreateController(entry, maxControllerCount: videoPageEntries.length);
+      await Future.forEach(videoPageEntries, (pageEntry) async {
+        if (!_isCurrentEntryController(entry, generation)) return;
+        try {
+          await videoConductor.getOrCreateController(pageEntry, maxControllerCount: videoPageEntries.length);
+        } catch (_) {
+          if (!_isCurrentEntryController(entry, generation) || videoConductor.isDisposed) return;
+          rethrow;
+        }
       });
+      if (!_isCurrentEntryController(entry, generation)) return;
 
       // auto play/pause when changing page
       Future<void> _onPageChanged() async {
-        await pauseVideoControllers();
+        if (!_isCurrentEntryController(entry, generation)) return;
+        await videoConductor.pauseAll();
+        if (!_isCurrentEntryController(entry, generation)) return;
         if (videoAutoPlayEnabled || (entry.isMotionPhoto && shouldAutoPlayMotionPhoto)) {
           final page = multiPageController.page;
           final pageInfo = multiPageInfo.getByIndex(page)!;
@@ -172,7 +199,10 @@ mixin EntryViewControllerMixin<T extends StatefulWidget> on State<T> {
             final pageVideoController = videoConductor.getController(pageEntry);
             assert(pageVideoController != null);
             if (pageVideoController != null) {
-              await _autoPlayVideo(pageVideoController, () => entry == entryNotifier.value && page == multiPageController.page);
+              await _autoPlayVideo(
+                pageVideoController,
+                () => _isCurrentEntryController(entry, generation) && page == multiPageController.page,
+              );
             }
           }
         }
@@ -181,10 +211,11 @@ mixin EntryViewControllerMixin<T extends StatefulWidget> on State<T> {
       _multiPageControllerPageListeners[multiPageController] = _onPageChanged;
       multiPageController.pageNotifier.addListener(_onPageChanged);
       await _onPageChanged();
+      if (!_isCurrentEntryController(entry, generation)) return;
 
       if (entry.isMotionPhoto && shouldAutoPlayMotionPhoto) {
         await Future.pause(ADurations.motionPhotoAutoPlayDelay);
-        if (entry == entryNotifier.value) {
+        if (_isCurrentEntryController(entry, generation)) {
           multiPageController.page = 1;
         }
       }
@@ -206,13 +237,16 @@ mixin EntryViewControllerMixin<T extends StatefulWidget> on State<T> {
     // during this widget initialization (because of the page transition and hero animation?)
     // so we play after a delay for increased stability
     await Future.pause(const Duration(milliseconds: 300) * timeDilation);
+    if (!isCurrent()) return;
 
     if (!videoController.isMuted && (videoController.entry.isAnimated || shouldAutoPlayVideoMuted)) {
       await videoController.mute(true);
+      if (!isCurrent()) return;
     }
 
     if (resumeTimeMillis != null) {
       await videoController.seekTo(resumeTimeMillis);
+      if (!isCurrent()) return;
     }
     await videoController.play();
 

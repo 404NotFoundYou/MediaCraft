@@ -361,6 +361,10 @@ class _HomePageState extends State<HomePage> with FeedbackMixin {
           stateNotifier.addListener(_onSourceStateChanged);
           _onSourceStateChanged();
           await loadingCompleter.future;
+          final failure = source.loadError;
+          if (source.state == SourceState.failed && failure != null) {
+            Error.throwWithStackTrace(failure.error, failure.stackTrace);
+          }
 
           collection = CollectionLens(
             source: source,

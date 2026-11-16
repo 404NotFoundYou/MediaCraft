@@ -2,11 +2,24 @@ package deckers.thibault.aves.model.provider
 
 import deckers.thibault.aves.utils.TimeZones
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import java.time.Instant
 import java.util.TimeZone
 
 class ImageProviderTest {
+    @Test
+    fun renameTargetsStayInTheSourceDirectory() {
+        assertEquals("photo 001", validateRenameName("photo 001"))
+        assertThrows(IllegalArgumentException::class.java) { validateRenameName("") }
+        assertThrows(IllegalArgumentException::class.java) { validateRenameName("..") }
+        assertThrows(IllegalArgumentException::class.java) { validateRenameName("../other/photo") }
+        assertThrows(IllegalArgumentException::class.java) { validateRenameName("sub\\photo") }
+        assertThrows(IllegalArgumentException::class.java) { validateRenameName(".hidden") }
+        assertThrows(IllegalArgumentException::class.java) { validateRenameName("line\nbreak") }
+        assertThrows(IllegalArgumentException::class.java) { buildRenameTarget("source", "../escape.jpg") }
+    }
+
     @Test
     fun captureOffsetsPreservePositiveNegativeAndHalfHourZones() {
         val dateMillis = Instant.parse("1990-02-11T12:00:00Z").toEpochMilli()

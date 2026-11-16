@@ -86,13 +86,33 @@ abstract class AvesVideoController(
 
   Future<void> get untilReady {
     if (isReady) return Future.value();
+    if (status == .error) return Future.error(StateError('Video controller failed before becoming ready'));
 
-    final completer = Completer();
+    final completer = Completer<void>();
     late StreamSubscription<PlaybackStatus> sub;
-    sub = statusStream.where((_) => isReady).listen((_) {
-      sub.cancel();
+    void complete() {
+      if (completer.isCompleted) return;
+      unawaited(sub.cancel());
       completer.complete();
-    });
+    }
+
+    void completeError(Object error, [StackTrace? stack]) {
+      if (completer.isCompleted) return;
+      unawaited(sub.cancel());
+      completer.completeError(error, stack);
+    }
+
+    sub = statusStream.listen(
+      (status) {
+        if (status == .error) {
+          completeError(StateError('Video controller failed before becoming ready'));
+        } else if (isReady) {
+          complete();
+        }
+      },
+      onError: completeError,
+      onDone: () => completeError(StateError('Video controller was disposed before becoming ready')),
+    );
     return completer.future;
   }
 

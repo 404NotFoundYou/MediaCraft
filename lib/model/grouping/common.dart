@@ -58,6 +58,9 @@ class FilterGrouping<T extends GroupBaseFilter> with ChangeNotifier {
   }
 
   void init() {
+    _subscriptions
+      ..forEach((sub) => sub.cancel())
+      ..clear();
     _subscriptions.add(dynamicAlbums.eventBus.on<DynamicAlbumChangedEvent>().listen((e) => _sanitize()));
   }
 

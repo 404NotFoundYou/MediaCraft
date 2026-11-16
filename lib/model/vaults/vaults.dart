@@ -27,7 +27,9 @@ class Vaults {
   new _private();
 
   Future<void> init() async {
-    _rows = await localMediaDb.loadAllVaults();
+    final rows = await localMediaDb.loadAllVaults();
+    _unregisterListeners();
+    _rows = rows;
     _vaultDirPaths = null;
     final screenStateStream = Platform.isAndroid ? AvesScreenState().screenStateStream : null;
     if (screenStateStream != null) {
@@ -39,6 +41,10 @@ class Vaults {
   void dispose() {
     contentChangeNotifier.dispose();
     lockStateChangeNotifier.dispose();
+    _unregisterListeners();
+  }
+
+  void _unregisterListeners() {
     _subscriptions
       ..forEach((sub) => sub.cancel())
       ..clear();

@@ -1,4 +1,4 @@
-enum SourceState { loading, cataloguing, locatingCountries, locatingPlaces, ready }
+enum SourceState { loading, cataloguing, locatingCountries, locatingPlaces, ready, failed }
 
 enum SortFactor {
   // common
