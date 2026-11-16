@@ -1,0 +1,6 @@
+In v0.6.3:
+- Recover failed media loading and file operations.
+- Validate batch renaming and improve large collection performance.
+- Fix video lifecycle, animated image memory, and image tile updates.
+- Improve Baidu map recovery, caches, and release validation.
+Full changelog available on GitHub

@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - v*
+      # Baidu APKs use separately configured map credentials and are published separately.
+      - '!v*-baidu*'
 
 # Declare default permissions as read only.
 permissions: read-all
