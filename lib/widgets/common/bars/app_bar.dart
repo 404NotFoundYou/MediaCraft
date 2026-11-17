@@ -81,11 +81,11 @@ class const AvesAppBar({
       pinned: pinned,
       delegate: _SliverAppBarDelegate(
         height: MediaQuery.paddingOf(context).top + appBarHeightForContentHeight(contentHeight),
-        child: DirectionalSafeArea(
-          start: !useTvLayout,
-          bottom: false,
-          child: AnnotatedRegion<SystemUiOverlayStyle>(
-            value: AvesApp.themeSystemOverlayStyle(theme),
+        child: AnnotatedRegion<SystemUiOverlayStyle>(
+          value: AvesApp.themeSystemOverlayStyle(theme),
+          child: DirectionalSafeArea(
+            start: !useTvLayout,
+            bottom: false,
             child: AvesFloatingBar(
               flat: !useTvLayout,
               margin: margin,

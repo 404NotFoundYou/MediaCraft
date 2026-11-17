@@ -128,6 +128,7 @@ class _FilterGridAppBarState<T extends CollectionFilter, CSAD extends ChipSetAct
     if (route is PageRoute) {
       AvesApp.pageRouteObserver.subscribe(this, route);
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateAppBarHeight());
   }
 
   @override
@@ -161,7 +162,7 @@ class _FilterGridAppBarState<T extends CollectionFilter, CSAD extends ChipSetAct
   @override
   void didChangeMetrics() {
     // when text scale factor changes
-    _updateAppBarHeight();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateAppBarHeight());
   }
 
   @override

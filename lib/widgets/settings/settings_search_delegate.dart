@@ -12,6 +12,9 @@ typedef _SectionPredicate = List<SettingsTile> Function(BuildContext context, Se
 
 class SettingsSearchDelegate extends AvesSearchDelegate {
   final List<SettingsSection> sections;
+  Future<List<MapEntry<SettingsSection, List<SettingsTile>>>>? _sectionTileMapLoader;
+  Locale? _loaderLocale;
+  bool? _loaderUseTvLayout;
 
   static const pageRouteName = '/settings/search';
 
@@ -26,17 +29,23 @@ class SettingsSearchDelegate extends AvesSearchDelegate {
   @override
   Widget buildSuggestions(BuildContext context) {
     final upQuery = query.toUpperCase().trim();
-    final sectionTileMapLoader = Future.wait(
-      sections.map((section) async {
-        final tiles = await section.tiles(context);
-        return MapEntry(section, tiles);
-      }),
-    );
+    final locale = Localizations.localeOf(context);
+    final useTvLayout = settings.useTvLayout;
+    if (_sectionTileMapLoader == null || _loaderLocale != locale || _loaderUseTvLayout != useTvLayout) {
+      _loaderLocale = locale;
+      _loaderUseTvLayout = useTvLayout;
+      _sectionTileMapLoader = Future.wait(
+        sections.map((section) async {
+          final tiles = await section.tiles(context);
+          return MapEntry(section, tiles);
+        }),
+      );
+    }
 
     return MediaQueryDataProvider(
       child: SafeArea(
         child: FutureBuilder<List<MapEntry<SettingsSection, List<SettingsTile>>>>(
-          future: sectionTileMapLoader,
+          future: _sectionTileMapLoader,
           builder: (context, snapshot) {
             final sectionTileMapEntries = snapshot.data;
             if (sectionTileMapEntries == null) return const SizedBox();

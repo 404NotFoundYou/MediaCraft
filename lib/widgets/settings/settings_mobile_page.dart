@@ -117,11 +117,19 @@ class _SettingsSectionTile extends StatefulWidget {
 
 class _SettingsSectionTileState extends State<_SettingsSectionTile> {
   late Future<List<SettingsTile>> _tiles;
+  Locale? _loaderLocale;
+  bool? _loaderUseTvLayout;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _tiles = widget.section.tiles(context);
+    final locale = Localizations.localeOf(context);
+    final useTvLayout = settings.useTvLayout;
+    if (_loaderLocale != locale || _loaderUseTvLayout != useTvLayout) {
+      _loaderLocale = locale;
+      _loaderUseTvLayout = useTvLayout;
+      _tiles = widget.section.tiles(context);
+    }
   }
 
   void _retry() => setState(() => _tiles = widget.section.tiles(context));
@@ -178,11 +186,19 @@ class _SettingsSectionPage extends StatefulWidget {
 
 class _SettingsSectionPageState extends State<_SettingsSectionPage> {
   late Future<List<SettingsTile>> _tiles;
+  Locale? _loaderLocale;
+  bool? _loaderUseTvLayout;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _tiles = widget.section.tiles(context);
+    final locale = Localizations.localeOf(context);
+    final useTvLayout = settings.useTvLayout;
+    if (_loaderLocale != locale || _loaderUseTvLayout != useTvLayout) {
+      _loaderLocale = locale;
+      _loaderUseTvLayout = useTvLayout;
+      _tiles = widget.section.tiles(context);
+    }
   }
 
   @override

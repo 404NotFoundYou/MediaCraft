@@ -152,6 +152,7 @@ class _BottomOverlayContentState extends State<_BottomOverlayContent> {
     final pageEntry = widget.pageEntry;
     final multiPageController = widget.multiPageController;
     final isWallpaperMode = context.read<ValueNotifier<AppMode>>().value == .setWallpaper;
+    final isSelecting = context.select<Selection<AvesEntry>?, bool>((selection) => selection?.isSelecting ?? false);
 
     return ListenableBuilder(
       listenable: Listenable.merge([
@@ -160,8 +161,7 @@ class _BottomOverlayContentState extends State<_BottomOverlayContent> {
       ]),
       builder: (context, child) {
         final viewInsetsPadding = (widget.viewInsets ?? EdgeInsets.zero) + (widget.viewPadding ?? EdgeInsets.zero);
-        final selection = context.read<Selection<AvesEntry>?>();
-        final viewerButtonRow = (selection?.isSelecting ?? false)
+        final viewerButtonRow = isSelecting
             ? SelectionButton(
                 mainEntry: mainEntry,
                 scale: _buttonScale,

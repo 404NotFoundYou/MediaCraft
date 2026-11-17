@@ -37,7 +37,9 @@ class _MapEntryScrollerState extends State<MapEntryScroller> {
   void initState() {
     super.initState();
     _registerWidget(widget);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _onSelectedEntryChanged());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _onSelectedEntryChanged();
+    });
   }
 
   @override
@@ -45,12 +47,17 @@ class _MapEntryScrollerState extends State<MapEntryScroller> {
     super.didUpdateWidget(oldWidget);
     _unregisterWidget(oldWidget);
     _registerWidget(widget);
+    if (oldWidget.dotEntryNotifier != widget.dotEntryNotifier) {
+      _infoDebouncer.cancel();
+      _onSelectedEntryChanged();
+    }
   }
 
   @override
   void dispose() {
-    _infoEntryNotifier.dispose();
     _unregisterWidget(widget);
+    _infoDebouncer.cancel();
+    _infoEntryNotifier.dispose();
     super.dispose();
   }
 

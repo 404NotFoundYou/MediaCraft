@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:aves/locale/calendar/calendar_utils.dart';
 import 'package:aves/model/dynamic_albums.dart';
 import 'package:aves/model/filters/aspect_ratio.dart';
@@ -47,6 +49,8 @@ class CollectionSearchDelegate extends AvesSearchDelegate with FeedbackMixin, Va
   final FocusNode _suggestionsTopFocusNode = FocusNode();
   final ScrollController _suggestionsScrollController = ScrollController();
   late final List<MimeFilter> _mimeTypeFilters;
+  Timer? _closeTimer;
+  bool _selectionPending = false;
 
   @override
   FocusNode? get suggestionsFocusNode => _suggestionsTopFocusNode;
@@ -87,6 +91,7 @@ class CollectionSearchDelegate extends AvesSearchDelegate with FeedbackMixin, Va
 
   @override
   void dispose() {
+    _closeTimer?.cancel();
     _expandedSectionNotifier.dispose();
     _suggestionsTopFocusNode.dispose();
     _suggestionsScrollController.dispose();
@@ -393,27 +398,41 @@ class CollectionSearchDelegate extends AvesSearchDelegate with FeedbackMixin, Va
   }
 
   Future<void> _select(BuildContext context, Set<CollectionFilter?> filters) async {
+    if (_selectionPending) return;
     final newFilters = filters.nonNulls.toSet();
     if (newFilters.isEmpty) {
       goBack(context);
       return;
     }
 
-    for (final filter in newFilters) {
-      if (!await unlockFilter(context, filter)) return;
+    _selectionPending = true;
+    try {
+      for (final filter in newFilters) {
+        if (!await unlockFilter(context, filter)) {
+          _selectionPending = false;
+          return;
+        }
+        if (!context.mounted) {
+          _selectionPending = false;
+          return;
+        }
 
-      if (settings.saveSearchHistory) {
-        final history = settings.searchHistory
-          ..remove(filter)
-          ..insert(0, filter);
-        settings.searchHistory = history.take(searchHistoryCount).toList();
+        if (settings.saveSearchHistory) {
+          final history = settings.searchHistory
+            ..remove(filter)
+            ..insert(0, filter);
+          settings.searchHistory = history.take(searchHistoryCount).toList();
+        }
       }
-    }
 
-    if (parentCollection != null) {
-      _applyToParentCollectionPage(context, newFilters);
-    } else {
-      _jumpToCollectionPage(context, newFilters);
+      if (parentCollection != null) {
+        _applyToParentCollectionPage(context, newFilters);
+      } else {
+        _jumpToCollectionPage(context, newFilters);
+      }
+    } catch (_) {
+      _selectionPending = false;
+      rethrow;
     }
   }
 
@@ -425,7 +444,19 @@ class CollectionSearchDelegate extends AvesSearchDelegate with FeedbackMixin, Va
       // even when the target is a child of an `AnimatedList`.
       // Do not use `WidgetsBinding.instance.addPostFrameCallback`,
       // as it may not trigger if there is no subsequent build.
-      Future.delayed(const Duration(milliseconds: 100), () => goBack(context));
+      _closeTimer?.cancel();
+      _closeTimer = Timer(const Duration(milliseconds: 100), () {
+        _closeTimer = null;
+        if (!context.mounted) return;
+        if (route?.isCurrent == true) {
+          goBack(context);
+        } else {
+          // A dialog or another temporary route may cover the search page
+          // during the hero target delay. Do not pop that route, but allow a
+          // new selection after the user returns to the still-mounted search.
+          _selectionPending = false;
+        }
+      });
     } else {
       _jumpToCollectionPage(context, parentCollection!.filters);
     }

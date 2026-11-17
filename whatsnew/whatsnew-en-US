@@ -1,7 +1,6 @@
-In v0.6.4:
-- Refresh MediaCraft branding, themes, and browsing layouts.
-- Add Explore and Tools navigation while keeping saved preferences.
-- Improve duplicate review, viewer, video, and editor controls.
-- Fix large-text navigation and dark viewer contrast.
-- Hide maintenance tools in TV media picker mode.
+In v0.6.5:
+- Keep media filters and header geometry stable during interaction.
+- Fix viewer controls, overlay transitions, and editor back handling.
+- Guard delayed map and search updates when leaving a page.
+- Preserve loaded settings and scroll position across layout changes.
 Full changelog available on GitHub

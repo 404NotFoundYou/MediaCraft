@@ -30,6 +30,8 @@ import 'package:aves/widgets/viewer/overlay/bottom/panorama.dart';
 import 'package:aves/widgets/viewer/overlay/bottom/slideshow_buttons.dart';
 import 'package:aves/widgets/viewer/overlay/bottom/video/video.dart';
 import 'package:aves/widgets/viewer/overlay/top/top.dart';
+import 'package:aves/widgets/viewer/overlay/system_ui_restorer.dart';
+import 'package:aves/widgets/viewer/overlay/visibility_coordinator.dart';
 import 'package:aves/widgets/viewer/page_entry_builder.dart';
 import 'package:aves/widgets/viewer/video/conductor.dart';
 import 'package:aves/widgets/viewer/view/conductor.dart';
@@ -71,6 +73,10 @@ class _EntryViewerStackState extends State<EntryViewerStack> with EntryViewContr
   final ValueNotifier<EntryHeroInfo?> _heroInfoNotifier = ValueNotifier(null);
   bool _isEntryTracked = true;
   Timer? _overlayHidingTimer;
+  final ViewerOverlayVisibilityCoordinator _overlayVisibilityCoordinator = ViewerOverlayVisibilityCoordinator();
+  Future<void>? _leaveFuture;
+  bool _leaving = false;
+  bool _routePopRequested = false;
   late ValueNotifier<AvesVideoController?> _playingVideoControllerNotifier;
 
   @override
@@ -179,6 +185,9 @@ class _EntryViewerStackState extends State<EntryViewerStack> with EntryViewContr
 
   @override
   void dispose() {
+    _leaving = true;
+    _stopOverlayHidingTimer();
+    unawaited(_overlayVisibilityCoordinator.close());
     AvesApp.pageRouteObserver.unsubscribe(this);
     entryNotifier.removeListener(_onEntryChanged);
     cleanEntryControllers(entryNotifier.value);
@@ -191,15 +200,18 @@ class _EntryViewerStackState extends State<EntryViewerStack> with EntryViewContr
     _overlayOpacity.dispose();
     _overlayTopOffsetAnimation.dispose();
     _overlayAnimationController.dispose();
-    _overlayVisible.dispose();
-    _viewLocked.dispose();
+    _overlayVisible
+      ..removeListener(_onOverlayVisibleChanged)
+      ..dispose();
+    _viewLocked
+      ..removeListener(_onViewLockedChanged)
+      ..dispose();
     _overlayExpandedNotifier.dispose();
     _currentVerticalPage.dispose();
     _horizontalPager.dispose();
     _verticalPager.dispose();
     _verticalScrollNotifier.dispose();
     _heroInfoNotifier.dispose();
-    _stopOverlayHidingTimer();
     AvesApp.lifecycleStateNotifier.removeListener(_onAppLifecycleStateChanged);
     _unregisterWidget(widget);
     super.dispose();
@@ -817,9 +829,9 @@ class _EntryViewerStackState extends State<EntryViewerStack> with EntryViewContr
     }
 
     if (Navigator.canPop(context)) {
-      Navigator.maybeOf(context)?.pop();
+      unawaited(_leaveAndPop());
     } else {
-      _leaveViewer();
+      unawaited(_leaveViewer());
     }
   }
 
@@ -864,20 +876,15 @@ class _EntryViewerStackState extends State<EntryViewerStack> with EntryViewContr
 
   void _popVisual() {
     if (Navigator.canPop(context)) {
-      Future<void> pop() async {
-        await _onLeave();
-        Navigator.maybeOf(context)?.pop();
-      }
-
       // closing hero, with viewer as source
       final heroInfo = EntryHeroInfo(collection, entryNotifier.value);
       if (_heroInfoNotifier.value != heroInfo) {
         _heroInfoNotifier.value = heroInfo;
         // we post closing the viewer page so that hero animation source is ready
-        WidgetsBinding.instance.addPostFrameCallback((_) => pop());
+        WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_leaveAndPop()));
       } else {
         // viewer already has correct hero info, no need to rebuild
-        pop();
+        unawaited(_leaveAndPop());
       }
     } else {
       // exit app when trying to pop a viewer page
@@ -885,7 +892,15 @@ class _EntryViewerStackState extends State<EntryViewerStack> with EntryViewContr
     }
   }
 
+  Future<void> _leaveAndPop() async {
+    if (_routePopRequested) return;
+    _routePopRequested = true;
+    await _onLeave();
+    if (mounted) Navigator.maybeOf(context)?.pop();
+  }
+
   Future<void> _leaveViewer() async {
+    await _onLeave();
     // widgets do not get disposed normally when popping the `SystemNavigator`
     // so we manually clean video controllers and save playback state
     await context.read<VideoConductor>().dispose();
@@ -907,24 +922,12 @@ class _EntryViewerStackState extends State<EntryViewerStack> with EntryViewContr
     }
   }
 
-  Future<void> _onLeave() async {
-    final systemUIReadyCompleter = Completer<bool>();
-    final isStatusBarVisibleNotifier = AvesApp.isAndroidStatusBarVisibleNotifier;
-    void onStatusBarVisibleChanged() async {
-      // cf below for explanation on transition delay
-      await Future.pause(const Duration(milliseconds: 50));
-      systemUIReadyCompleter.complete(isStatusBarVisibleNotifier.value);
-    }
+  Future<void> _onLeave() => _leaveFuture ??= _performLeave();
 
-    final bool requestSystemUIChange;
-    if (isStatusBarVisibleNotifier.value) {
-      requestSystemUIChange = false;
-      systemUIReadyCompleter.complete(true);
-    } else {
-      requestSystemUIChange = true;
-      isStatusBarVisibleNotifier.addListener(onStatusBarVisibleChanged);
-    }
-
+  Future<void> _performLeave() async {
+    _leaving = true;
+    _stopOverlayHidingTimer();
+    await _overlayVisibilityCoordinator.close();
     await viewerController.stopCast();
 
     try {
@@ -943,29 +946,26 @@ class _EntryViewerStackState extends State<EntryViewerStack> with EntryViewContr
       await windowService.keepScreenOn(false);
     }
     await mediaSessionService.release();
-    if (requestSystemUIChange) {
-      await AvesApp.showSystemUI(true);
-    }
+    await restoreViewerSystemUi(
+      statusBarVisibleNotifier: AvesApp.isAndroidStatusBarVisibleNotifier,
+      showSystemUi: () => AvesApp.showSystemUI(true),
+    );
     if (!settings.useTvLayout) {
       await windowService.requestOrientation();
     }
     unawaited(mediaFetchService.clearDecoders());
     unawaited(deviceService.requestGarbageCollection());
-
-    // as of Flutter v3.47.5, a white/black flash appears on page transition
-    // from a viewer with a transparent background and no system UI
-    // to a regular page with system UI (tested on Android 15)
-    // so we wait until the system UI is ready
-    await systemUIReadyCompleter.future;
-    isStatusBarVisibleNotifier.removeListener(onStatusBarVisibleChanged);
   }
 
   // overlay
 
   Future<void> _initOverlay() async {
+    if (_leaving) return;
     final appMode = context.read<ValueNotifier<AppMode>>().value;
     if (appMode == .screenSaver) {
+      _overlayVisible.removeListener(_onOverlayVisibleChanged);
       _overlayVisible.value = false;
+      _overlayVisible.addListener(_onOverlayVisibleChanged);
       await _onOverlayVisibleChanged(animate: false);
     } else {
       // wait for MaterialPageRoute.transitionDuration
@@ -977,18 +977,32 @@ class _EntryViewerStackState extends State<EntryViewerStack> with EntryViewContr
   }
 
   Future<void> _onOverlayVisibleChanged({bool animate = true}) async {
+    if (_leaving) return _overlayVisibilityCoordinator.pending;
+    final visible = _overlayVisible.value;
+    return _overlayVisibilityCoordinator.schedule((isCurrent) => _applyOverlayVisibility(visible, animate: animate, isCurrent: isCurrent));
+  }
+
+  Future<void> _applyOverlayVisibility(bool visible, {required bool animate, required bool Function() isCurrent}) async {
     if (!mounted) return;
-    if (_overlayVisible.value) {
+    if (visible) {
       if (_viewLocked.value) {
         await _startOverlayHidingTimer();
       } else {
         await AvesApp.showSystemUI(true);
       }
+      if (!mounted || !isCurrent()) return;
+      _clearFrozenViewPadding();
       if (animate) {
-        await _overlayAnimationController.forward();
+        try {
+          await _overlayAnimationController.forward().orCancel;
+        } on TickerCanceled {
+          if (!mounted || !isCurrent()) return;
+          rethrow;
+        }
       } else {
         _overlayAnimationController.value = _overlayAnimationController.upperBound;
       }
+      if (!mounted || !isCurrent()) return;
       viewerController.autopilot = false;
     } else {
       final mediaQuery = context.read<MediaQueryData>();
@@ -997,32 +1011,55 @@ class _EntryViewerStackState extends State<EntryViewerStack> with EntryViewContr
         _frozenViewPadding = mediaQuery.viewPadding;
       });
       await AvesApp.showSystemUI(false);
+      if (!mounted || !isCurrent()) return;
       if (animate) {
-        await _overlayAnimationController.reverse();
+        try {
+          await _overlayAnimationController.reverse().orCancel;
+        } on TickerCanceled {
+          if (!mounted || !isCurrent()) return;
+          rethrow;
+        }
       } else {
         _overlayAnimationController.reset();
       }
-      setState(() {
-        _frozenViewInsets = null;
-        _frozenViewPadding = null;
-      });
+      if (!mounted || !isCurrent()) return;
+      _clearFrozenViewPadding();
     }
   }
 
   Future<void> _onViewLockedChanged() async {
+    if (_leaving) return;
+    await _overlayVisibilityCoordinator.cancelPending();
+    if (!mounted || _leaving) return;
     if (_viewLocked.value) {
-      await AvesApp.showSystemUI(false);
-      await _startOverlayHidingTimer();
+      await _overlayVisibilityCoordinator.schedule((isCurrent) async {
+        await AvesApp.showSystemUI(false);
+        if (!mounted || _leaving || !isCurrent() || !_viewLocked.value) return;
+        await _startOverlayHidingTimer();
+      });
     } else {
-      await AvesApp.showSystemUI(true);
       _stopOverlayHidingTimer();
-      _overlayVisible.value = true;
+      if (_overlayVisible.value) {
+        await _onOverlayVisibleChanged();
+      } else {
+        _overlayVisible.value = true;
+        await _overlayVisibilityCoordinator.pending;
+      }
     }
+  }
+
+  void _clearFrozenViewPadding() {
+    if (_frozenViewInsets == null && _frozenViewPadding == null) return;
+    setState(() {
+      _frozenViewInsets = null;
+      _frozenViewPadding = null;
+    });
   }
 
   Future<void> _startOverlayHidingTimer() async {
     _stopOverlayHidingTimer();
     final duration = await settings.timeToTakeAction.getSnackBarDuration(true);
+    if (!mounted || _leaving || !_viewLocked.value || !_overlayVisible.value) return;
     _overlayHidingTimer = Timer(duration, () => _overlayVisible.value = false);
   }
 

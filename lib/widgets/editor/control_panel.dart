@@ -27,32 +27,32 @@ class EditorControlPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return PopScope(
-      canPop: actionNotifier.value == null,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-
-        _cancelAction(context);
-      },
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colors.surface,
-          border: Border(
-            top: BorderSide(color: colors.outlineVariant),
-          ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border(
+          top: BorderSide(color: colors.outlineVariant),
         ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.all(padding),
-            child: TooltipTheme(
-              data: TooltipTheme.of(context).copyWith(
-                preferBelow: false,
-              ),
-              child: ValueListenableBuilder<EditorAction?>(
-                valueListenable: actionNotifier,
-                builder: (context, action, child) {
-                  return MultiCrossFader(
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.all(padding),
+          child: TooltipTheme(
+            data: TooltipTheme.of(context).copyWith(
+              preferBelow: false,
+            ),
+            child: ValueListenableBuilder<EditorAction?>(
+              valueListenable: actionNotifier,
+              builder: (context, action, child) {
+                return PopScope(
+                  canPop: action == null,
+                  onPopInvokedWithResult: (didPop, result) {
+                    if (didPop) return;
+
+                    _cancelAction(context);
+                  },
+                  child: MultiCrossFader(
                     duration: context.select<DurationsData, Duration>((v) => v.formTransition),
                     alignment: .bottomCenter,
                     layoutBuilder: (topChild, topChildKey, bottomChild, bottomChildKey) {
@@ -80,9 +80,9 @@ class EditorControlPanel extends StatelessWidget {
                             )
                           : _buildActionPanel(context, action),
                     ),
-                  );
-                },
-              ),
+                  ),
+                );
+              },
             ),
           ),
         ),

@@ -5,6 +5,7 @@ import 'package:aves/app_mode.dart';
 import 'package:aves/model/entry/entry.dart';
 import 'package:aves/model/filters/container/dynamic_album.dart';
 import 'package:aves/model/filters/container/set_and.dart';
+import 'package:aves/model/filters/filters.dart';
 import 'package:aves/model/filters/mime.dart';
 import 'package:aves/model/filters/favourite.dart';
 import 'package:aves/model/filters/trash.dart';
@@ -49,6 +50,18 @@ import 'package:collection/collection.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
+
+@visibleForTesting
+Set<CollectionFilter> collectionAppBarFilterBarFilters(
+  Set<CollectionFilter> visibleFilters, {
+  required bool showBrowseHeader,
+}) {
+  if (!showBrowseHeader) return visibleFilters;
+
+  return visibleFilters.where((filter) {
+    return filter != FavouriteFilter.instance && filter != MimeFilter.image && filter != MimeFilter.video;
+  }).toSet();
+}
 
 class const CollectionAppBar({
   super.key,
@@ -100,9 +113,14 @@ class _CollectionAppBarState extends State<CollectionAppBar> with RouteAware, Si
 
   CollectionSource get source => collection.source;
 
-  bool get showFilterBar => collection.visibleFilters.isNotEmpty;
-
   bool get showBrowseHeader => !settings.useTvLayout && !isTrash && context.read<ValueNotifier<AppMode>>().value == AppMode.main && !context.read<Selection<AvesEntry>>().isSelecting;
+
+  Set<CollectionFilter> get filterBarFilters => collectionAppBarFilterBarFilters(
+    collection.visibleFilters,
+    showBrowseHeader: showBrowseHeader,
+  );
+
+  bool get showFilterBar => filterBarFilters.isNotEmpty;
 
   static const _trashSelectionQuickActions = <EntrySetAction>[
     .delete,
@@ -137,6 +155,7 @@ class _CollectionAppBarState extends State<CollectionAppBar> with RouteAware, Si
     if (route is PageRoute) {
       AvesApp.pageRouteObserver.subscribe(this, route);
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateStatusBarHeight());
   }
 
   @override
@@ -267,7 +286,7 @@ class _CollectionAppBarState extends State<CollectionAppBar> with RouteAware, Si
                                   return false;
                                 },
                                 child: FilterBar(
-                                  filters: collection.visibleFilters,
+                                  filters: filterBarFilters,
                                   interactive: true,
                                   onTap: onFilterTap,
                                   onRemove: onFilterTap,
