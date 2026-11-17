@@ -56,7 +56,7 @@ jobs:
           set -euo pipefail
           NDK_VERSION=28.2.13676358
           NDK_PATH="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
-          sdkmanager --install "ndk;$NDK_VERSION"
+          printf 'y\n' | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION"
           test -d "$NDK_PATH"
           echo "ANDROID_NDK=$NDK_PATH" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> "$GITHUB_ENV"
