@@ -25,7 +25,7 @@ import 'package:aves/theme/colors.dart';
 import 'package:aves/theme/icons.dart';
 import 'package:aves/theme/text.dart';
 import 'package:aves/theme/themes.dart';
-import 'package:aves/widgets/about/app_ref.dart';
+import 'package:aves/widgets/about/help_dialog.dart';
 import 'package:aves/widgets/collection/collection_grid.dart';
 import 'package:aves/widgets/collection/collection_page.dart';
 import 'package:aves/widgets/common/action_mixins/feedback.dart';
@@ -840,7 +840,7 @@ class _AvesAppContentDecoratorState extends State<AvesAppContentDecorator> with 
               : '';
           final success = await storageService.createFile(
             dirPath: dirPath,
-            basename: 'aves$suffix-settings-auto',
+            basename: 'mediacraft$suffix-settings-auto',
             mimeType: mimeType,
             bytes: content,
             reportErrors: false,
@@ -856,8 +856,8 @@ class _AvesAppContentDecoratorState extends State<AvesAppContentDecorator> with 
                 FeedbackType.warn,
                 '${l10n.genericFailureFeedback}${AText.separator}${l10n.settingsAutoExportSettings}',
                 SnackBarAction(
-                  label: 'FAQ',
-                  onPressed: () => AvesApp.launchUrl('${AppReference.avesFaq}#why-is-auto-settings-export-failing'),
+                  label: l10n.entryActionInfo,
+                  onPressed: () => showMediaCraftHelp(context, .automaticExport),
                 ),
               );
             }

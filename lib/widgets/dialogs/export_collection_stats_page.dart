@@ -181,7 +181,7 @@ class _ExportCollectionStatsPageState extends State<ExportCollectionStatsPage> w
       case .file:
         final date = DateFormat('yyyyMMdd_HHmmss', IntlUtils.rootLocaleName).format(DateTime.now());
         success = await storageService.createFile(
-          basename: 'aves-stats-$date',
+          basename: 'mediacraft-stats-$date',
           mimeType: mimeType,
           bytes: utf8.encode(content),
         );

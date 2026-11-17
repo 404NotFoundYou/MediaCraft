@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:aves/app_mode.dart';
 import 'package:aves/model/filters/container/dynamic_album.dart';
 import 'package:aves/model/filters/covered/stored_album.dart';
 import 'package:aves/model/filters/filters.dart';
@@ -13,6 +14,7 @@ import 'package:aves/widgets/common/basic/insets.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/common/identity/mediacraft_logo.dart';
 import 'package:aves/widgets/debug/app_debug_page.dart';
+import 'package:aves/widgets/discovery/tools_page.dart';
 import 'package:aves/widgets/navigation/drawer/app_drawer.dart';
 import 'package:aves/widgets/navigation/drawer/tile.dart';
 import 'package:aves/widgets/navigation/nav_item.dart';
@@ -90,7 +92,8 @@ class _TvRailState extends State<TvRail> {
 
   @override
   Widget build(BuildContext context) {
-    final navEntries = _getNavEntries(context);
+    final appMode = context.watch<ValueNotifier<AppMode>>().value;
+    final navEntries = _getNavEntries(context, appMode);
     return DirectionalSafeArea(
       end: false,
       child: ValueListenableBuilder<bool>(
@@ -173,7 +176,8 @@ class _TvRailState extends State<TvRail> {
     controller.focusedIndex = null;
 
     if (index == -1) {
-      final navEntries = _getNavEntries(context);
+      final appMode = context.read<ValueNotifier<AppMode>>().value;
+      final navEntries = _getNavEntries(context, appMode);
       index = navEntries.indexWhere((v) => v.isHome);
     }
 
@@ -183,11 +187,11 @@ class _TvRailState extends State<TvRail> {
     }
   }
 
-  List<_NavEntry> _getNavEntries(BuildContext context) {
+  List<_NavEntry> _getNavEntries(BuildContext context, AppMode appMode) {
     final navEntries = <_NavEntry>[
       ..._buildTypeLinks(),
       ..._buildAlbumLinks(context),
-      ..._buildPageLinks(context),
+      ..._buildPageLinks(appMode),
       ...[
         SettingsPage.routeName,
         AboutPage.routeName,
@@ -243,8 +247,8 @@ class _TvRailState extends State<TvRail> {
     }).toList();
   }
 
-  List<_NavEntry> _buildPageLinks(BuildContext context) {
-    final pageBookmarks = settings.drawerPageBookmarks;
+  List<_NavEntry> _buildPageLinks(AppMode appMode) {
+    final pageBookmarks = settings.drawerPageBookmarks.where((route) => appMode == .main || route != ToolsPage.routeName);
     return pageBookmarks.map(_routeNavEntry).toList();
   }
 

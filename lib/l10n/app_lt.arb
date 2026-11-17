@@ -154,7 +154,7 @@
     "collectionActionEmptyBin": "Išvalyti šiukšlinę",
     "collectionActionMove": "Perkelti į albumą",
     "collectionActionEdit": "Redaguoti",
-    "welcomeMessage": "Sveiki atvykę į Aves",
+    "welcomeMessage": "Sveiki atvykę į MediaCraft",
     "itemCount": "{count, plural, =1{{count} elementas} few{{count} elementai} other{{count} elementų}}",
     "@itemCount": {
         "placeholders": {

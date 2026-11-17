@@ -137,7 +137,7 @@ class _DuplicatePageState extends State<DuplicatePage> {
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('请先启用回收站'),
-          content: const Text('重复项清理只会将文件移入 Aves 回收站，不执行永久删除。请在“设置 > 隐私 > 使用回收站”中启用后重试。'),
+          content: const Text('重复项清理只会将文件移入回收站，不执行永久删除。请在“设置 > 隐私 > 使用回收站”中启用后重试。'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了')),
           ],
@@ -172,8 +172,8 @@ class _DuplicatePageState extends State<DuplicatePage> {
       builder: (context) => AlertDialog(
         title: const Text('确认清理重复项'),
         content: Text(
-          '将把 ${selectedEntriesSnapshot.length} 个完全重复文件（${formatFileSize(settings.avesLocale, selectedBytesSnapshot)}）移入 Aves 回收站。'
-          '\n每组至少保留一份。实际处理结果以 Aves 操作报告为准；取消确认不会处理文件，清理后可从 Aves 回收站尝试恢复。',
+          '将把 ${selectedEntriesSnapshot.length} 个完全重复文件（${formatFileSize(settings.avesLocale, selectedBytesSnapshot)}）移入回收站。'
+          '\n每组至少保留一份。实际处理结果以操作报告为准；取消确认不会处理文件，清理后可从回收站尝试恢复。',
         ),
         actions: [
           TextButton(
@@ -283,38 +283,46 @@ class _DuplicatePageState extends State<DuplicatePage> {
   @override
   Widget build(BuildContext context) {
     return AvesScaffold(
-      appBar: AppBar(title: const Text('重复项清理')),
+      appBar: AppBar(title: const Text('重复媒体清理')),
       body: SafeArea(
-        child: Column(
-          children: [
-            _ScanControls(
-              scope: _scope,
-              scanning: _scanning,
-              submitting: _submitting,
-              progress: _progress,
-              onScopeChanged: (scope) => setState(() => _scope = scope),
-              onScan: _startScan,
-              onCancel: _cancelScan,
-            ),
-            Expanded(child: _buildBody()),
-          ],
-        ),
+        bottom: false,
+        child: _buildBody(),
       ),
-      bottomNavigationBar: _selectedEntries.isEmpty
+      bottomNavigationBar: _scanning || _scanError != null || (_result?.cancelled ?? true) || !(_result?.groups.isNotEmpty ?? false)
           ? null
-          : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: SizedBox(
-                  width: MediaQuery.sizeOf(context).width - 24,
-                  height: 52,
-                  child: FilledButton.icon(
-                    onPressed: _submitting ? null : _reviewAndDelete,
-                    style: FilledButton.styleFrom(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    icon: _submitting ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.delete_outline),
-                    label: Text('复核 ${_selectedEntries.length} 项·${formatFileSize(settings.avesLocale, _selectedBytes)}'),
+          : DecoratedBox(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                border: Border(top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                  child: Column(
+                    mainAxisSize: .min,
+                    crossAxisAlignment: .stretch,
+                    children: [
+                      Wrap(
+                        alignment: .spaceBetween,
+                        spacing: 12,
+                        runSpacing: 4,
+                        children: [
+                          Text('已选 ${_selectedEntries.length} 项', style: Theme.of(context).textTheme.bodySmall),
+                          Text(formatFileSize(settings.avesLocale, _selectedBytes), style: Theme.of(context).textTheme.titleSmall),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      FilledButton.icon(
+                        onPressed: _submitting || _selectedEntries.isEmpty ? null : _reviewAndDelete,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: _submitting ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.delete_outline),
+                        label: Text('复核 ${_selectedEntries.length} 项·${formatFileSize(settings.avesLocale, _selectedBytes)}', maxLines: 2, overflow: .ellipsis),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -323,32 +331,60 @@ class _DuplicatePageState extends State<DuplicatePage> {
   }
 
   Widget _buildBody() {
+    final controls = _ScanControls(
+      scope: _scope,
+      scanning: _scanning,
+      submitting: _submitting,
+      progress: _progress,
+      onScopeChanged: (scope) => setState(() => _scope = scope),
+      onScan: _startScan,
+      onCancel: _cancelScan,
+    );
+    Widget withControls(Widget content) => ListView(children: [controls, content]);
     if (_scanError != null) {
-      return _Message(icon: Icons.error_outline, text: '扫描失败：$_scanError');
+      return withControls(_Message(icon: Icons.error_outline, text: '扫描失败：$_scanError'));
     }
-    if (_scanning) return const SizedBox.shrink();
+    if (_scanning) return withControls(const _Message(icon: Icons.fact_check_outlined, text: '正在核对文件内容。你可以随时取消，扫描本身不会删除文件。'));
     final result = _result;
     if (result == null) {
-      return const _Message(
-        icon: Icons.content_copy,
-        text: '选择范围后开始扫描，扫描不会自动删除任何文件。',
+      return withControls(
+        const _Message(
+          icon: Icons.content_copy,
+          text: '相同的内容，留下一份就好。\n\n扫描后逐组复核，每组默认保留首份，待清理项由你手动勾选。只有最终复核通过后才会移入回收站。',
+        ),
       );
     }
     if (result.cancelled) {
-      return const _Message(
-        icon: Icons.cancel_outlined,
-        text: '扫描已取消，没有处理任何文件。',
+      return withControls(
+        const _Message(
+          icon: Icons.cancel_outlined,
+          text: '扫描已取消，没有处理任何文件。',
+        ),
       );
     }
     if (result.groups.isEmpty && result.issues.isEmpty) {
-      return const _Message(
-        icon: Icons.check_circle_outline,
-        text: '未发现完全重复的照片或视频。',
+      return withControls(
+        const _Message(
+          icon: Icons.check_circle_outline,
+          text: '未发现完全重复的照片或视频。',
+        ),
       );
     }
     return ListView(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
+      padding: const EdgeInsets.only(bottom: 20),
       children: [
+        controls,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+          child: Column(
+            crossAxisAlignment: .start,
+            children: [
+              Text('${result.groups.length} 组完全重复媒体', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 8),
+              const Text('绿色行是保留项，右侧复选框是待清理项。保留项始终不会被勾选。'),
+            ],
+          ),
+        ),
         if (result.issues.isNotEmpty)
           Card(
             child: ExpansionTile(
@@ -366,18 +402,21 @@ class _DuplicatePageState extends State<DuplicatePage> {
             ),
           ),
         for (final group in result.groups)
-          _DuplicateGroupCard(
-            group: group,
-            entries: _entriesFor(group),
-            keeperId: _selection?.keepers[group.id],
-            selectedIds: _selection?.selected[group.id] ?? const {},
-            enabled: !_submitting,
-            onKeeperChanged: (id) => setState(() {
-              _selection?.keep(group.id, id);
-            }),
-            onSelectionChanged: (id, selected) => setState(() {
-              _selection?.select(group.id, id, selected);
-            }),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: _DuplicateGroupCard(
+              group: group,
+              entries: _entriesFor(group),
+              keeperId: _selection?.keepers[group.id],
+              selectedIds: _selection?.selected[group.id] ?? const {},
+              enabled: !_submitting,
+              onKeeperChanged: (id) => setState(() {
+                _selection?.keep(group.id, id);
+              }),
+              onSelectionChanged: (id, selected) => setState(() {
+                _selection?.select(group.id, id, selected);
+              }),
+            ),
           ),
       ],
     );
@@ -413,7 +452,7 @@ class _ScanControls extends StatelessWidget {
     };
     final busy = scanning || submitting;
     return Padding(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
       child: Card(
         margin: EdgeInsets.zero,
         child: Padding(
@@ -421,7 +460,9 @@ class _ScanControls extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('仅扫描当前已授权且可访问的本机照片和视频。读取失败的项目会单独列出，不会参与清理。'),
+              Text('扫描范围', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Text('仅扫描已授权、可访问的本机媒体。读取失败的项目会单独列出。', style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 12),
               SegmentedButton<DuplicateScanScope>(
                 segments: const [
@@ -442,6 +483,7 @@ class _ScanControls extends StatelessWidget {
                   ),
                 ],
                 selected: {scope},
+                showSelectedIcon: false,
                 onSelectionChanged: busy ? null : (values) => onScopeChanged(values.single),
               ),
               const SizedBox(height: 10),
@@ -505,6 +547,7 @@ class _DuplicateGroupCard extends StatelessWidget {
     }
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: .antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -561,50 +604,55 @@ class _DuplicateEntryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const extent = 64.0;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: ThumbnailImage(
-              entry: entry,
-              extent: extent,
-              devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+    return Material(
+      color: keeper ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: .6) : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: .antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: ThumbnailImage(
+                entry: entry,
+                extent: extent,
+                devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  entry.fileNameWithoutExtension != null ? '${entry.fileNameWithoutExtension}${entry.extension ?? ''}' : (entry.sourceTitle ?? entry.uri),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  entry.path ?? entry.uri,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                RadioListTile<int>(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  value: entry.id,
-                  enabled: enabled,
-                  title: Text('保留这一份', semanticsLabel: '保留 ${entry.bestTitle}'),
-                ),
-              ],
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    entry.fileNameWithoutExtension != null ? '${entry.fileNameWithoutExtension}${entry.extension ?? ''}' : (entry.sourceTitle ?? entry.uri),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    entry.path ?? entry.uri,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  RadioListTile<int>(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    value: entry.id,
+                    enabled: enabled,
+                    title: Text('保留这一份', semanticsLabel: '保留 ${entry.bestTitle}'),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Checkbox(
-            semanticLabel: '清理 ${entry.bestTitle}',
-            value: keeper ? false : selected,
-            onChanged: keeper || !enabled ? null : (value) => onSelected(value ?? false),
-          ),
-        ],
+            Checkbox(
+              semanticLabel: '清理 ${entry.bestTitle}',
+              value: keeper ? false : selected,
+              onChanged: keeper || !enabled ? null : (value) => onSelected(value ?? false),
+            ),
+          ],
+        ),
       ),
     );
   }

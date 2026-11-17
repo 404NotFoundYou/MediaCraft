@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:aves/app_mode.dart';
 import 'package:aves/model/settings/settings.dart';
 import 'package:aves/model/source/collection_lens.dart';
@@ -7,7 +5,6 @@ import 'package:aves/widgets/collection/collection_page.dart';
 import 'package:aves/widgets/common/basic/draggable_scrollbar/notifications.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/common/extensions/media_query.dart';
-import 'package:aves/widgets/navigation/nav_bar/floating.dart';
 import 'package:aves/widgets/navigation/nav_item.dart';
 import 'package:collection/collection.dart';
 import 'package:material_ui/material_ui.dart';
@@ -21,12 +18,18 @@ class const AppBottomNavBar({
 }) extends StatefulWidget {
   static const double barHeight = 68;
 
-  static EdgeInsets getMargin(double safeBottomPadding) {
-    return EdgeInsets.only(left: 12, top: 8, right: 12, bottom: max(8, safeBottomPadding + 4));
+  static EdgeInsets getMargin(double safeBottomPadding) => EdgeInsets.only(bottom: safeBottomPadding);
+
+  static double getHeight(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final label = Theme.of(context).textTheme.labelSmall!;
+    // Include both paddings, the icon-label gap and the top border.
+    final contentHeight = (scaler.scale(24) + scaler.scale(label.fontSize!) * (label.height ?? 1) + 23).ceilToDouble();
+    return contentHeight > barHeight ? contentHeight : barHeight;
   }
 
-  static double getHeightWithMargin(double safeBottomPadding) {
-    return barHeight + getMargin(safeBottomPadding).vertical;
+  static double getHeightWithMargin(BuildContext context, double safeBottomPadding) {
+    return getHeight(context) + getMargin(safeBottomPadding).vertical;
   }
 
   @override
@@ -34,6 +37,7 @@ class const AppBottomNavBar({
 }
 
 class _AppBottomNavBarState extends State<AppBottomNavBar> {
+  static const _toolsRoute = '/tools';
   String? _lastRoute;
 
   @override
@@ -65,25 +69,21 @@ class _AppBottomNavBarState extends State<AppBottomNavBar> {
 
   @override
   Widget build(BuildContext context) {
-    final items = context.select<Settings, List<AvesNavItem>>((v) => v.bottomNavigationActions);
+    final configuredItems = context.select<Settings, List<AvesNavItem>>((v) => v.bottomNavigationActions);
+    final appMode = context.watch<ValueNotifier<AppMode>>().value;
+    final items = appMode == .main ? configuredItems : configuredItems.where((item) => item.route != _toolsRoute).toList();
     if (items.length < 2) return const SizedBox();
 
     final safeBottomPadding = context.select<MediaQueryData, double>((mq) => mq.safeBottomPadding);
-    Widget child = FloatingNavBar(
-      scrollController: PrimaryScrollController.of(context),
-      events: widget.events,
-      childHeight: AppBottomNavBar.getHeightWithMargin(safeBottomPadding),
-      child: SafeArea(
-        bottom: false,
-        child: MediaQuery.removePadding(
-          context: context,
-          // `bottom` is computed beforehand and used in multiple places,
-          // so we remove it from context to prevent additional padding
-          removeBottom: true,
-          child: Padding(
-            padding: AppBottomNavBar.getMargin(safeBottomPadding),
-            child: _buildNavigationBar(context, items),
-          ),
+    final colors = Theme.of(context).colorScheme;
+    Widget child = ColoredBox(
+      color: colors.brightness == Brightness.dark ? colors.surface : Colors.white,
+      child: MediaQuery.removePadding(
+        context: context,
+        removeBottom: true,
+        child: Padding(
+          padding: AppBottomNavBar.getMargin(safeBottomPadding),
+          child: _buildNavigationBar(context, items),
         ),
       ),
     );
@@ -109,26 +109,17 @@ class _AppBottomNavBarState extends State<AppBottomNavBar> {
   void _onCollectionFilterChanged() => setState(() {});
 
   Widget _buildNavigationBar(BuildContext context, List<AvesNavItem> items) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final colors = Theme.of(context).colorScheme;
+    final background = colors.brightness == Brightness.dark ? colors.surface : Colors.white;
     final selectedIndex = _getCurrentIndex(context, items);
     return Material(
-      color: Colors.transparent,
+      color: background,
       child: Container(
-        height: AppBottomNavBar.barHeight,
-        padding: const EdgeInsets.all(6),
-        decoration: ShapeDecoration(
-          color: colorScheme.surfaceContainerHigh.withValues(alpha: .96),
-          shadows: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: colorScheme.brightness == Brightness.dark ? .24 : .10),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
-            ),
-          ],
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-            side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: .72)),
-          ),
+        height: AppBottomNavBar.getHeight(context),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: background,
+          border: Border(top: BorderSide(color: colors.outlineVariant)),
         ),
         child: Row(
           children: [
@@ -153,23 +144,24 @@ class _AppBottomNavBarState extends State<AppBottomNavBar> {
     required bool selected,
     required VoidCallback onPressed,
   }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final foreground = selected ? colorScheme.primary : colorScheme.onSurfaceVariant;
+    final colors = Theme.of(context).colorScheme;
+    final selectedBackground = colors.primaryContainer;
+    final foreground = selected ? colors.primary : colors.onSurfaceVariant;
     return Semantics(
       button: true,
       selected: selected,
       label: item.getText(context),
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(17),
+        borderRadius: BorderRadius.circular(20),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
-          margin: const EdgeInsets.symmetric(horizontal: 2),
+          margin: const EdgeInsets.symmetric(horizontal: 3),
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           decoration: BoxDecoration(
-            color: selected ? colorScheme.primaryContainer.withValues(alpha: .72) : Colors.transparent,
-            borderRadius: BorderRadius.circular(17),
+            color: selected ? selectedBackground : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -229,7 +221,7 @@ class const NavBarPaddingSliver({super.key}) extends StatelessWidget {
     final enableBottomNavigationBar = context.select<Settings, bool>((v) => v.enableBottomNavigationBar);
     final safeBottomPadding = context.select<MediaQueryData, double>((mq) => mq.safeBottomPadding);
     final showBottomNavigationBar = canNavigate && enableBottomNavigationBar;
-    final height = showBottomNavigationBar ? AppBottomNavBar.getHeightWithMargin(safeBottomPadding) : safeBottomPadding;
+    final height = showBottomNavigationBar ? AppBottomNavBar.getHeightWithMargin(context, safeBottomPadding) : safeBottomPadding;
     return SliverToBoxAdapter(
       child: SizedBox(height: height),
     );

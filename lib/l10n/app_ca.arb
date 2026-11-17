@@ -1,6 +1,6 @@
 {
     "appName": "MediaCraft",
-    "welcomeMessage": "Benvingut a Aves",
+    "welcomeMessage": "Benvingut a MediaCraft",
     "welcomeOptional": "Opcional",
     "welcomeTermsToggle": "Estic d’acord amb els termes i condicions",
     "itemCount": "{count, plural, =1{{count} element} other{{count} elements}}",

@@ -36,12 +36,48 @@ class _StorageAccessPageState extends State<StorageAccessPage> {
           future: _pathLoader,
           builder: (context, snapshot) {
             if (snapshot.hasError) {
-              return Text(snapshot.error.toString());
+              return Column(
+                children: [
+                  const _Header(),
+                  Expanded(
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.error_outline, size: 48),
+                            const SizedBox(height: 12),
+                            Text(snapshot.error.toString(), textAlign: TextAlign.center),
+                            const SizedBox(height: 16),
+                            FilledButton.icon(
+                              onPressed: () {
+                                _load();
+                                setState(() {});
+                              },
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('重新加载'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
             }
             if (snapshot.connectionState != ConnectionState.done && _lastPaths == null) {
-              return const SizedBox();
+              return const Column(
+                children: [
+                  _Header(),
+                  Expanded(child: Center(child: CircularProgressIndicator())),
+                ],
+              );
             }
-            _lastPaths = snapshot.data!..sort();
+            final paths = snapshot.data;
+            if (paths != null) {
+              _lastPaths = paths..sort();
+            }
             if (_lastPaths!.isEmpty) {
               return Column(
                 crossAxisAlignment: .start,
@@ -61,21 +97,25 @@ class _StorageAccessPageState extends State<StorageAccessPage> {
             }
 
             return ListView(
+              padding: const EdgeInsets.only(bottom: 16),
               children: [
                 const _Header(),
-                const Divider(),
                 ..._lastPaths!.map(
-                  (path) => ListTile(
-                    title: Text(path),
-                    dense: true,
-                    trailing: IconButton(
-                      icon: const Icon(AIcons.clear),
-                      onPressed: () async {
-                        await storagePermissionService.revokeSafDirectoryAccess(path);
-                        _load();
-                        setState(() {});
-                      },
-                      tooltip: context.l10n.settingsStorageAccessRevokeTooltip,
+                  (path) => Card(
+                    margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    child: ListTile(
+                      leading: const Icon(Icons.folder_outlined),
+                      title: Text(path, maxLines: 2, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(context.l10n.settingsStorageAccessTile),
+                      trailing: IconButton(
+                        icon: const Icon(AIcons.clear),
+                        onPressed: () async {
+                          await storagePermissionService.revokeSafDirectoryAccess(path);
+                          _load();
+                          setState(() {});
+                        },
+                        tooltip: context.l10n.settingsStorageAccessRevokeTooltip,
+                      ),
                     ),
                   ),
                 ),
@@ -91,14 +131,18 @@ class _StorageAccessPageState extends State<StorageAccessPage> {
 class const _Header() extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      child: Row(
-        children: [
-          const FontSizeIconTheme(child: Icon(AIcons.info)),
-          const SizedBox(width: 16),
-          Expanded(child: Text(context.l10n.settingsStorageAccessBanner)),
-        ],
+    return Card(
+      margin: const EdgeInsets.all(12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const FontSizeIconTheme(child: Icon(AIcons.info)),
+            const SizedBox(width: 16),
+            Expanded(child: Text(context.l10n.settingsStorageAccessBanner)),
+          ],
+        ),
       ),
     );
   }

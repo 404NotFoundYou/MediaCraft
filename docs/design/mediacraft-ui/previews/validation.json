@@ -1,0 +1,386 @@
+{
+  "date": "2026-11-17",
+  "scope": "独立HTML原型，仅模拟交互",
+  "checks": [
+    "列表视图可见",
+    "马赛克视图可见",
+    "日历视图可见",
+    "网格视图可见",
+    "详情 -> 查看器 -> 图库返回链路",
+    "隐藏规则逐条停用，不影响其他规则",
+    "条款未接受不可继续，错误报告仅 Play 场景显示",
+    "固定范围内部选择限制条件且只选一项",
+    "系统条件选择器返回组合筛选",
+    "AB 循环按播放位置设 A / B，再重置",
+    "设置搜索可直达字幕主题",
+    "106 项能力索引可搜索",
+    "直接 file:// 离线打开可加载页面与全部示例图片"
+  ],
+  "mobileAudit": [
+    {
+      "route": "#library",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#albums",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#tags",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#explore",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#search",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#map",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#viewer",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#video",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#details",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#editor",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#special",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#slideshow",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#cast",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#wallpaper",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#tools",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#files",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#stats",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#duplicates",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#scan",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#results",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#bin",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#vault",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#settings",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#privacy",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#about",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#picker",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#welcome",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#states",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    }
+  ],
+  "additionalChecks": [
+    "反向排序实际改变示例顺序",
+    "相册页独立创建动态相册",
+    "国家排行进入国家筛选图库"
+  ],
+  "narrowAudit": [
+    {
+      "route": "#library",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#albums",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#tags",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#explore",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#search",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#map",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#viewer",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#video",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#details",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#editor",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#special",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#slideshow",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#cast",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#wallpaper",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#tools",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#files",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#stats",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#duplicates",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#scan",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#results",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#bin",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#vault",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#settings",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#privacy",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#about",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#picker",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#welcome",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    },
+    {
+      "route": "#states",
+      "errors": [],
+      "overflow": false,
+      "appOverflow": false
+    }
+  ],
+  "duplicateWorkflowChecks": [
+    "默认零勾选与处理按钮禁用",
+    "更换保留项移除待清理选择",
+    "字节复核失败不移动文件",
+    "同组两份独立进入回收站",
+    "全选仅当前视频筛选两项",
+    "含视频时禁用图像转换",
+    "清空历史不关闭记录偏好",
+    "清空后可记录新搜索",
+    "百度授权只影响地图内对应样式"
+  ],
+  "sourceAudit": {
+    "capabilities": 106,
+    "counts": {
+      "navigation-capabilities.js": 37,
+      "capabilities.js": 34,
+      "tools-capabilities.js": 35
+    },
+    "missingEvidence": [],
+    "literalActions": 231,
+    "unhandledLiteralActions": []
+  }
+}

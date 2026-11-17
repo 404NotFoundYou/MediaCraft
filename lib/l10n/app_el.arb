@@ -1,6 +1,6 @@
 {
     "appName": "MediaCraft",
-    "welcomeMessage": "Καλωσορίσατε στην εφαρμογή Aves",
+    "welcomeMessage": "Καλωσορίσατε στην εφαρμογή MediaCraft",
     "welcomeOptional": "Προαιρετικό",
     "welcomeTermsToggle": "Συμφωνώ με τους όρους και τις προυποθέσεις",
     "itemCount": "{count, plural, =1{{count} στοιχείο} other{{count} στοιχεία}}",

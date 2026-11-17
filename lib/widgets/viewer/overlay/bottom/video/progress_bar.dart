@@ -5,7 +5,7 @@ import 'package:aves/model/settings/settings.dart';
 import 'package:aves/theme/format.dart';
 import 'package:aves/theme/icons.dart';
 import 'package:aves/theme/styles.dart';
-import 'package:aves/theme/themes.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/widgets/common/extensions/theme.dart';
 import 'package:aves/widgets/common/fx/blurred.dart';
 import 'package:aves/widgets/common/fx/borders.dart';
@@ -28,7 +28,7 @@ class _VideoProgressBarState extends State<VideoProgressBar> {
   final GlobalKey _progressBarKey = GlobalKey(debugLabel: 'video-progress-bar');
   bool _playingOnDragStart = false;
 
-  static const double _radius = 123;
+  static const double _radius = MediaCraftUi.radiusMedium;
   static const double _abRepeatMarkWidth = 2;
 
   AvesVideoController? get controller => widget.controller;
@@ -46,7 +46,6 @@ class _VideoProgressBarState extends State<VideoProgressBar> {
   @override
   Widget build(BuildContext context) {
     final blurred = settings.enableBlurEffect;
-    final theme = Theme.of(context);
     return SizeTransition(
       sizeFactor: widget.scale,
       child: BlurredRRect.all(
@@ -71,8 +70,8 @@ class _VideoProgressBarState extends State<VideoProgressBar> {
             child: Container(
               padding: VideoProgressBar.padding,
               decoration: BoxDecoration(
-                color: Themes.overlayBackgroundColor(brightness: theme.brightness, blurred: blurred),
-                border: AvesBorder.border(context),
+                color: MediaCraftUi.viewerPanel,
+                border: Border.all(color: MediaCraftUi.viewerOutline),
                 borderRadius: const BorderRadius.all(Radius.circular(_radius)),
               ),
               child: MediaQuery(
@@ -122,7 +121,8 @@ class _VideoProgressBarState extends State<VideoProgressBar> {
                                       if (!progress.isFinite) progress = 0.0;
                                       return LinearProgressIndicator(
                                         value: progress,
-                                        backgroundColor: theme.colorScheme.onSurface.withValues(alpha: .2),
+                                        color: MediaCraftUi.viewerForeground,
+                                        backgroundColor: MediaCraftUi.viewerForeground.withValues(alpha: .18),
                                       );
                                     },
                                   ),

@@ -66,7 +66,7 @@ class const CollectionGrid({
   static const double extentMin = 46;
   static const double extentMax = 300;
 
-  static int get columnCountDefault => settings.useTvLayout ? 6 : 4;
+  static int get columnCountDefault => settings.useTvLayout ? 6 : 3;
 
   @override
   State<CollectionGrid> createState() => _CollectionGridState();
@@ -560,7 +560,7 @@ class _CollectionScrollViewState extends State<_CollectionScrollView> with Widge
                       padding: EdgeInsets.only(
                         // padding to keep scroll thumb between app bar above and nav bar below
                         top: appBarHeight,
-                        bottom: showBottomNavBar ? AppBottomNavBar.getHeightWithMargin(safeBottomPadding) : safeBottomPadding,
+                        bottom: showBottomNavBar ? AppBottomNavBar.getHeightWithMargin(context, safeBottomPadding) : safeBottomPadding,
                       ),
                       labelTextBuilder: (offsetY) => CollectionDraggableThumbLabel(
                         collection: collection,

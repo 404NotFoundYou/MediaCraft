@@ -58,8 +58,8 @@ class const AvesFilterChip({
   final OffsetFilterCallback? onLongPress = showDefaultLongPressMenu,
 }) extends StatefulWidget {
   static const double defaultPadding = 6.0;
-  static const double defaultRadius = 32;
-  static const double outlineWidth = 2;
+  static const double defaultRadius = 8;
+  static const double outlineWidth = 1;
   static const double minChipHeight = kMinInteractiveDimension;
   static const double minChipWidth = kMinInteractiveDimension;
   static const double iconSize = 18;
@@ -251,7 +251,7 @@ class _AvesFilterChipState extends State<AvesFilterChip> {
 
       content = Row(
         mainAxisSize: decoration != null ? .max : .min,
-        mainAxisAlignment: .center,
+        mainAxisAlignment: decoration != null ? .start : .center,
         children: [
           ?leading,
           if (leading != null && showText) SizedBox(width: padding),
@@ -262,6 +262,8 @@ class _AvesFilterChipState extends State<AvesFilterChip> {
                 filter.getLabel(context),
                 style: TextStyle(
                   fontSize: AvesFilterChip.fontSize,
+                  fontWeight: decoration != null ? FontWeight.w600 : null,
+                  color: decoration != null ? Theme.of(context).colorScheme.onSurface : null,
                   decoration: filter.reversed ? TextDecoration.lineThrough : null,
                   decorationThickness: 2,
                 ),
@@ -280,6 +282,7 @@ class _AvesFilterChipState extends State<AvesFilterChip> {
       if (details != null) {
         content = Column(
           mainAxisSize: .min,
+          crossAxisAlignment: decoration != null ? .start : .center,
           children: [
             content,
             Flexible(child: details),
@@ -293,6 +296,7 @@ class _AvesFilterChipState extends State<AvesFilterChip> {
           child: ClipRRect(
             borderRadius: decoration.textBorderRadius,
             child: Container(
+              width: double.infinity,
               padding: EdgeInsets.symmetric(horizontal: padding * 2, vertical: AvesFilterChip.decoratedContentVerticalPadding),
               color: chipBackground,
               child: content,
@@ -353,11 +357,16 @@ class _AvesFilterChipState extends State<AvesFilterChip> {
                   if (snapshot.hasData) {
                     _outlineColor = snapshot.data!;
                   }
+                  final borderColor = decoration != null
+                      ? Theme.of(context).colorScheme.outlineVariant
+                      : widget.useFilterColor
+                      ? _outlineColor
+                      : context.select<AvesColorsData, Color>((v) => v.neutral);
                   return DecoratedBox(
                     decoration: BoxDecoration(
                       border: Border.fromBorderSide(
                         BorderSide(
-                          color: widget.useFilterColor ? _outlineColor : context.select<AvesColorsData, Color>((v) => v.neutral),
+                          color: borderColor,
                           width: AvesFilterChip.outlineWidth,
                         ),
                       ),

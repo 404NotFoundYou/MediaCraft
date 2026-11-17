@@ -1,6 +1,6 @@
 {
     "appName": "MediaCraft",
-    "welcomeMessage": "Aves'e Hoş Geldiniz",
+    "welcomeMessage": "MediaCraft'e Hoş Geldiniz",
     "welcomeOptional": "İsteğe bağlı",
     "welcomeTermsToggle": "Hüküm ve koşulları kabul ediyorum",
     "itemCount": "{count, plural, other{{count} öge}}",

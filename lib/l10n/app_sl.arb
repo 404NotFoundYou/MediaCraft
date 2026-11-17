@@ -1,6 +1,6 @@
 {
     "appName": "MediaCraft",
-    "welcomeMessage": "Dobrodošli v Avesu",
+    "welcomeMessage": "Dobrodošli v MediaCraftu",
     "welcomeOptional": "Izbirno",
     "welcomeTermsToggle": "Sprejmem pogoje uporabe",
     "itemCount": "{count, plural, =1{{count} predmet} two{{count} predmeta} few{{count} predmeti} other{{count} predmetov}}",

@@ -1,6 +1,6 @@
 {
     "appName": "MediaCraft",
-    "welcomeMessage": "Willkommen bei Aves",
+    "welcomeMessage": "Willkommen bei MediaCraft",
     "welcomeOptional": "Optional",
     "welcomeTermsToggle": "Ich stimme den Bedingungen und Konditionen zu",
     "itemCount": "{count, plural, =1{{count} Element} other{{count} Elemente}}",

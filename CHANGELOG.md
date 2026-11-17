@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## <a id="unreleased"></a>[Unreleased]
 
+## <a id="v0.6.4"></a>[v0.6.4] - 2026-11-17
+
+### Changed
+
+- 更新 MediaCraft 品牌、图标与明亮/深色主题，统一媒体库、相册、搜索、地图、统计和设置页面布局。
+- 默认导航调整为“媒体 / 相册 / 探索 / 工具”，保留已有用户导航与主题配置。
+- 新增探索页和工具页，整合已有地图、地点、标签、筛选、重复清理、回收站和设置入口。
+- 优化重复媒体清理的扫描、逐组复核和操作区，以及照片查看器、视频控制和编辑器布局。
+- 更新项目说明、帮助入口与商店截图，保留许可证及第三方归属。
+
+### Fixed
+
+- 修复大字体导航溢出、深色查看器系统栏与时间文字对比度问题。
+- 在 TV 媒体选择模式隐藏维护工具入口，与底栏和抽屉保持一致。
+
+### Verification
+
+- 界面改造的双 flavor 自动检查、模拟器回归与验证边界见 [UI 验证记录](docs/design/mediacraft-ui/UI-VERIFICATION.md)。
+- 百度版版本、安装包和本次发布验证说明见 [v0.6.4 发布说明](docs/releases/v0.6.4.md)。
+
 ## <a id="v0.6.3"></a>[v0.6.3] - 2026-11-16
 
 ### Fixed

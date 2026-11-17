@@ -14,6 +14,7 @@ import 'package:aves/theme/icons.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/common/identity/empty.dart';
 import 'package:aves/widgets/common/providers/filter_group_provider.dart';
+import 'package:aves/widgets/common/bars/mediacraft_browse_header.dart';
 import 'package:aves/widgets/filter_grids/common/action_delegates/album_set.dart';
 import 'package:aves/widgets/filter_grids/common/enums.dart';
 import 'package:aves/widgets/filter_grids/common/filter_nav_page.dart';
@@ -23,7 +24,7 @@ import 'package:collection/collection.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
-class AlbumListPage extends StatelessWidget {
+class AlbumListPage extends StatefulWidget {
   static const routeName = '/albums';
 
   final Uri? initialGroup;
@@ -34,62 +35,7 @@ class AlbumListPage extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider<FilterGrouping>.value(value: albumGrouping),
-        FilterGroupProvider(initialValue: initialGroup),
-      ],
-      child: Builder(
-        // to access filter group provider from subtree context
-        builder: (context) {
-          final source = context.read<CollectionSource>();
-          return Selector<Settings, (ChipSectionFactor, SortFactor, bool, Set<CollectionFilter>, Set<CollectionFilter>)>(
-            selector: (context, s) => (s.albumSectionFactor, s.albumSortFactor, s.albumSortReverse, s.hiddenFilters, s.pinnedFilters),
-            shouldRebuild: (t1, t2) {
-              // `Selector` by default uses `DeepCollectionEquality`, which does not go deep in collections within records
-              const eq = DeepCollectionEquality();
-              return !(eq.equals(t1.$1, t2.$1) && eq.equals(t1.$2, t2.$2) && eq.equals(t1.$3, t2.$3) && eq.equals(t1.$4, t2.$4) && eq.equals(t1.$5, t2.$5));
-            },
-            builder: (context, _, child) {
-              return ListenableBuilder(
-                listenable: appInventory.areAppNamesReadyNotifier,
-                builder: (context, child) {
-                  return ListenableBuilder(
-                    listenable: Listenable.merge({albumGrouping, dynamicAlbums}),
-                    builder: (context, child) => StreamBuilder<AlbumsChangedEvent>(
-                      stream: source.eventBus.on<AlbumsChangedEvent>(),
-                      builder: (context, _) {
-                        final groupUri = context.watch<FilterGroupNotifier>().value;
-                        final gridItems = getGridItems(context, source, AlbumChipType.values.toSet(), groupUri);
-                        return StreamBuilder<Set<CollectionFilter>?>(
-                          // to update sections by tier
-                          stream: covers.packageChangeStream,
-                          builder: (context, _) => FilterNavigationPage<AlbumBaseFilter, AlbumChipSetActionDelegate>(
-                            source: source,
-                            title: context.l10n.albumPageTitle,
-                            sortFactor: settings.albumSortFactor,
-                            showHeaders: settings.albumSectionFactor != ChipSectionFactor.none,
-                            actionDelegate: AlbumChipSetActionDelegate(gridItems),
-                            filterSections: groupToSections(context, source, gridItems),
-                            newFilters: source.getNewAlbumFilters(context),
-                            emptyBuilder: () => EmptyContent(
-                              icon: AIcons.album,
-                              text: context.l10n.albumEmpty,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  );
-                },
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
+  State<AlbumListPage> createState() => _AlbumListPageState();
 
   // common with picking page
 
@@ -247,5 +193,82 @@ class AlbumListPage extends StatelessWidget {
     }
 
     return sections;
+  }
+}
+
+class _AlbumListPageState extends State<AlbumListPage> {
+  int _view = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<FilterGrouping>.value(value: albumGrouping),
+        FilterGroupProvider(initialValue: widget.initialGroup),
+      ],
+      child: Builder(
+        // to access filter group provider from subtree context
+        builder: (context) {
+          final source = context.read<CollectionSource>();
+          return Selector<Settings, (ChipSectionFactor, SortFactor, bool, Set<CollectionFilter>, Set<CollectionFilter>)>(
+            selector: (context, s) => (s.albumSectionFactor, s.albumSortFactor, s.albumSortReverse, s.hiddenFilters, s.pinnedFilters),
+            shouldRebuild: (t1, t2) {
+              // `Selector` by default uses `DeepCollectionEquality`, which does not go deep in collections within records
+              const eq = DeepCollectionEquality();
+              return !(eq.equals(t1.$1, t2.$1) && eq.equals(t1.$2, t2.$2) && eq.equals(t1.$3, t2.$3) && eq.equals(t1.$4, t2.$4) && eq.equals(t1.$5, t2.$5));
+            },
+            builder: (context, _, child) {
+              return ListenableBuilder(
+                listenable: appInventory.areAppNamesReadyNotifier,
+                builder: (context, child) {
+                  return ListenableBuilder(
+                    listenable: Listenable.merge({albumGrouping, dynamicAlbums}),
+                    builder: (context, child) => StreamBuilder<AlbumsChangedEvent>(
+                      stream: source.eventBus.on<AlbumsChangedEvent>(),
+                      builder: (context, _) {
+                        final groupUri = context.watch<FilterGroupNotifier>().value;
+                        final types = _view == 1 && groupUri == null ? <AlbumChipType>{AlbumChipType.dynamic} : AlbumChipType.values.toSet();
+                        var gridItems = AlbumListPage.getGridItems(context, source, types, groupUri);
+                        if (_view == 2 && groupUri == null) {
+                          gridItems = gridItems.where((item) => item.filter is AlbumGroupFilter).toList();
+                        }
+                        return StreamBuilder<Set<CollectionFilter>?>(
+                          // to update sections by tier
+                          stream: covers.packageChangeStream,
+                          builder: (context, _) => FilterNavigationPage<AlbumBaseFilter, AlbumChipSetActionDelegate>(
+                            source: source,
+                            title: context.l10n.albumPageTitle,
+                            browseControls: groupUri == null
+                                ? MediaCraftBrowseSegments(
+                                    labels: {
+                                      0: Localizations.localeOf(context).languageCode == 'zh' ? '全部相册' : 'All albums',
+                                      1: Localizations.localeOf(context).languageCode == 'zh' ? '动态相册' : 'Dynamic',
+                                      2: Localizations.localeOf(context).languageCode == 'zh' ? '相册组' : 'Groups',
+                                    },
+                                    selected: _view,
+                                    onChanged: (value) => setState(() => _view = value),
+                                  )
+                                : null,
+                            sortFactor: settings.albumSortFactor,
+                            showHeaders: settings.albumSectionFactor != ChipSectionFactor.none,
+                            actionDelegate: AlbumChipSetActionDelegate(gridItems),
+                            filterSections: AlbumListPage.groupToSections(context, source, gridItems),
+                            newFilters: source.getNewAlbumFilters(context),
+                            emptyBuilder: () => EmptyContent(
+                              icon: AIcons.album,
+                              text: context.l10n.albumEmpty,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              );
+            },
+          );
+        },
+      ),
+    );
   }
 }

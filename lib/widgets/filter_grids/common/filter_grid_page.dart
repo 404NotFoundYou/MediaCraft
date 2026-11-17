@@ -214,11 +214,11 @@ class _FilterGridState<T extends CollectionFilter> extends State<_FilterGrid<T>>
   Widget build(BuildContext context) {
     _tileExtentController ??= TileExtentController(
       settingsRouteKey: widget.settingsRouteKey ?? context.currentRouteName!,
-      columnCountDefault: settings.useTvLayout ? 4 : 3,
+      columnCountDefault: settings.useTvLayout ? 4 : 2,
       extentMin: 60,
       extentMax: 300,
-      spacing: 8,
-      horizontalPadding: 2,
+      spacing: 12,
+      horizontalPadding: 16,
     );
     return AvesPopScope(
       handlers: [
@@ -713,7 +713,7 @@ class _FilterScrollView<T extends CollectionFilter> extends StatelessWidget {
                   padding: EdgeInsets.only(
                     // padding to keep scroll thumb between app bar above and nav bar below
                     top: appBarHeight,
-                    bottom: showBottomNavBar ? AppBottomNavBar.getHeightWithMargin(safeBottomPadding) : safeBottomPadding,
+                    bottom: showBottomNavBar ? AppBottomNavBar.getHeightWithMargin(context, safeBottomPadding) : safeBottomPadding,
                   ),
                   labelTextBuilder: (offsetY) => FilterDraggableThumbLabel<T>(
                     sortFactor: sortFactor,

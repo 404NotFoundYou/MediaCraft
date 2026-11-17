@@ -8,6 +8,8 @@ import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/common/search/page.dart';
 import 'package:aves/widgets/debug/app_debug_page.dart';
 import 'package:aves/widgets/duplicates/duplicate_page.dart';
+import 'package:aves/widgets/discovery/explore_page.dart';
+import 'package:aves/widgets/discovery/tools_page.dart';
 import 'package:aves/widgets/explorer/page.dart';
 import 'package:aves/widgets/filter_grids/albums_page.dart';
 import 'package:aves/widgets/filter_grids/countries_page.dart';
@@ -58,6 +60,10 @@ class NavigationDisplay {
         return l10n.settingsPageTitle;
       case DuplicatePage.routeName:
         return '去重';
+      case ExplorePage.routeName:
+        return Localizations.localeOf(context).languageCode == 'zh' ? '探索' : 'Explore';
+      case ToolsPage.routeName:
+        return Localizations.localeOf(context).languageCode == 'zh' ? '工具' : 'Tools';
       default:
         return route;
     }
@@ -87,6 +93,10 @@ class NavigationDisplay {
         return AIcons.settings;
       case DuplicatePage.routeName:
         return Icons.find_replace;
+      case ExplorePage.routeName:
+        return AIcons.sensorControlEnabled;
+      case ToolsPage.routeName:
+        return Icons.handyman_outlined;
       default:
         return null;
     }

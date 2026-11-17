@@ -3,9 +3,7 @@ import 'package:aves/widgets/about/app_update.dart';
 import 'package:aves/widgets/about/bug_report.dart';
 import 'package:aves/widgets/about/credits.dart';
 import 'package:aves/widgets/about/data_usage.dart';
-import 'package:aves/widgets/about/derivation.dart';
 import 'package:aves/widgets/about/licenses.dart';
-import 'package:aves/widgets/about/translators.dart';
 import 'package:aves/widgets/common/basic/insets.dart';
 import 'package:aves/widgets/common/basic/scaffold.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
@@ -30,15 +28,11 @@ class AboutMobilePage extends StatelessWidget {
                     const AppReference(),
                     const AppUpdateChecker(),
                     const Divider(),
-                    const DerivationNotice(),
-                    const Divider(),
                     const BugReport(),
                     const Divider(),
                     const AboutDataUsage(),
                     const Divider(),
                     const AboutCredits(),
-                    const Divider(),
-                    const AboutTranslators(),
                     const Divider(),
                   ]),
                 ),

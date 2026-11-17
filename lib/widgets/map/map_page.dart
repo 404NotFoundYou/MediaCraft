@@ -15,10 +15,10 @@ import 'package:aves/model/source/tag.dart';
 import 'package:aves/services/common/services.dart';
 import 'package:aves/theme/durations.dart';
 import 'package:aves/theme/icons.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/view/view.dart';
 import 'package:aves/widgets/collection/collection_page.dart';
 import 'package:aves/widgets/collection/entry_set_action_delegate.dart';
-import 'package:aves/widgets/common/basic/divider.dart';
 import 'package:aves/widgets/common/basic/font_size_icon_theme.dart';
 import 'package:aves/widgets/common/basic/insets.dart';
 import 'package:aves/widgets/common/basic/popup/menu_row.dart';
@@ -205,6 +205,7 @@ class _ContentState extends State<_Content> with SingleTickerProviderStateMixin 
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return NotificationListener(
       onNotification: (notification) {
         if (notification is SelectFilterNotification) {
@@ -253,19 +254,28 @@ class _ContentState extends State<_Content> with SingleTickerProviderStateMixin 
             ],
           );
         },
-        child: Column(
-          mainAxisSize: .min,
-          children: [
-            const SizedBox(height: 8),
-            const ThinDivider(),
-            _buildOverlayControls(),
-            MapEntryScroller(
-              regionCollectionNotifier: _regionCollectionNotifier,
-              dotEntryNotifier: _dotEntryNotifier,
-              selectedIndexNotifier: _selectedIndexNotifier,
-              onTap: (index) => _goToViewer(_getRegionEntry(index)),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.surface,
+            border: Border(
+              top: BorderSide(color: colors.outlineVariant),
             ),
-          ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Column(
+              mainAxisSize: .min,
+              children: [
+                _buildOverlayControls(),
+                MapEntryScroller(
+                  regionCollectionNotifier: _regionCollectionNotifier,
+                  dotEntryNotifier: _dotEntryNotifier,
+                  selectedIndexNotifier: _selectedIndexNotifier,
+                  onTap: (index) => _goToViewer(_getRegionEntry(index)),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -344,24 +354,36 @@ class _ContentState extends State<_Content> with SingleTickerProviderStateMixin 
 
   Widget _buildOverlayControls() {
     if (widget.overlayEntry == null) return const SizedBox();
+    final colors = Theme.of(context).colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: ValueListenableBuilder<double>(
         valueListenable: _overlayOpacityNotifier,
         builder: (context, overlayOpacity, child) {
-          return Row(
-            children: [
-              const Icon(AIcons.opacity),
-              Expanded(
-                child: Slider(
-                  value: _overlayOpacityNotifier.value,
-                  onChanged: (v) => _overlayOpacityNotifier.value = v,
-                  min: 0,
-                  max: 1,
-                ),
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.surfaceContainer,
+              border: Border.all(color: colors.outlineVariant),
+              borderRadius: BorderRadius.circular(MediaCraftUi.radiusMedium),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  const Icon(AIcons.opacity),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Slider(
+                      value: _overlayOpacityNotifier.value,
+                      onChanged: (v) => _overlayOpacityNotifier.value = v,
+                      min: 0,
+                      max: 1,
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           );
         },
       ),

@@ -1,4 +1,5 @@
 import 'package:aves/model/settings/settings.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/view/view.dart';
 import 'package:aves/widgets/common/action_controls/togglers/play.dart';
 import 'package:aves/widgets/common/identity/buttons/overlay_button.dart';
@@ -16,7 +17,7 @@ class const VideoControlRow({
   required final Function(EntryAction value) onActionSelected,
 }) extends StatelessWidget {
   static const double _edgeButtonPadding = 3;
-  static const Radius _radius = Radius.circular(123);
+  static const Radius _radius = Radius.circular(MediaCraftUi.radiusMedium);
 
   static double preferredHeight(BuildContext context) => OverlayButton.getSize(context);
 

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f9faf7">
+  <title>MediaCraft · 新界面静态原型</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="review-header">
+    <a href="#library" class="review-brand"><span class="brand-mark">m<span>c</span></span><span>MediaCraft <small>DESIGN STUDY / 01</small></span></a>
+    <div class="review-heading">让每一份影像，各得其所。<span>明亮 · 有序 · 专注内容</span></div>
+    <button class="review-btn" id="coverage-button">功能覆盖清单 <span>↗</span></button>
+  </header>
+  <div class="workspace">
+    <aside class="review-sidebar">
+      <div class="eyebrow">可交互静态原型</div>
+      <h1>重新看见<br>你的媒体库<span>。</span></h1>
+      <p class="review-intro">重新组织界面与操作层级，<br>保留 MediaCraft 的现有能力。</p>
+      <nav id="screen-list" aria-label="原型页面"></nav>
+      <div class="sidebar-foot"><span class="status-dot"></span>示例内容 · 仅演示界面<br><small>Android 手机 / 412 × 852</small></div>
+    </aside>
+    <main class="stage" aria-label="手机原型预览">
+      <div class="stage-caption"><span id="screen-counter">01 / 26</span><span>MEDIACRAFT MOBILE</span><button id="fullscreen-button" aria-label="切换专注预览">↗</button></div>
+      <div class="phone" id="phone">
+        <div class="status-bar"><span>9:41</span><span class="status-icons">▮▮▮ <span>◔</span> ▰</span></div>
+        <div id="app" class="app"></div>
+        <div id="sheet-layer" class="sheet-layer" hidden></div>
+        <div id="toast" role="status" class="toast" hidden></div>
+        <div class="home-indicator"></div>
+      </div>
+      <div class="stage-foot"><span>点击界面入口探索流程</span><span>← → 切换页面 · Esc 关闭弹层</span></div>
+    </main>
+    <aside class="design-notes">
+      <div class="eyebrow">界面设计说明</div>
+      <div id="page-notes"></div>
+      <div class="note-divider"></div>
+      <div class="eyebrow">视觉语言</div>
+      <div class="palette"><span style="background:#356a5d"></span><span style="background:#e8eee7"></span><span style="background:#ecd7a7"></span><span style="background:#f9faf7"></span><span style="background:#213b33"></span></div>
+      <p class="small-note">纸白底色与森林绿强调，细线分区、清晰层级。让照片成为界面中最鲜明的颜色。</p>
+      <div class="note-divider"></div>
+      <div class="scope-note"><span class="status-dot"></span><strong>原型边界</strong><p>所有数字、媒体和交互结果均为示例。未连接设备、文件、地图 SDK 或网络服务。</p><p>高级能力通过专页与操作面板保留。仅设计布局，不修改 Flutter 业务代码。</p></div>
+      <button class="text-link" id="coverage-button-notes">查看全部现有能力 →</button>
+    </aside>
+  </div>
+  <dialog id="coverage-dialog" class="coverage-dialog" aria-labelledby="coverage-title">
+    <div class="coverage-header"><div><div class="eyebrow">CAPABILITY INDEX</div><h2 id="coverage-title">每一种能力，都有去处。</h2></div><button class="icon-btn" id="close-coverage" aria-label="关闭功能清单">✕</button></div>
+    <p>根据当前源码核对的功能入口。点击一项可跳到对应原型；完整规则与证据见同目录业务说明。</p>
+    <input id="coverage-search" class="coverage-search" placeholder="搜索能力，例如：GPX、字幕、保险库…" aria-label="搜索功能清单">
+    <div id="coverage-count" class="eyebrow"></div><div id="coverage-list"></div>
+  </dialog>
+  <script src="capabilities.js"></script>
+  <script src="navigation-capabilities.js"></script>
+  <script src="tools-capabilities.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

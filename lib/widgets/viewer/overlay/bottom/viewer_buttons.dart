@@ -8,6 +8,7 @@ import 'package:aves/model/settings/settings.dart';
 import 'package:aves/model/source/collection_lens.dart';
 import 'package:aves/services/common/services.dart';
 import 'package:aves/theme/icons.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/view/view.dart';
 import 'package:aves/widgets/common/action_controls/quick_choosers/move_button.dart';
 import 'package:aves/widgets/common/action_controls/quick_choosers/rate_button.dart';
@@ -55,12 +56,40 @@ class const ViewerButtons({
   Widget build(BuildContext context) {
     final actionDelegate = EntryActionDelegate(mainEntry, pageEntry, collection);
 
+    final baseTheme = Theme.of(context);
+    final controlsTheme = baseTheme.copyWith(
+      brightness: Brightness.dark,
+      colorScheme: baseTheme.colorScheme.copyWith(
+        brightness: Brightness.dark,
+        surface: MediaCraftUi.viewerPanel,
+        onSurface: MediaCraftUi.viewerForeground,
+        onSurfaceVariant: MediaCraftUi.viewerForegroundMuted,
+        outline: MediaCraftUi.viewerOutline,
+        outlineVariant: MediaCraftUi.viewerOutline,
+      ),
+      iconTheme: baseTheme.iconTheme.copyWith(color: MediaCraftUi.viewerForeground),
+      popupMenuTheme: baseTheme.popupMenuTheme.copyWith(
+        color: const Color(0xff252c29),
+        iconColor: MediaCraftUi.viewerForeground,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(MediaCraftUi.radiusMedium)),
+        ),
+      ),
+      textTheme: baseTheme.textTheme.apply(
+        bodyColor: MediaCraftUi.viewerForeground,
+        displayColor: MediaCraftUi.viewerForeground,
+      ),
+    );
+
     if (settings.useTvLayout) {
-      return _TvButtonRowContent(
-        actionDelegate: actionDelegate,
-        scale: scale,
-        mainEntry: mainEntry,
-        pageEntry: pageEntry,
+      return Theme(
+        data: controlsTheme,
+        child: _TvButtonRowContent(
+          actionDelegate: actionDelegate,
+          scale: scale,
+          mainEntry: mainEntry,
+          pageEntry: pageEntry,
+        ),
       );
     }
 
@@ -71,34 +100,37 @@ class const ViewerButtons({
     );
 
     final trashed = mainEntry.trashed;
-    return SafeArea(
-      top: false,
-      bottom: false,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final buttonWidth = _buttonSize(context);
-          final availableCount = ((constraints.maxWidth - outerPadding * 2) / (buttonWidth + innerPadding)).floor();
-          return Selector<Settings, bool>(
-            selector: (context, s) => s.isRotationLocked,
-            builder: (context, _, child) {
-              final quickActions = (trashed ? EntryActions.trashed : settings.viewerQuickActions).where(isVisible).where(actionDelegate.canApply).take(max(0, availableCount - 1)).toList();
-              List<EntryAction> getMenuActions(List<EntryAction> categoryActions) {
-                return categoryActions.where((action) => !quickActions.contains(action)).where(isVisible).toList();
-              }
+    return Theme(
+      data: controlsTheme,
+      child: SafeArea(
+        top: false,
+        bottom: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final buttonWidth = _buttonSize(context);
+            final availableCount = ((constraints.maxWidth - outerPadding * 2) / (buttonWidth + innerPadding)).floor();
+            return Selector<Settings, bool>(
+              selector: (context, s) => s.isRotationLocked,
+              builder: (context, _, child) {
+                final quickActions = (trashed ? EntryActions.trashed : settings.viewerQuickActions).where(isVisible).where(actionDelegate.canApply).take(max(0, availableCount - 1)).toList();
+                List<EntryAction> getMenuActions(List<EntryAction> categoryActions) {
+                  return categoryActions.where((action) => !quickActions.contains(action)).where(isVisible).toList();
+                }
 
-              return ViewerButtonRowContent(
-                actionDelegate: actionDelegate,
-                quickActions: quickActions,
-                topLevelActions: getMenuActions(EntryActions.topLevel),
-                exportActions: getMenuActions(EntryActions.export),
-                videoActions: getMenuActions(EntryActions.video),
-                scale: scale,
-                mainEntry: mainEntry,
-                pageEntry: pageEntry,
-              );
-            },
-          );
-        },
+                return ViewerButtonRowContent(
+                  actionDelegate: actionDelegate,
+                  quickActions: quickActions,
+                  topLevelActions: getMenuActions(EntryActions.topLevel),
+                  exportActions: getMenuActions(EntryActions.export),
+                  videoActions: getMenuActions(EntryActions.video),
+                  scale: scale,
+                  mainEntry: mainEntry,
+                  pageEntry: pageEntry,
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }
@@ -251,72 +283,85 @@ class _ViewerButtonRowContentState extends State<ViewerButtonRowContent> {
       selector: (context, vc) => vc.getController(pageEntry),
       builder: (context, videoController, child) {
         return Padding(
-          padding: const EdgeInsets.only(left: padding / 2, right: padding / 2, bottom: padding),
-          child: Row(
-            textDirection: ViewerBottomOverlay.actionsDirection,
-            children: [
-              const Spacer(),
-              ...widget.quickActions.map((action) => _buildOverlayButton(context, action, videoController)),
-              if (hasOverflowMenu)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: padding / 2),
-                  child: OverlayButton(
-                    scale: widget.scale,
-                    child: FontSizeIconTheme(
-                      child: PopupMenuButton<EntryAction>(
-                        key: const Key('entry-menu-button'),
-                        itemBuilder: (context) {
-                          final exportInternalActions = exportActions.whereNot(EntryActions.exportExternal.contains).toList();
-                          final exportExternalActions = exportActions.where(EntryActions.exportExternal.contains).toList();
-                          return [
-                            if (showOrientationActions) _buildRotateAndFlipMenuItems(context),
-                            ...topLevelActions.map((action) => _buildPopupMenuItem(context, action, videoController)),
-                            if (exportActions.isNotEmpty)
-                              PopupMenuExpansionPanel<EntryAction>(
-                                enabled: !availability.isLocked,
-                                value: 'export',
-                                expandedNotifier: _popupExpandedNotifier,
-                                icon: AIcons.export,
-                                title: context.l10n.entryActionExport,
-                                items: [
-                                  ...exportInternalActions.map((action) => _buildPopupMenuItem(context, action, videoController)),
-                                  if (exportInternalActions.isNotEmpty && exportExternalActions.isNotEmpty) const PopupMenuDivider(height: 0),
-                                  ...exportExternalActions.map((action) => _buildPopupMenuItem(context, action, videoController)),
-                                ],
-                              ),
-                            if (videoActions.isNotEmpty)
-                              PopupMenuExpansionPanel<EntryAction>(
-                                value: 'video',
-                                expandedNotifier: _popupExpandedNotifier,
-                                icon: AIcons.video,
-                                title: context.l10n.settingsVideoSectionTitle,
-                                items: [
-                                  ...videoActions.map((action) => _buildPopupMenuItem(context, action, videoController)),
-                                ],
-                              ),
-                            if (isVisible(EntryAction.debug)) ...[
-                              const PopupMenuDivider(),
-                              _buildPopupMenuItem(context, EntryAction.debug, videoController),
-                            ],
-                          ];
-                        },
-                        onOpened: () => PopupMenuOpenedNotification().dispatch(context),
-                        onSelected: (action) async {
-                          _popupExpandedNotifier.value = null;
-                          // wait for the popup menu to hide before proceeding with the action
-                          await Future.pause(animations.popUpAnimationDelay * timeDilation);
-                          actionDelegate.onActionSelected(context, action);
-                        },
-                        onCanceled: () {
-                          _popupExpandedNotifier.value = null;
-                        },
-                        iconSize: IconTheme.of(context).size,
-                        popUpAnimationStyle: animations.popUpAnimationStyle,
+          padding: const EdgeInsets.only(left: padding, right: padding, bottom: padding),
+          child: Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: MediaCraftUi.viewerPanelSoft,
+                border: Border.all(color: MediaCraftUi.viewerOutline),
+                borderRadius: BorderRadius.circular(MediaCraftUi.radiusLarge),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: padding / 2, vertical: padding / 2),
+                child: Row(
+                  mainAxisSize: .min,
+                  textDirection: ViewerBottomOverlay.actionsDirection,
+                  children: [
+                    ...widget.quickActions.map((action) => _buildOverlayButton(context, action, videoController)),
+                    if (hasOverflowMenu)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: padding / 2),
+                        child: OverlayButton(
+                          scale: widget.scale,
+                          child: FontSizeIconTheme(
+                            child: PopupMenuButton<EntryAction>(
+                              key: const Key('entry-menu-button'),
+                              itemBuilder: (context) {
+                                final exportInternalActions = exportActions.whereNot(EntryActions.exportExternal.contains).toList();
+                                final exportExternalActions = exportActions.where(EntryActions.exportExternal.contains).toList();
+                                return [
+                                  if (showOrientationActions) _buildRotateAndFlipMenuItems(context),
+                                  ...topLevelActions.map((action) => _buildPopupMenuItem(context, action, videoController)),
+                                  if (exportActions.isNotEmpty)
+                                    PopupMenuExpansionPanel<EntryAction>(
+                                      enabled: !availability.isLocked,
+                                      value: 'export',
+                                      expandedNotifier: _popupExpandedNotifier,
+                                      icon: AIcons.export,
+                                      title: context.l10n.entryActionExport,
+                                      items: [
+                                        ...exportInternalActions.map((action) => _buildPopupMenuItem(context, action, videoController)),
+                                        if (exportInternalActions.isNotEmpty && exportExternalActions.isNotEmpty) const PopupMenuDivider(height: 0),
+                                        ...exportExternalActions.map((action) => _buildPopupMenuItem(context, action, videoController)),
+                                      ],
+                                    ),
+                                  if (videoActions.isNotEmpty)
+                                    PopupMenuExpansionPanel<EntryAction>(
+                                      value: 'video',
+                                      expandedNotifier: _popupExpandedNotifier,
+                                      icon: AIcons.video,
+                                      title: context.l10n.settingsVideoSectionTitle,
+                                      items: [
+                                        ...videoActions.map((action) => _buildPopupMenuItem(context, action, videoController)),
+                                      ],
+                                    ),
+                                  if (isVisible(EntryAction.debug)) ...[
+                                    const PopupMenuDivider(),
+                                    _buildPopupMenuItem(context, EntryAction.debug, videoController),
+                                  ],
+                                ];
+                              },
+                              onOpened: () => PopupMenuOpenedNotification().dispatch(context),
+                              onSelected: (action) async {
+                                _popupExpandedNotifier.value = null;
+                                // wait for the popup menu to hide before proceeding with the action
+                                await Future.pause(animations.popUpAnimationDelay * timeDilation);
+                                actionDelegate.onActionSelected(context, action);
+                              },
+                              onCanceled: () {
+                                _popupExpandedNotifier.value = null;
+                              },
+                              iconSize: IconTheme.of(context).size,
+                              popUpAnimationStyle: animations.popUpAnimationStyle,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                  ],
                 ),
-            ],
+              ),
+            ),
           ),
         );
       },

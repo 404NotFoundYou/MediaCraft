@@ -30,6 +30,8 @@ import 'package:aves/widgets/common/behaviour/routes.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/common/search/page.dart';
 import 'package:aves/widgets/editor/entry_editor_page.dart';
+import 'package:aves/widgets/discovery/explore_page.dart';
+import 'package:aves/widgets/discovery/tools_page.dart';
 import 'package:aves/widgets/explorer/page.dart';
 import 'package:aves/widgets/filter_grids/albums_page.dart';
 import 'package:aves/widgets/filter_grids/tags_page.dart';
@@ -71,6 +73,8 @@ class _HomePageState extends State<HomePage> with FeedbackMixin {
   (Object, StackTrace)? _setupError;
 
   static const allowedShortcutRoutes = [
+    ExplorePage.routeName,
+    ToolsPage.routeName,
     AlbumListPage.routeName,
     CollectionPage.routeName,
     ExplorerPage.routeName,
@@ -121,7 +125,7 @@ class _HomePageState extends State<HomePage> with FeedbackMixin {
 
         final date = DateFormat('yyyyMMdd_HHmmss', IntlUtils.rootLocaleName).format(DateTime.now());
         final success = await storageService.createFile(
-          basename: 'aves_debug_logs-$date}',
+          basename: 'mediacraft-debug-logs-$date',
           mimeType: MimeTypes.plainText,
           bytes: Uint8List.fromList(utf8.encode(logs.join('\n'))),
         );
@@ -430,6 +434,10 @@ class _HomePageState extends State<HomePage> with FeedbackMixin {
 
     final source = context.read<CollectionSource>();
     switch (routeName) {
+      case ExplorePage.routeName:
+        return buildRoute((context) => const ExplorePage());
+      case ToolsPage.routeName:
+        return buildRoute((context) => const ToolsPage());
       case AlbumListPage.routeName:
         return buildRoute((context) => const AlbumListPage(initialGroup: null));
       case TagListPage.routeName:

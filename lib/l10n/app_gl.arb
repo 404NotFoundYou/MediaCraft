@@ -87,7 +87,7 @@
     "keepScreenOnViewerOnly": "Só páxina do visor",
     "keepScreenOnAlways": "Sempre",
     "appName": "MediaCraft",
-    "welcomeMessage": "Benvido a Aves",
+    "welcomeMessage": "Benvido a MediaCraft",
     "itemCount": "{count, plural, =1{{count} elemento} other{{count} elementos}}",
     "@itemCount": {
         "placeholders": {

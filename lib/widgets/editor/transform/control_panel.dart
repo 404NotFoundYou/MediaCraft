@@ -2,6 +2,7 @@ import 'package:aves/model/entry/entry.dart';
 import 'package:aves/model/settings/settings.dart';
 import 'package:aves/theme/durations.dart';
 import 'package:aves/theme/icons.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/view/view.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/common/identity/buttons/captioned_button.dart';
@@ -64,7 +65,9 @@ class _TransformControlPanelState extends State<TransformControlPanel> with Tick
   @override
   Widget build(BuildContext context) {
     final transformController = context.watch<TransformController>();
+    final colors = Theme.of(context).colorScheme;
     return Column(
+      mainAxisSize: .min,
       children: [
         SizedBox(
           height: CropControlPanel.preferredHeight(context),
@@ -87,11 +90,24 @@ class _TransformControlPanelState extends State<TransformControlPanel> with Tick
               ),
             ),
             Expanded(
-              child: TabBar(
-                tabs: _tabs.map((v) => v.$1(context)).toList(),
-                controller: _tabController,
-                padding: const EdgeInsets.symmetric(horizontal: padding),
-                indicatorSize: TabBarIndicatorSize.label,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colors.surfaceContainer,
+                  border: Border.all(color: colors.outlineVariant),
+                  borderRadius: BorderRadius.circular(MediaCraftUi.radiusMedium),
+                ),
+                child: TabBar(
+                  tabs: _tabs.map((v) => v.$1(context)).toList(),
+                  controller: _tabController,
+                  padding: const EdgeInsets.all(3),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  dividerColor: Colors.transparent,
+                  indicator: BoxDecoration(
+                    color: colors.surface,
+                    borderRadius: BorderRadius.circular(MediaCraftUi.radiusSmall),
+                    border: Border.all(color: colors.outlineVariant),
+                  ),
+                ),
               ),
             ),
             OverlayButton(
@@ -123,9 +139,10 @@ class CropControlPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<TransformController>();
-    return ListView.builder(
+    return ListView.separated(
       scrollDirection: Axis.horizontal,
       shrinkWrap: true,
+      padding: const EdgeInsets.symmetric(horizontal: EditorControlPanel.padding / 2),
       itemBuilder: (context, index) {
         final ratio = CropAspectRatio.values[index];
         void setAspectRatio() => controller.setAspectRatio(ratio);
@@ -147,6 +164,7 @@ class CropControlPanel extends StatelessWidget {
           onPressed: setAspectRatio,
         );
       },
+      separatorBuilder: (context, index) => const SizedBox(width: EditorControlPanel.padding / 2),
       itemCount: CropAspectRatio.values.length,
     );
   }
@@ -159,34 +177,45 @@ class RotationControlPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = context.watch<TransformController>();
     final angleFormatter = settings.avesLocale.numberFormat('0.0°');
+    final colors = Theme.of(context).colorScheme;
 
-    return Row(
-      children: [
-        _buildButton(context, EntryAction.flip, controller.flipHorizontally),
-        Expanded(
-          child: StreamBuilder<Transformation>(
-            stream: controller.transformationStream,
-            builder: (context, _) {
-              final degrees = controller.transformation.straightenDegrees;
-              return SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  showValueIndicator: ShowValueIndicator.onDrag,
-                ),
-                child: Slider(
-                  value: degrees,
-                  min: TransformController.straightenDegreesMin,
-                  max: TransformController.straightenDegreesMax,
-                  onChangeStart: (v) => controller.activity = TransformActivity.straighten,
-                  onChangeEnd: (v) => controller.activity = TransformActivity.none,
-                  label: angleFormatter.format(degrees),
-                  onChanged: (v) => controller.straightenDegrees = v,
-                ),
-              );
-            },
-          ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surfaceContainer,
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(MediaCraftUi.radiusMedium),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: EditorControlPanel.padding / 2),
+        child: Row(
+          children: [
+            _buildButton(context, EntryAction.flip, controller.flipHorizontally),
+            Expanded(
+              child: StreamBuilder<Transformation>(
+                stream: controller.transformationStream,
+                builder: (context, _) {
+                  final degrees = controller.transformation.straightenDegrees;
+                  return SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      showValueIndicator: ShowValueIndicator.onDrag,
+                    ),
+                    child: Slider(
+                      value: degrees,
+                      min: TransformController.straightenDegreesMin,
+                      max: TransformController.straightenDegreesMax,
+                      onChangeStart: (v) => controller.activity = TransformActivity.straighten,
+                      onChangeEnd: (v) => controller.activity = TransformActivity.none,
+                      label: angleFormatter.format(degrees),
+                      onChanged: (v) => controller.straightenDegrees = v,
+                    ),
+                  );
+                },
+              ),
+            ),
+            _buildButton(context, EntryAction.rotateCW, controller.rotateClockwise),
+          ],
         ),
-        _buildButton(context, EntryAction.rotateCW, controller.rotateClockwise),
-      ],
+      ),
     );
   }
 

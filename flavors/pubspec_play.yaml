@@ -1,6 +1,6 @@
 name: aves
-description: A visual media gallery and metadata explorer app.
-repository: https://github.com/deckerst/aves
+description: MediaCraft local media gallery and metadata explorer.
+repository: https://github.com/404NotFoundYou/MediaCraft
 publish_to: none
 
 # version bump checklist:
@@ -8,7 +8,7 @@ publish_to: none
 # - edit GitHub changelog:     /CHANGELOG.md
 # - edit Play Store changelog: /whatsnew/whatsnew-en-US
 # - run `scripts/apply_version_bump.sh`
-version: 0.6.3+187
+version: 0.6.4+188
 
 environment:
   # this project bundles Flutter SDK via `flutter_wrapper`

@@ -1,5 +1,6 @@
 import 'package:aves/theme/styles.dart';
 import 'package:aves/theme/colors.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/widgets/aves_app.dart';
 import 'package:aves/widgets/settings/language/locales.dart';
 import 'package:aves_utils/aves_utils.dart';
@@ -49,6 +50,9 @@ class Themes {
   static final _typography = Typography.material2021(platform: TargetPlatform.android);
 
   static ThemeData _baseTheme(ColorScheme colors, bool deviceInitialized) {
+    final compactShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(MediaCraftUi.radiusMedium),
+    );
     return ThemeData(
       // COLOR
       brightness: colors.brightness,
@@ -62,7 +66,28 @@ class Themes {
       typography: _typography,
       // COMPONENT THEMES
       bottomNavigationBarTheme: _bottomNavigationBarTheme(colors),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: _schemeFirstLayer(colors),
+        modalBackgroundColor: _schemeFirstLayer(colors),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(MediaCraftUi.radiusLarge)),
+        ),
+      ),
+      cardTheme: CardThemeData(
+        elevation: 0,
+        color: _schemeCardLayer(colors),
+        margin: EdgeInsets.zero,
+        shape: compactShape.copyWith(
+          side: BorderSide(color: colors.outlineVariant),
+        ),
+      ),
       checkboxTheme: _checkboxTheme(colors),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          shape: compactShape,
+          minimumSize: const Size(48, 44),
+        ),
+      ),
       drawerTheme: _drawerTheme(colors),
       floatingActionButtonTheme: _floatingActionButtonTheme(colors),
       navigationRailTheme: NavigationRailThemeData(
@@ -73,6 +98,29 @@ class Themes {
         unselectedLabelTextStyle: TextStyle(color: _unselectedWidgetColor(colors)),
       ),
       radioTheme: _radioTheme(colors),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: _schemeSecondLayer(colors),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(MediaCraftUi.radiusMedium),
+          borderSide: BorderSide(color: colors.outlineVariant),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(MediaCraftUi.radiusMedium),
+          borderSide: BorderSide(color: colors.outlineVariant),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(MediaCraftUi.radiusMedium),
+          borderSide: BorderSide(color: colors.primary, width: 1.5),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          shape: compactShape,
+          minimumSize: const Size(48, 44),
+          side: BorderSide(color: colors.outline),
+        ),
+      ),
       sliderTheme: _sliderTheme(colors),
       tabBarTheme: TabBarThemeData(indicatorColor: colors.primary),
       tooltipTheme: _tooltipTheme,
@@ -111,11 +159,19 @@ class Themes {
 
   static const _listTileTheme = ListTileThemeData(
     contentPadding: EdgeInsets.symmetric(horizontal: 16),
+    minTileHeight: 52,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.all(Radius.circular(MediaCraftUi.radiusSmall)),
+    ),
   );
 
   static PopupMenuThemeData _popupMenuTheme(ColorScheme colors, TextTheme textTheme) {
     return PopupMenuThemeData(
       color: _schemeSecondLayer(colors),
+      elevation: 3,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(MediaCraftUi.radiusMedium)),
+      ),
       labelTextStyle: WidgetStateProperty.resolveWith((states) {
         // adapted from M3 defaults
         final TextStyle style = textTheme.labelLarge!;
@@ -167,6 +223,9 @@ class Themes {
   static SnackBarThemeData _snackBarTheme(ColorScheme colors) => SnackBarThemeData(
     actionTextColor: colors.primary,
     behavior: SnackBarBehavior.floating,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.all(Radius.circular(MediaCraftUi.radiusMedium)),
+    ),
   );
 
   static const _tooltipTheme = TooltipThemeData(
@@ -176,10 +235,10 @@ class Themes {
   // light
 
   static final _lightThemeTypo = _typography.black;
-  static final _lightTitleColor = _lightThemeTypo.titleMedium!.color!;
-  static final _lightLabelColor = _lightThemeTypo.labelMedium!.color!;
-  static const _lightActionIconColor = Color(0xAA000000);
-  static const _lightOnSurface = Colors.black;
+  static const _lightTitleColor = MediaCraftUi.ink;
+  static const _lightLabelColor = MediaCraftUi.ink;
+  static const _lightActionIconColor = MediaCraftUi.inkMuted;
+  static const _lightOnSurface = MediaCraftUi.ink;
 
   static ThemeData lightTheme(Color accentColor, bool deviceInitialized, KnownLocale locale) {
     final onAccent = ColorUtils.textColorOn(accentColor);
@@ -188,13 +247,26 @@ class Themes {
       brightness: Brightness.light,
       primary: accentColor,
       onPrimary: onAccent,
+      primaryContainer: Color.alphaBlend(accentColor.withValues(alpha: .10), MediaCraftUi.paper),
+      onPrimaryContainer: MediaCraftUi.ink,
       secondary: accentColor,
       onSecondary: onAccent,
+      secondaryContainer: Color.alphaBlend(accentColor.withValues(alpha: .10), MediaCraftUi.paper),
+      onSecondaryContainer: MediaCraftUi.ink,
       tertiary: AColors.brandCoral,
       onTertiary: ColorUtils.textColorOn(AColors.brandCoral),
       onSurface: _lightOnSurface,
+      surface: MediaCraftUi.paper,
+      surfaceContainerLow: MediaCraftUi.paperElevated,
+      surfaceContainer: const Color(0xffeef1ec),
+      surfaceContainerHigh: const Color(0xffe7ebe5),
+      outline: MediaCraftUi.inkMuted,
+      outlineVariant: MediaCraftUi.outline,
     );
-    final textTheme = _lightThemeTypo;
+    final textTheme = _lightThemeTypo.apply(
+      bodyColor: MediaCraftUi.ink,
+      displayColor: MediaCraftUi.ink,
+    );
     return _baseTheme(colors, deviceInitialized).copyWith(
       // TYPOGRAPHY & ICONOGRAPHY
       textTheme: textTheme,
@@ -234,14 +306,9 @@ class Themes {
   static const _darkOnSurface = Colors.white;
 
   static ColorScheme _darkColorScheme(Color accentColor) {
-    final onAccent = ColorUtils.textColorOn(accentColor);
     final colors = ColorScheme.fromSeed(
       seedColor: accentColor,
       brightness: Brightness.dark,
-      primary: accentColor,
-      onPrimary: onAccent,
-      secondary: accentColor,
-      onSecondary: onAccent,
       tertiary: AColors.brandAmber,
       onTertiary: ColorUtils.textColorOn(AColors.brandAmber),
       onSurface: _darkOnSurface,

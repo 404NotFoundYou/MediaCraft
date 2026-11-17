@@ -7,7 +7,7 @@ import 'package:flutter/widgets.dart';
 class FilterChipGridDecorator<T extends CollectionFilter, U extends FilterGridItem<T>> extends StatelessWidget {
   final U gridItem;
   final double extent;
-  final bool selectable, highlightable;
+  final bool selectable, highlightable, showText;
   final Widget child;
 
   const new({
@@ -16,15 +16,21 @@ class FilterChipGridDecorator<T extends CollectionFilter, U extends FilterGridIt
     required this.extent,
     this.selectable = true,
     this.highlightable = true,
+    this.showText = true,
     required this.child,
   });
 
   @override
   Widget build(BuildContext context) {
     final borderRadius = BorderRadius.all(CoveredFilterChip.radius(extent));
+    final height = CoveredFilterChip.tileHeight(
+      extent: extent,
+      textScaler: MediaQuery.textScalerOf(context),
+      showText: showText,
+    );
     return SizedBox(
       width: extent,
-      height: extent,
+      height: height,
       child: Stack(
         fit: StackFit.passthrough,
         children: [

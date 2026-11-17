@@ -7,6 +7,7 @@ import 'package:aves/model/settings/settings.dart';
 import 'package:aves/ref/mime_types.dart';
 import 'package:aves/services/common/services.dart';
 import 'package:aves/theme/icons.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/widgets/common/action_mixins/feedback.dart';
 import 'package:aves/widgets/common/basic/insets.dart';
 import 'package:aves/widgets/common/basic/scaffold.dart';
@@ -50,6 +51,7 @@ class const StatsTopPage<T extends Comparable>({
           bottom: false,
           child: Builder(
             builder: (context) {
+              final colors = Theme.of(context).colorScheme;
               return NotificationListener<SelectFilterNotification>(
                 onNotification: (notification) {
                   onFilterSelection(notification.filter);
@@ -57,17 +59,27 @@ class const StatsTopPage<T extends Comparable>({
                 },
                 child: SingleChildScrollView(
                   padding:
-                      const EdgeInsets.symmetric(vertical: 8) +
+                      const EdgeInsets.fromLTRB(12, 8, 12, 16) +
                       EdgeInsets.only(
                         bottom: context.select<MediaQueryData, double>((mq) => mq.safeBottomPadding),
                       ),
-                  child: FilterTable(
-                    totalEntryCount: totalEntryCount,
-                    entryCountMap: entryCountMap,
-                    filterBuilder: filterBuilder,
-                    sortByCount: sortByCount,
-                    maxRowCount: null,
-                    onFilterSelection: onFilterSelection,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colors.surfaceContainerLow,
+                      border: Border.all(color: colors.outlineVariant),
+                      borderRadius: BorderRadius.circular(MediaCraftUi.radiusMedium),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: FilterTable(
+                        totalEntryCount: totalEntryCount,
+                        entryCountMap: entryCountMap,
+                        filterBuilder: filterBuilder,
+                        sortByCount: sortByCount,
+                        maxRowCount: null,
+                        onFilterSelection: onFilterSelection,
+                      ),
+                    ),
                   ),
                 ),
               );
@@ -107,7 +119,7 @@ class const StatsTopPage<T extends Comparable>({
     const mimeType = MimeTypes.csv;
     final date = DateFormat('yyyyMMdd_HHmmss', IntlUtils.rootLocaleName).format(DateTime.now());
     final success = await storageService.createFile(
-      basename: 'aves-stats-$date',
+      basename: 'mediacraft-stats-$date',
       mimeType: mimeType,
       bytes: utf8.encode(csvContent),
     );

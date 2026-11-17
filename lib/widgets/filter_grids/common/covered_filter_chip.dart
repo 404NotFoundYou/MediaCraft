@@ -60,7 +60,7 @@ class CoveredFilterChip<T extends CollectionFilter> extends StatelessWidget {
     return textScaler.scale(AvesFilterChip.fontSize + detailFontSize(extent) + 4) + AvesFilterChip.decoratedContentVerticalPadding * 2;
   }
 
-  static Radius radius(double extent) => Radius.circular(min<double>(AvesFilterChip.defaultRadius, extent / 4));
+  static Radius radius(double extent) => Radius.circular(min<double>(12, extent / 4));
 
   static double detailIconSize(double extent) => min<double>(AvesFilterChip.fontSize, extent / 7);
 
@@ -144,9 +144,10 @@ class CoveredFilterChip<T extends CollectionFilter> extends StatelessWidget {
     return AvesFilterChip(
       key: chipKey,
       filter: _filter,
-      showLeading: showText,
+      showLeading: false,
       showText: showText,
       allowGenericIcon: false,
+      useFilterColor: false,
       decoration: AvesFilterDecoration(
         radius: radius(extent),
         widget: Padding(
@@ -188,7 +189,7 @@ class CoveredFilterChip<T extends CollectionFilter> extends StatelessWidget {
       ),
       banner: banner,
       details: showText ? _buildDetails(context, source, _filter) : null,
-      padding: titlePadding,
+      padding: max<double>(6, titlePadding),
       heroType: heroType,
       onTap: onTap,
       onLongPress: null,

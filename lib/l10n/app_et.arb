@@ -1,5 +1,5 @@
 {
-    "welcomeMessage": "Tere tulemast kasutama Avest",
+    "welcomeMessage": "Tere tulemast kasutama MediaCraftt",
     "welcomeOptional": "Pole kohustuslik",
     "itemCount": "{count, plural, =1{{count} objekt} other{{count} objekti}}",
     "@itemCount": {

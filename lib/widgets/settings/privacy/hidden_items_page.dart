@@ -1,7 +1,6 @@
 import 'package:aves/model/filters/filters.dart';
 import 'package:aves/model/settings/settings.dart';
 import 'package:aves/theme/icons.dart';
-import 'package:aves/widgets/common/basic/divider.dart';
 import 'package:aves/widgets/common/basic/font_size_icon_theme.dart';
 import 'package:aves/widgets/common/basic/scaffold.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
@@ -42,8 +41,11 @@ class const HiddenItemsPage({super.key}) extends StatelessWidget {
                   return Column(
                     crossAxisAlignment: .start,
                     children: [
-                      _Banner(bannerText: context.l10n.settingsHiddenFiltersBanner),
-                      const ThinDivider(),
+                      _Banner(
+                        bannerText: context.l10n.settingsHiddenFiltersBanner,
+                        activeCount: 0,
+                        totalCount: 0,
+                      ),
                       Expanded(
                         child: Padding(
                           padding: const EdgeInsets.all(8),
@@ -59,42 +61,51 @@ class const HiddenItemsPage({super.key}) extends StatelessWidget {
 
                 final filterList = allHiddenFilters.toList()..sort();
                 return ListView(
+                  padding: const EdgeInsets.only(bottom: 16),
                   children: [
-                    _Banner(bannerText: context.l10n.settingsHiddenFiltersBanner),
-                    const ThinDivider(),
-                    const SizedBox(height: 8),
+                    _Banner(
+                      bannerText: context.l10n.settingsHiddenFiltersBanner,
+                      activeCount: activatedHiddenFilters.length,
+                      totalCount: allHiddenFilters.length,
+                    ),
                     ...filterList.map((filter) {
                       void onRemove(CollectionFilter filter) => settings.changeFilterVisibility({filter}, true);
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: LayoutBuilder(
-                                builder: (context, constraints) {
-                                  return Row(
-                                    children: [
-                                      AvesFilterChip(
-                                        filter: filter,
-                                        maxWidth: constraints.maxWidth,
-                                        onTap: onRemove,
-                                        onRemove: onRemove,
-                                        onLongPress: (context, filter, tapPosition) {
-                                          AvesFilterChip.showDefaultLongPressMenu(context, filter, tapPosition, canNavigate: false);
-                                        },
-                                      ),
-                                      const Spacer(),
-                                    ],
-                                  );
-                                },
+                      final active = activatedHiddenFilters.contains(filter);
+                      return Card(
+                        margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) => AvesFilterChip(
+                                    filter: filter,
+                                    maxWidth: constraints.maxWidth,
+                                    onTap: onRemove,
+                                    onRemove: onRemove,
+                                    onLongPress: (context, filter, tapPosition) {
+                                      AvesFilterChip.showDefaultLongPressMenu(context, filter, tapPosition, canNavigate: false);
+                                    },
+                                  ),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Switch(
-                              value: activatedHiddenFilters.contains(filter),
-                              onChanged: (v) => settings.activateHiddenFilter(filter, v),
-                            ),
-                          ],
+                              const SizedBox(width: 8),
+                              Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Switch(
+                                    value: active,
+                                    onChanged: (v) => settings.activateHiddenFilter(filter, v),
+                                  ),
+                                  Text(
+                                    active ? '隐藏中' : '已暂停',
+                                    style: Theme.of(context).textTheme.labelSmall,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       );
                     }),
@@ -109,17 +120,39 @@ class const HiddenItemsPage({super.key}) extends StatelessWidget {
   }
 }
 
-class const _Banner({required final String bannerText}) extends StatelessWidget {
+class const _Banner({
+  required final String bannerText,
+  required final int activeCount,
+  required final int totalCount,
+}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          const FontSizeIconTheme(child: Icon(AIcons.info)),
-          const SizedBox(width: 16),
-          Expanded(child: Text(bannerText)),
-        ],
+    return Card(
+      margin: const EdgeInsets.all(12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const FontSizeIconTheme(child: Icon(AIcons.info)),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(bannerText),
+                  if (totalCount > 0) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      '$activeCount/$totalCount 条规则正在隐藏内容',
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

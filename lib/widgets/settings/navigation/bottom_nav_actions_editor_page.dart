@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:aves/model/settings/enums/accessibility_animations.dart';
+import 'package:aves/model/settings/defaults.dart';
 import 'package:aves/model/settings/settings.dart';
 import 'package:aves/theme/icons.dart';
 import 'package:aves/widgets/collection/collection_page.dart';
@@ -9,6 +10,8 @@ import 'package:aves/widgets/common/basic/popup/menu_row.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/dialogs/pick_dialogs/album_pick_page.dart';
 import 'package:aves/widgets/dialogs/pick_dialogs/tag_pick_page.dart';
+import 'package:aves/widgets/discovery/explore_page.dart';
+import 'package:aves/widgets/discovery/tools_page.dart';
 import 'package:aves/widgets/filter_grids/common/enums.dart';
 import 'package:aves/widgets/home/home_page.dart';
 import 'package:aves/widgets/navigation/nav_item.dart';
@@ -43,6 +46,8 @@ class _BottomNavigationActionEditorPageState extends State<BottomNavigationActio
     }).toList(),
     [
       HomePage.routeName,
+      ExplorePage.routeName,
+      ToolsPage.routeName,
       SettingsPage.routeName,
       ...NavigationDrawerEditorPage.pageOptions,
     ].map((v) {
@@ -86,6 +91,7 @@ class _BottomNavigationActionEditorPageState extends State<BottomNavigationActio
       PopupMenuButton<_EditorAction>(
         itemBuilder: (context) {
           return [
+            _EditorAction.useRecommendedLayout,
             _EditorAction.addAlbum,
             _EditorAction.addTag,
           ].map<PopupMenuEntry<_EditorAction>>((v) {
@@ -124,11 +130,23 @@ class _BottomNavigationActionEditorPageState extends State<BottomNavigationActio
         );
         if (tagFilter == null) return;
         _controller.add(AvesNavItem(route: CollectionPage.routeName, filters: {tagFilter}));
+      case .useRecommendedLayout:
+        settings.bottomNavigationActions = SettingsDefaults.bottomNavigationActions;
+        if (context.mounted) {
+          final messenger = ScaffoldMessenger.maybeOf(context);
+          Navigator.maybeOf(context)?.pop();
+          messenger?.showSnackBar(
+            SnackBar(
+              content: Text(Localizations.localeOf(context).languageCode == 'zh' ? '已应用推荐的四项导航' : 'Recommended four-item navigation applied'),
+            ),
+          );
+        }
     }
   }
 }
 
 enum _EditorAction {
+  useRecommendedLayout,
   addAlbum,
   addTag,
 }
@@ -137,6 +155,7 @@ extension _ExtraEditorActionView on _EditorAction {
   String getText(BuildContext context) {
     final l10n = context.l10n;
     return switch (this) {
+      _EditorAction.useRecommendedLayout => Localizations.localeOf(context).languageCode == 'zh' ? '使用推荐布局' : 'Use recommended layout',
       _EditorAction.addAlbum => l10n.settingsNavigationDrawerAddAlbum,
       _EditorAction.addTag => l10n.tagEditorPageAddTagTooltip,
     };
@@ -146,6 +165,7 @@ extension _ExtraEditorActionView on _EditorAction {
 
   IconData _getIconData() {
     return switch (this) {
+      _EditorAction.useRecommendedLayout => AIcons.reset,
       _EditorAction.addAlbum => AIcons.album,
       _EditorAction.addTag => AIcons.tag,
     };

@@ -6,15 +6,12 @@
             android:height="100dp"
             android:viewportWidth="100"
             android:viewportHeight="100">
-            <path android:name="top_path" android:fillAlpha="0" android:fillColor="@color/ic_launcher_flavour" android:pathData="M50,12 C44.7,12 40.4,16.3 40.4,21.6 L40.4,41.2 C40.4,46.5 44.7,50.8 50,50.8 C55.3,50.8 59.6,46.5 59.6,41.2 L59.6,21.6 C59.6,16.3 55.3,12 50,12 Z" />
-            <path android:name="right_path" android:fillAlpha="0" android:fillColor="#FF7D69" android:pathData="M88,50 C88,44.7 83.7,40.4 78.4,40.4 L58.8,40.4 C53.5,40.4 49.2,44.7 49.2,50 C49.2,55.3 53.5,59.6 58.8,59.6 L78.4,59.6 C83.7,59.6 88,55.3 88,50 Z" />
-            <path android:name="bottom_path" android:fillAlpha="0" android:fillColor="#F4BC44" android:pathData="M50,88 C55.3,88 59.6,83.7 59.6,78.4 L59.6,58.8 C59.6,53.5 55.3,49.2 50,49.2 C44.7,49.2 40.4,53.5 40.4,58.8 L40.4,78.4 C40.4,83.7 44.7,88 50,88 Z" />
-            <path android:name="left_path" android:fillAlpha="0" android:fillColor="#6B7CFF" android:pathData="M12,50 C12,55.3 16.3,59.6 21.6,59.6 L41.2,59.6 C46.5,59.6 50.8,55.3 50.8,50 C50.8,44.7 46.5,40.4 41.2,40.4 L21.6,40.4 C16.3,40.4 12,44.7 12,50 Z" />
-            <path android:name="center_path" android:fillColor="#F4F8F7" android:pathData="M50,43.5 A6.5,6.5 0,1 0,50 56.5 A6.5,6.5 0,1 0,50 43.5 Z" />
+            <path android:name="m_path" android:fillColor="@android:color/transparent" android:strokeAlpha="0" android:strokeColor="@color/ic_launcher_flavour" android:strokeWidth="12" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M18,70 L18,42 C18,32 31,32 31,42 L31,70 M31,42 C31,32 44,32 44,42 L44,70" />
+            <path android:name="c_path" android:fillColor="@android:color/transparent" android:strokeAlpha="0" android:strokeColor="@color/ic_launcher_flavour" android:strokeWidth="12" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M82,41 C76,33 61,34 56,47 C50,62 60,73 72,73 C77,73 81,70 84,66" />
+            <path android:name="lens_path" android:fillAlpha="0" android:fillColor="#B78A35" android:pathData="M70,48.5 A4.5,4.5 0,1 0,70 57.5 A4.5,4.5 0,1 0,70 48.5 Z" />
         </vector>
     </aapt:attr>
-    <target android:name="top_path"><aapt:attr name="android:animation"><objectAnimator android:duration="500" android:propertyName="fillAlpha" android:valueTo="1" /></aapt:attr></target>
-    <target android:name="right_path"><aapt:attr name="android:animation"><objectAnimator android:duration="500" android:startOffset="100" android:propertyName="fillAlpha" android:valueTo="1" /></aapt:attr></target>
-    <target android:name="bottom_path"><aapt:attr name="android:animation"><objectAnimator android:duration="500" android:startOffset="200" android:propertyName="fillAlpha" android:valueTo="1" /></aapt:attr></target>
-    <target android:name="left_path"><aapt:attr name="android:animation"><objectAnimator android:duration="500" android:startOffset="300" android:propertyName="fillAlpha" android:valueTo="1" /></aapt:attr></target>
+    <target android:name="m_path"><aapt:attr name="android:animation"><objectAnimator android:duration="400" android:propertyName="strokeAlpha" android:valueTo="1" /></aapt:attr></target>
+    <target android:name="c_path"><aapt:attr name="android:animation"><objectAnimator android:duration="400" android:startOffset="120" android:propertyName="strokeAlpha" android:valueTo="1" /></aapt:attr></target>
+    <target android:name="lens_path"><aapt:attr name="android:animation"><objectAnimator android:duration="300" android:startOffset="280" android:propertyName="fillAlpha" android:valueTo="1" /></aapt:attr></target>
 </animated-vector>

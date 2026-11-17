@@ -2,8 +2,7 @@ import 'package:aves/model/device.dart';
 import 'package:aves/model/settings/settings.dart';
 import 'package:aves/theme/icons.dart';
 import 'package:aves/view/view.dart';
-import 'package:aves/widgets/about/app_ref.dart';
-import 'package:aves/widgets/aves_app.dart';
+import 'package:aves/widgets/about/help_dialog.dart';
 import 'package:aves/widgets/common/basic/scaffold.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/settings/common/tiles/single_selection.dart';
@@ -71,8 +70,8 @@ class const VideoPlaybackPage({super.key}) extends StatelessWidget {
               tileTitle: (_) => l10n.settingsVideoEnableHardwareAcceleration,
               trailingBuilder: (context) => IconButton(
                 icon: const Icon(AIcons.help),
-                onPressed: () => AvesApp.launchUrl('${AppReference.avesFaq}#should-i-enable-hardware-acceleration-to-play-videos'),
-                tooltip: 'FAQ',
+                onPressed: () => showMediaCraftHelp(context, .hardwareAcceleration),
+                tooltip: l10n.settingsVideoEnableHardwareAcceleration,
               ),
             ),
           ],

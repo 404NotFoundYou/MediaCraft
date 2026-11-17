@@ -4,6 +4,7 @@ import 'package:aves/model/settings/settings.dart';
 import 'package:aves/theme/durations.dart';
 import 'package:aves/theme/icons.dart';
 import 'package:aves/theme/text.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/widgets/about/policy_page.dart';
 import 'package:aves/widgets/common/basic/link_chip.dart';
 import 'package:aves/widgets/common/basic/markdown_container.dart';
@@ -53,7 +54,12 @@ class _WelcomePageState extends State<WelcomePage> {
           child: FutureBuilder<String>(
             future: _termsLoader,
             builder: (context, snapshot) {
-              if (snapshot.hasError || snapshot.connectionState != ConnectionState.done) return const SizedBox();
+              if (snapshot.hasError) {
+                return _buildTermsFailure(context, snapshot.error);
+              }
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const CircularProgressIndicator();
+              }
               final terms = snapshot.data!;
               final durations = context.watch<DurationsData>();
               final isPortrait = context.isPortrait;
@@ -130,35 +136,59 @@ class _WelcomePageState extends State<WelcomePage> {
   }
 
   List<Widget> _buildHeader(BuildContext context, {required bool isPortrait}) {
+    final colors = Theme.of(context).colorScheme;
     final message = Text(
       context.l10n.welcomeMessage,
-      style: Theme.of(context).textTheme.headlineSmall,
+      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+        color: colors.onPrimaryContainer,
+        fontWeight: FontWeight.w600,
+      ),
+      textAlign: isPortrait ? .center : .start,
     );
     final double padding = isPortrait ? 16.0 : 8.0;
+    final brand = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: MarkdownContainer.mobileMaxWidth),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.primaryContainer,
+          border: Border.all(color: colors.primary.withValues(alpha: .22)),
+          borderRadius: BorderRadius.circular(MediaCraftUi.radiusLarge),
+        ),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: isPortrait ? 24 : 20,
+            vertical: isPortrait ? 24 : 14,
+          ),
+          child: isPortrait
+              ? Column(
+                  mainAxisSize: .min,
+                  children: [
+                    const MediaCraftLogo(size: 64),
+                    const SizedBox(height: 16),
+                    message,
+                  ],
+                )
+              : Row(
+                  mainAxisSize: .min,
+                  children: [
+                    const MediaCraftLogo(size: 48),
+                    const SizedBox(width: 16),
+                    Flexible(child: message),
+                  ],
+                ),
+        ),
+      ),
+    );
     return [
       SizedBox(height: padding),
-      ...(isPortrait
-          ? [
-              const MediaCraftLogo(size: 64),
-              const SizedBox(height: 16),
-              message,
-            ]
-          : [
-              Row(
-                mainAxisSize: .min,
-                children: [
-                  const MediaCraftLogo(size: 48),
-                  const SizedBox(width: 16),
-                  message,
-                ],
-              ),
-            ]),
+      brand,
       SizedBox(height: padding),
     ];
   }
 
   List<Widget> _buildControls(BuildContext context) {
     final l10n = context.l10n;
+    final colors = Theme.of(context).colorScheme;
     final canEnableErrorReporting = context.select<AppFlavor, bool>((v) => v.canEnableErrorReporting);
     const contentPadding = EdgeInsets.symmetric(horizontal: 8);
     final switches = ConstrainedBox(
@@ -213,10 +243,67 @@ class _WelcomePageState extends State<WelcomePage> {
     );
 
     return [
-      switches,
-      Center(child: button),
+      ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: MarkdownContainer.mobileMaxWidth),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerLow,
+            border: Border.all(color: colors.outlineVariant),
+            borderRadius: BorderRadius.circular(MediaCraftUi.radiusMedium),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+            child: Column(
+              mainAxisSize: .min,
+              children: [
+                switches,
+                const SizedBox(height: 8),
+                Center(child: button),
+              ],
+            ),
+          ),
+        ),
+      ),
       const SizedBox(height: 8),
     ];
+  }
+
+  Widget _buildTermsFailure(BuildContext context, Object? error) {
+    final colors = Theme.of(context).colorScheme;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: MarkdownContainer.mobileMaxWidth),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.errorContainer,
+          border: Border.all(color: colors.error.withValues(alpha: .35)),
+          borderRadius: BorderRadius.circular(MediaCraftUi.radiusMedium),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: .min,
+            children: [
+              Icon(AIcons.error, color: colors.onErrorContainer),
+              const SizedBox(height: 12),
+              SelectableText(
+                '${context.l10n.genericFailureFeedback}\n$error',
+                style: TextStyle(color: colors.onErrorContainer),
+                textAlign: .center,
+              ),
+              const SizedBox(height: 16),
+              FilledButton.tonal(
+                onPressed: () {
+                  setState(() {
+                    _termsLoader = DefaultAssetBundle.of(context).loadString(_termsPath);
+                  });
+                },
+                child: Text(context.l10n.retryButtonLabel),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _goToPolicyPage() {

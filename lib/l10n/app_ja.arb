@@ -1,6 +1,6 @@
 {
     "appName": "MediaCraft",
-    "welcomeMessage": "Avesへようこそ",
+    "welcomeMessage": "MediaCraftへようこそ",
     "welcomeOptional": "オプション",
     "welcomeTermsToggle": "利用規約に同意する",
     "itemCount": "{count, plural, other{{count} 件のアイテム}}",

@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:aves/model/settings/settings.dart';
 import 'package:aves/theme/durations.dart';
 import 'package:aves/theme/themes.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/utils/debouncer.dart';
 import 'package:aves/widgets/common/bars/app_bar.dart';
 import 'package:aves/widgets/common/basic/scaffold.dart';
@@ -101,25 +102,43 @@ class _SearchPageState extends State<SearchPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colors = theme.colorScheme;
 
     Widget leading = Center(child: widget.delegate.buildLeading(context));
-    Widget title = DefaultTextStyle.merge(
-      style: const TextStyle(fontFeatures: [FontFeature.disable('smcp')]),
-      child: Semantics(
-        inputType: SemanticsInputType.search,
-        child: TextField(
-          controller: widget.delegate.queryTextController,
-          focusNode: _searchFieldFocusNode,
-          decoration: InputDecoration(
-            border: InputBorder.none,
-            hintText: widget.delegate.searchFieldLabel,
-            hintStyle: theme.inputDecorationTheme.hintStyle,
+    Widget title = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerLow,
+          border: Border.all(color: colors.outlineVariant),
+          borderRadius: BorderRadius.circular(MediaCraftUi.radiusMedium),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: DefaultTextStyle.merge(
+            style: const TextStyle(fontFeatures: [FontFeature.disable('smcp')]),
+            child: Semantics(
+              inputType: SemanticsInputType.search,
+              child: TextField(
+                controller: widget.delegate.queryTextController,
+                focusNode: _searchFieldFocusNode,
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  filled: false,
+                  hintText: widget.delegate.searchFieldLabel,
+                  hintStyle: theme.inputDecorationTheme.hintStyle,
+                  isDense: true,
+                ),
+                textInputAction: widget.delegate.textInputAction,
+                style: widget.delegate.searchFieldStyle ?? Themes.searchFieldStyle(context),
+                autocorrect: widget.delegate.autocorrect,
+                enableSuggestions: widget.delegate.enableSuggestions,
+                onSubmitted: (_) => widget.delegate.showResults(context),
+              ),
+            ),
           ),
-          textInputAction: widget.delegate.textInputAction,
-          style: widget.delegate.searchFieldStyle ?? Themes.searchFieldStyle(context),
-          autocorrect: widget.delegate.autocorrect,
-          enableSuggestions: widget.delegate.enableSuggestions,
-          onSubmitted: (_) => widget.delegate.showResults(context),
         ),
       ),
     );

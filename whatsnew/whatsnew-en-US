@@ -1,6 +1,7 @@
-In v0.6.3:
-- Recover failed media loading and file operations.
-- Validate batch renaming and improve large collection performance.
-- Fix video lifecycle, animated image memory, and image tile updates.
-- Improve Baidu map recovery, caches, and release validation.
+In v0.6.4:
+- Refresh MediaCraft branding, themes, and browsing layouts.
+- Add Explore and Tools navigation while keeping saved preferences.
+- Improve duplicate review, viewer, video, and editor controls.
+- Fix large-text navigation and dark viewer contrast.
+- Hide maintenance tools in TV media picker mode.
 Full changelog available on GitHub

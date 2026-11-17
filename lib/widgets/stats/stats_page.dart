@@ -14,6 +14,7 @@ import 'package:aves/theme/format.dart';
 import 'package:aves/theme/icons.dart';
 import 'package:aves/theme/styles.dart';
 import 'package:aves/theme/themes.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/utils/file_utils.dart';
 import 'package:aves/widgets/collection/collection_page.dart';
 import 'package:aves/widgets/common/action_mixins/feedback.dart';
@@ -163,6 +164,12 @@ class _StatsPageState extends State<StatsPage> with FeedbackMixin, VaultAwareMix
               },
               child: AnimationLimiter(
                 child: ListView(
+                  padding: EdgeInsets.fromLTRB(
+                    12,
+                    8,
+                    12,
+                    16 + MediaQuery.paddingOf(context).bottom,
+                  ),
                   children: AnimationConfiguration.toStaggeredList(
                     duration: durations.staggeredAnimation,
                     delay: durations.staggeredAnimationDelay * timeDilation,
@@ -174,20 +181,29 @@ class _StatsPageState extends State<StatsPage> with FeedbackMixin, VaultAwareMix
                     ),
                     children: [
                       const TvEdgeFocus(),
-                      mimeDonuts,
-                      Histogram(
-                        entries: entries,
-                        animationDuration: chartAnimationDuration,
-                        onFilterSelection: (filter) => _onFilterSelection(context, filter),
+                      _StatsPanel(child: mimeDonuts),
+                      const SizedBox(height: 12),
+                      _StatsPanel(
+                        child: Histogram(
+                          entries: entries,
+                          animationDuration: chartAnimationDuration,
+                          onFilterSelection: (filter) => _onFilterSelection(context, filter),
+                        ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
                       _buildTotalSizeIndicator(context),
                       if (_totalDurationMillis > 0) ...[
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         _buildTotalDurationIndicator(),
                       ],
-                      const SizedBox(height: 16),
-                      _LocationIndicator(entries: entries),
+                      const SizedBox(height: 12),
+                      _StatsPanel(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: _LocationIndicator(entries: entries),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       ..._buildFilterSection<String>(context, l10n.statsTopCountriesSectionTitle, _entryCountPerCountry, (v) => LocationFilter(LocationLevel.country, v)),
                       ..._buildFilterSection<String>(context, l10n.statsTopStatesSectionTitle, _entryCountPerState, (v) => LocationFilter(LocationLevel.state, v)),
                       ..._buildFilterSection<String>(context, l10n.statsTopPlacesSectionTitle, _entryCountPerPlace, (v) => LocationFilter(LocationLevel.place, v)),
@@ -232,34 +248,16 @@ class _StatsPageState extends State<StatsPage> with FeedbackMixin, VaultAwareMix
   }
 
   Widget _buildTotalSizeIndicator(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        mainAxisSize: .min,
-        children: [
-          const Icon(AIcons.size),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(formatFileSize(settings.avesLocale, _totalSizeBytes)),
-          ),
-        ],
-      ),
+    return _StatsMetric(
+      icon: AIcons.size,
+      value: formatFileSize(settings.avesLocale, _totalSizeBytes),
     );
   }
 
   Widget _buildTotalDurationIndicator() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        mainAxisSize: .min,
-        children: [
-          const Icon(AIcons.videoPlay),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(formatFriendlyDuration(Duration(milliseconds: _totalDurationMillis))),
-          ),
-        ],
-      ),
+    return _StatsMetric(
+      icon: AIcons.videoPlay,
+      value: formatFriendlyDuration(Duration(milliseconds: _totalDurationMillis)),
     );
   }
 
@@ -337,14 +335,25 @@ class _StatsPageState extends State<StatsPage> with FeedbackMixin, VaultAwareMix
     }
 
     return [
-      header,
-      FilterTable(
-        totalEntryCount: totalEntryCount,
-        entryCountMap: entryCountMap,
-        filterBuilder: filterBuilder,
-        sortByCount: sortByCount,
-        maxRowCount: maxRowCount,
-        onFilterSelection: (filter) => _onFilterSelection(context, filter),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: _StatsPanel(
+          child: Column(
+            mainAxisSize: .min,
+            children: [
+              header,
+              FilterTable(
+                totalEntryCount: totalEntryCount,
+                entryCountMap: entryCountMap,
+                filterBuilder: filterBuilder,
+                sortByCount: sortByCount,
+                maxRowCount: maxRowCount,
+                onFilterSelection: (filter) => _onFilterSelection(context, filter),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
       ),
     ];
   }
@@ -389,6 +398,49 @@ class _StatsPageState extends State<StatsPage> with FeedbackMixin, VaultAwareMix
       MaterialPageRoute(
         settings: const RouteSettings(name: ExportCollectionStatsPage.routeName),
         builder: (context) => ExportCollectionStatsPage(entries: entries),
+      ),
+    );
+  }
+}
+
+class const _StatsPanel({required final Widget child}) extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(MediaCraftUi.radiusMedium),
+      ),
+      child: child,
+    );
+  }
+}
+
+class const _StatsMetric({
+  required final IconData icon,
+  required final String value,
+}) extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return _StatsPanel(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                value,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

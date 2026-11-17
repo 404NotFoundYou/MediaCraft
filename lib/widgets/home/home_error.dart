@@ -78,7 +78,7 @@ class _HomeErrorState extends State<HomeError> with FeedbackMixin {
                                 final sourcePath = await localMediaDb.path;
                                 final date = DateFormat('yyyyMMdd_HHmmss', IntlUtils.rootLocaleName).format(DateTime.now());
                                 final success = await storageService.copyFile(
-                                  basename: 'aves-database-$date',
+                                  basename: 'mediacraft-database-$date',
                                   mimeType: MimeTypes.sqlite3,
                                   sourceUri: Uri.file(sourcePath).toString(),
                                 );

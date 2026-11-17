@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 class const AvesFloatingBar({
   super.key,
   required final EdgeInsets margin,
+  final bool flat = false,
   required final Widget Function(BuildContext context, Color backgroundColor, Widget? child) builder,
   final Widget? child,
 }) extends StatefulWidget {
@@ -19,11 +20,13 @@ class _AvesFloatingBarState extends State<AvesFloatingBar> {
     final theme = Theme.of(context);
     final backgroundColor = theme.appBarTheme.backgroundColor ?? Themes.firstLayerColor(context);
     return Container(
-      foregroundDecoration: BoxDecoration(
-        border: Border.all(color: theme.dividerColor),
-        borderRadius: AvesFloatingBar.borderRadius,
-      ),
-      margin: widget.margin,
+      foregroundDecoration: widget.flat
+          ? null
+          : BoxDecoration(
+              border: Border.all(color: theme.dividerColor),
+              borderRadius: AvesFloatingBar.borderRadius,
+            ),
+      margin: widget.flat ? EdgeInsets.zero : widget.margin,
       child: widget.builder(
         context,
         backgroundColor,

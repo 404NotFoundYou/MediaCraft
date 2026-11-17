@@ -1,6 +1,6 @@
 {
     "appName": "MediaCraft",
-    "welcomeMessage": "ຍິນດີຕ້ອນຮັບສູ່ Aves",
+    "welcomeMessage": "ຍິນດີຕ້ອນຮັບສູ່ MediaCraft",
     "welcomeOptional": "ບໍ່ບັງຄັບ",
     "welcomeTermsToggle": "ຂ້ອຍຕົກລົງເຫັນດີກັບເງື່ອນໄຂ ແລະ ຂໍ້ກຳນົດ",
     "itemCount": "{count, plural, =1{{count} ລາຍການ} other{{count} ລາຍການ}}",

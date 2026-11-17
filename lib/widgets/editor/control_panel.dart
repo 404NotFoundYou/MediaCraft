@@ -26,6 +26,7 @@ class EditorControlPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return PopScope(
       canPop: actionNotifier.value == null,
       onPopInvokedWithResult: (didPop, result) {
@@ -33,45 +34,56 @@ class EditorControlPanel extends StatelessWidget {
 
         _cancelAction(context);
       },
-      child: Padding(
-        padding: const EdgeInsets.all(padding),
-        child: TooltipTheme(
-          data: TooltipTheme.of(context).copyWith(
-            preferBelow: false,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.surface,
+          border: Border(
+            top: BorderSide(color: colors.outlineVariant),
           ),
-          child: ValueListenableBuilder<EditorAction?>(
-            valueListenable: actionNotifier,
-            builder: (context, action, child) {
-              return MultiCrossFader(
-                duration: context.select<DurationsData, Duration>((v) => v.formTransition),
-                alignment: .bottomCenter,
-                layoutBuilder: (topChild, topChildKey, bottomChild, bottomChildKey) {
-                  return Stack(
-                    clipBehavior: Clip.none,
-                    children: <Widget>[
-                      Positioned(
-                        key: bottomChildKey,
-                        left: 0.0,
-                        bottom: 0.0,
-                        right: 0.0,
-                        child: bottomChild,
-                      ),
-                      Positioned(
-                        key: topChildKey,
-                        child: topChild,
-                      ),
-                    ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.all(padding),
+            child: TooltipTheme(
+              data: TooltipTheme.of(context).copyWith(
+                preferBelow: false,
+              ),
+              child: ValueListenableBuilder<EditorAction?>(
+                valueListenable: actionNotifier,
+                builder: (context, action, child) {
+                  return MultiCrossFader(
+                    duration: context.select<DurationsData, Duration>((v) => v.formTransition),
+                    alignment: .bottomCenter,
+                    layoutBuilder: (topChild, topChildKey, bottomChild, bottomChildKey) {
+                      return Stack(
+                        clipBehavior: Clip.none,
+                        children: <Widget>[
+                          Positioned(
+                            key: bottomChildKey,
+                            left: 0.0,
+                            bottom: 0.0,
+                            right: 0.0,
+                            child: bottomChild,
+                          ),
+                          Positioned(
+                            key: topChildKey,
+                            child: topChild,
+                          ),
+                        ],
+                      );
+                    },
+                    child: BackdropGroup(
+                      child: action == null
+                          ? _TopLevelPanel(
+                              actionNotifier: actionNotifier,
+                            )
+                          : _buildActionPanel(context, action),
+                    ),
                   );
                 },
-                child: BackdropGroup(
-                  child: action == null
-                      ? _TopLevelPanel(
-                          actionNotifier: actionNotifier,
-                        )
-                      : _buildActionPanel(context, action),
-                ),
-              );
-            },
+              ),
+            ),
           ),
         ),
       ),
@@ -115,9 +127,18 @@ class _TopLevelPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Column(
       mainAxisSize: .min,
       children: [
+        Text(
+          actions.first.getText(context),
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: colors.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: padding),
         Row(
           mainAxisSize: .min,
           children: [
@@ -142,7 +163,7 @@ class _TopLevelPanel extends StatelessWidget {
               child: CloseButton(),
             ),
             const Spacer(),
-            OverlayTextButton(
+            FilledButton(
               onPressed: () {},
               child: Text(context.l10n.saveCopyButtonLabel),
             ),

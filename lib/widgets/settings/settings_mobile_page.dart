@@ -9,6 +9,7 @@ import 'package:aves/widgets/common/basic/popup/menu_row.dart';
 import 'package:aves/widgets/common/basic/scaffold.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/settings/settings_action_delegate.dart';
+import 'package:aves/widgets/settings/settings_definition.dart';
 import 'package:aves/widgets/settings/settings_page.dart';
 import 'package:aves/widgets/settings/settings_search_page_route.dart';
 import 'package:aves_model/aves_model.dart';
@@ -23,14 +24,6 @@ class const SettingsMobilePage({super.key}) extends StatefulWidget {
 }
 
 class _SettingsMobilePageState extends State<SettingsMobilePage> with FeedbackMixin {
-  final ValueNotifier<String?> _expandedNotifier = ValueNotifier(null);
-
-  @override
-  void dispose() {
-    _expandedNotifier.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final animations = context.select<Settings, AccessibilityAnimations>((v) => v.accessibilityAnimations);
@@ -73,7 +66,13 @@ class _SettingsMobilePageState extends State<SettingsMobilePage> with FeedbackMi
           bottom: false,
           child: AnimationLimiter(
             child: SettingsListView(
-              children: SettingsPage.sections.map((v) => v.build(context, _expandedNotifier)).toList(),
+              children: [
+                _SettingsSearchTile(onTap: () => _goToSearch(context)),
+                const SizedBox(height: 8),
+                ...SettingsPage.sections.map(
+                  (section) => _SettingsSectionTile(section: section),
+                ),
+              ],
             ),
           ),
         ),
@@ -84,6 +83,140 @@ class _SettingsMobilePageState extends State<SettingsMobilePage> with FeedbackMi
   void _goToSearch(BuildContext context) {
     Navigator.maybeOf(context)?.push(
       SettingsSearchPageRoute(context: context),
+    );
+  }
+}
+
+class _SettingsSearchTile extends StatelessWidget {
+  const new({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: ListTile(
+        leading: const Icon(AIcons.search),
+        title: Text(MaterialLocalizations.of(context).searchFieldLabel),
+        subtitle: Text(context.l10n.settingsPageTitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
+class _SettingsSectionTile extends StatefulWidget {
+  const new({required this.section});
+  final SettingsSection section;
+
+  @override
+  State<_SettingsSectionTile> createState() => _SettingsSectionTileState();
+}
+
+class _SettingsSectionTileState extends State<_SettingsSectionTile> {
+  late Future<List<SettingsTile>> _tiles;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tiles = widget.section.tiles(context);
+  }
+
+  void _retry() => setState(() => _tiles = widget.section.tiles(context));
+
+  @override
+  Widget build(BuildContext context) {
+    final section = widget.section;
+    return FutureBuilder<List<SettingsTile>>(
+      future: _tiles,
+      builder: (context, snapshot) {
+        final tiles = snapshot.data;
+        final summary = tiles?.take(3).map((tile) => tile.title(context)).join(' · ');
+        return Card(
+          key: Key('section-${section.key}'),
+          margin: const EdgeInsets.only(bottom: 8),
+          child: ListTile(
+            minTileHeight: 76,
+            leading: section.icon(context),
+            title: Text(section.title(context)),
+            subtitle: snapshot.hasError
+                ? Text('${context.l10n.genericFailureFeedback} · ${context.l10n.retryButtonLabel}', style: TextStyle(color: Theme.of(context).colorScheme.error))
+                : summary?.isNotEmpty == true
+                ? Text(summary!, maxLines: 2, overflow: .ellipsis)
+                : null,
+            trailing: snapshot.hasError
+                ? IconButton(onPressed: _retry, icon: const Icon(Icons.refresh), tooltip: context.l10n.retryButtonLabel)
+                : tiles == null
+                ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.chevron_right),
+            onTap: snapshot.hasError
+                ? _retry
+                : tiles == null
+                ? null
+                : () => Navigator.maybeOf(context)?.push(
+                    MaterialPageRoute(
+                      settings: RouteSettings(name: '${SettingsPage.routeName}/${section.key}'),
+                      builder: (context) => _SettingsSectionPage(section: section),
+                    ),
+                  ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SettingsSectionPage extends StatefulWidget {
+  const new({required this.section});
+  final SettingsSection section;
+
+  @override
+  State<_SettingsSectionPage> createState() => _SettingsSectionPageState();
+}
+
+class _SettingsSectionPageState extends State<_SettingsSectionPage> {
+  late Future<List<SettingsTile>> _tiles;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tiles = widget.section.tiles(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AvesScaffold(
+      appBar: AppBar(title: Text(widget.section.title(context))),
+      body: SafeArea(
+        bottom: false,
+        child: FutureBuilder<List<SettingsTile>>(
+          future: _tiles,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: .min,
+                    children: [
+                      Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error),
+                      const SizedBox(height: 12),
+                      Text('${context.l10n.genericFailureFeedback}\n${snapshot.error}', textAlign: .center),
+                      const SizedBox(height: 16),
+                      FilledButton(onPressed: () => setState(() => _tiles = widget.section.tiles(context)), child: Text(context.l10n.retryButtonLabel)),
+                    ],
+                  ),
+                ),
+              );
+            }
+            final tiles = snapshot.data;
+            if (tiles == null) return const Center(child: CircularProgressIndicator());
+            return SettingsListView(children: tiles.map((tile) => tile.build(context)).toList());
+          },
+        ),
+      ),
     );
   }
 }

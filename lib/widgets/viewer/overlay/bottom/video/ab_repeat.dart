@@ -1,4 +1,5 @@
 import 'package:aves/theme/icons.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/common/identity/buttons/overlay_button.dart';
 import 'package:aves_video/aves_video.dart';
@@ -59,24 +60,30 @@ class _VideoABRepeatOverlayState extends State<VideoABRepeatOverlay> {
         }
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: Row(
-            mainAxisSize: .min,
-            children: [
-              const Spacer(),
-              OverlayButton(
-                scale: scale,
-                child: boundButton,
-              ),
-              const SizedBox(width: 8),
-              OverlayButton(
-                scale: scale,
-                child: IconButton(
-                  icon: const Icon(AIcons.repeatOff),
-                  onPressed: () => controller?.toggleABRepeat(),
-                  tooltip: l10n.stopTooltip,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: MediaCraftUi.viewerPanel,
+              border: Border.all(color: MediaCraftUi.viewerOutline),
+              borderRadius: BorderRadius.circular(MediaCraftUi.radiusMedium),
+            ),
+            child: Row(
+              mainAxisSize: .min,
+              children: [
+                OverlayButton(
+                  scale: scale,
+                  child: boundButton,
                 ),
-              ),
-            ],
+                const SizedBox(width: 4),
+                OverlayButton(
+                  scale: scale,
+                  child: IconButton(
+                    icon: const Icon(AIcons.repeatOff),
+                    onPressed: () => controller?.toggleABRepeat(),
+                    tooltip: l10n.stopTooltip,
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },

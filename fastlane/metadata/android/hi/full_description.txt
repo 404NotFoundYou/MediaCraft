@@ -1,4 +1,4 @@
-<i>Aves</i> आपके ठेठ JPEGs और MP4s  सम्मिलित करते हुए, लगभग सभी प्रकार के Photos और Videos को सम्भाल सकता है, साथ के साथ यह  <b>multi-page TIFFs, SVGs, old AVIs और  भी बहुत कुछ संभालता है  </b>! यह आपके Media संग्रह की जाँच करता है, ताकि यह <b>motion photos</b>, <b>panoramas</b> (aka photo spheres), <b>360° videos</b>, और <b>GeoTIFF</b> files की पहचान कर सके ।
+<i>MediaCraft</i> आपके ठेठ JPEGs और MP4s  सम्मिलित करते हुए, लगभग सभी प्रकार के Photos और Videos को सम्भाल सकता है, साथ के साथ यह  <b>multi-page TIFFs, SVGs, old AVIs और  भी बहुत कुछ संभालता है  </b>! यह आपके Media संग्रह की जाँच करता है, ताकि यह <b>motion photos</b>, <b>panoramas</b> (aka photo spheres), <b>360° videos</b>, और <b>GeoTIFF</b> files की पहचान कर सके ।
 
 <b>नेविगेशन और खोज</b>  <i>एव्ज </i>का एक महत्वपूर्ण हिस्सा है। लक्ष्य यह है कि उपयोगकर्ता एल्बम से फ़ोटो, टैग से मानचित्र आदि तक आसानी से पहुच सकें।
 

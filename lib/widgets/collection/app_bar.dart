@@ -5,6 +5,8 @@ import 'package:aves/app_mode.dart';
 import 'package:aves/model/entry/entry.dart';
 import 'package:aves/model/filters/container/dynamic_album.dart';
 import 'package:aves/model/filters/container/set_and.dart';
+import 'package:aves/model/filters/mime.dart';
+import 'package:aves/model/filters/favourite.dart';
 import 'package:aves/model/filters/trash.dart';
 import 'package:aves/model/query.dart';
 import 'package:aves/model/selection.dart';
@@ -29,6 +31,7 @@ import 'package:aves/widgets/common/action_controls/togglers/title_search.dart';
 import 'package:aves/widgets/common/bars/app_bar.dart';
 import 'package:aves/widgets/common/bars/app_bar_subtitle.dart';
 import 'package:aves/widgets/common/bars/app_bar_title.dart';
+import 'package:aves/widgets/common/bars/mediacraft_browse_header.dart';
 import 'package:aves/widgets/common/basic/popup/container.dart';
 import 'package:aves/widgets/common/basic/popup/expansion_panel.dart';
 import 'package:aves/widgets/common/basic/popup/menu_row.dart';
@@ -39,6 +42,7 @@ import 'package:aves/widgets/common/tile_extent_controller.dart';
 import 'package:aves/widgets/dialogs/aves_dialog.dart';
 import 'package:aves/widgets/dialogs/change_layout_dialog.dart';
 import 'package:aves/widgets/search/collection_search_page_route.dart';
+import 'package:aves/widgets/settings/settings_page.dart';
 import 'package:aves/widgets/viewer/controls/notifications.dart';
 import 'package:aves_model/aves_model.dart';
 import 'package:collection/collection.dart';
@@ -97,6 +101,8 @@ class _CollectionAppBarState extends State<CollectionAppBar> with RouteAware, Si
   CollectionSource get source => collection.source;
 
   bool get showFilterBar => collection.visibleFilters.isNotEmpty;
+
+  bool get showBrowseHeader => !settings.useTvLayout && !isTrash && context.read<ValueNotifier<AppMode>>().value == AppMode.main && !context.read<Selection<AvesEntry>>().isSelecting;
 
   static const _trashSelectionQuickActions = <EntrySetAction>[
     .delete,
@@ -211,9 +217,28 @@ class _CollectionAppBarState extends State<CollectionAppBar> with RouteAware, Si
                           isSelecting: isSelecting,
                         ),
                         title: _buildAppBarTitle(isSelecting),
-                        actions: (context, maxWidth) => useTvLayout ? [] : _buildActions(context, selection, maxWidth),
+                        actions: (context, maxWidth) => useTvLayout
+                            ? []
+                            : [
+                                if (showBrowseHeader)
+                                  IconButton(
+                                    icon: const Icon(AIcons.settings),
+                                    tooltip: context.l10n.settingsPageTitle,
+                                    onPressed: () => Navigator.maybeOf(context)?.push(
+                                      MaterialPageRoute(
+                                        settings: const RouteSettings(name: SettingsPage.routeName),
+                                        builder: (_) => const SettingsPage(),
+                                      ),
+                                    ),
+                                  ),
+                                ..._buildActions(context, selection, max(0, maxWidth - (showBrowseHeader ? kMinInteractiveDimension : 0))),
+                              ],
                         bottom: Column(
                           children: [
+                            if (showBrowseHeader) ...[
+                              _buildBrowseHeader(context),
+                              _buildBrowseShortcuts(context),
+                            ],
                             if (useTvLayout)
                               SizedBox(
                                 height: CaptionedButton.getTelevisionButtonHeight(context),
@@ -275,9 +300,69 @@ class _CollectionAppBarState extends State<CollectionAppBar> with RouteAware, Si
   // `read` context because it can be called outside of Widget `build`
   static bool _showQueryLine(BuildContext context) => context.read<Query?>()?.enabled ?? false;
 
+  Widget _buildBrowseHeader(BuildContext context) {
+    final l10n = context.l10n;
+    final isChinese = Localizations.localeOf(context).languageCode == 'zh';
+    final selected = collection.filters.contains(MimeFilter.image)
+        ? 1
+        : collection.filters.contains(MimeFilter.video)
+        ? 2
+        : 0;
+    return MediaCraftBrowseHeader(
+      title: isChinese ? '媒体库' : l10n.collectionPageTitle,
+      subtitle: l10n.itemCount(collection.entryCount),
+      searchHint: l10n.searchCollectionFieldHint,
+      onSearch: _goToSearch,
+      trailing: TextButton(
+        onPressed: collection.entryCount > 0 ? () => _onActionSelected(EntrySetAction.select) : null,
+        child: Text(l10n.menuActionSelect),
+      ),
+      controls: MediaCraftBrowseSegments(
+        labels: {0: isChinese ? '全部' : 'All', 1: l10n.filterMimeImageLabel, 2: l10n.filterMimeVideoLabel},
+        selected: selected,
+        onChanged: (value) {
+          if (value == 0) {
+            collection.removeFilter(MimeFilter.image);
+            collection.removeFilter(MimeFilter.video);
+          } else {
+            collection.addFilters({value == 1 ? MimeFilter.image : MimeFilter.video});
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildBrowseShortcuts(BuildContext context) {
+    return SizedBox(
+      height: 52,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Row(
+          children: [
+            Flexible(
+              child: FilterChip(
+                avatar: const Icon(AIcons.favourite, size: 18),
+                label: Text(context.l10n.filterFavouriteLabel, maxLines: 1, overflow: .ellipsis),
+                showCheckmark: false,
+                selected: collection.filters.contains(FavouriteFilter.instance),
+                onSelected: (selected) => selected ? collection.addFilters({FavouriteFilter.instance}) : collection.removeFilter(FavouriteFilter.instance),
+              ),
+            ),
+            const Spacer(),
+            IconButton(onPressed: _goToSearch, icon: const Icon(AIcons.search), tooltip: context.l10n.searchCollectionFieldHint),
+            IconButton(onPressed: _changeLayout, icon: const Icon(AIcons.changeLayout), tooltip: EntrySetAction.changeLayout.getText(context)),
+          ],
+        ),
+      ),
+    );
+  }
+
   double _getAppBarContentHeight(BuildContext context) {
     final textScaler = MediaQuery.textScalerOf(context);
     double height = textScaler.scale(kToolbarHeight);
+    if (showBrowseHeader) {
+      height += MediaCraftBrowseHeader.preferredHeight(textScaler, hasControls: true) + 52;
+    }
     if (settings.useTvLayout) {
       height += CaptionedButton.getTelevisionButtonHeight(context);
     }
@@ -298,6 +383,18 @@ class _CollectionAppBarState extends State<CollectionAppBar> with RouteAware, Si
 
     if (!hasDrawer) {
       return const CloseButton();
+    }
+
+    if (showBrowseHeader) {
+      return IconButton(
+        key: const Key('appbar-leading-button'),
+        tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
+        onPressed: Scaffold.of(context).openDrawer,
+        icon: Text(
+          'mc',
+          style: TextStyle(fontFamily: 'serif', fontStyle: .italic, fontSize: 25, letterSpacing: -3, color: Theme.of(context).colorScheme.primary),
+        ),
+      );
     }
 
     VoidCallback? onPressed;
@@ -324,6 +421,13 @@ class _CollectionAppBarState extends State<CollectionAppBar> with RouteAware, Si
   Widget _buildAppBarTitle(bool isSelecting) {
     final l10n = context.l10n;
     final appMode = context.watch<ValueNotifier<AppMode>>().value;
+
+    if (showBrowseHeader) {
+      return SourceStateAwareAppBarTitle(
+        title: Text(l10n.appName, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: .w600)),
+        source: source,
+      );
+    }
 
     if (isSelecting) {
       // `Selection` may not be available during hero
@@ -755,6 +859,7 @@ class _CollectionAppBarState extends State<CollectionAppBar> with RouteAware, Si
     } else {
       _browseToSelectAnimation.reverse();
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateAppBarHeight());
   }
 
   void _onFilterChanged() {

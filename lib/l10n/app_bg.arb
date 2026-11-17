@@ -186,7 +186,7 @@
     "videoActionReplay10": "Превъртане 10 секунди назад",
     "saveCopyButtonLabel": "ЗАПАЗВАНЕ НА КОПИЕ",
     "videoActionShowNextFrame": "Покажи следващия кадър",
-    "welcomeMessage": "Добре дошли в Aves",
+    "welcomeMessage": "Добре дошли в MediaCraft",
     "welcomeOptional": "Опционално",
     "itemCount": "{count, plural, =1{{count} елемент} few{{count} елемента} other{{count} елемента}}",
     "@itemCount": {

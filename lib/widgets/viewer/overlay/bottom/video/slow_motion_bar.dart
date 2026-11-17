@@ -2,9 +2,8 @@ import 'dart:math';
 
 import 'package:aves/locale/ui.dart';
 import 'package:aves/model/settings/settings.dart';
-import 'package:aves/theme/themes.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/widgets/common/fx/blurred.dart';
-import 'package:aves/widgets/common/fx/borders.dart';
 import 'package:aves/widgets/viewer/overlay/bottom/video/progress_bar.dart';
 import 'package:aves_utils/aves_utils.dart';
 import 'package:aves_video/aves_video.dart';
@@ -22,7 +21,7 @@ class const SlowMotionBar({
 class _SlowMotionBarState extends State<SlowMotionBar> {
   final GlobalKey _slowMotionBarKey = GlobalKey(debugLabel: 'slow-motion-bar');
 
-  static const double _radius = 123;
+  static const double _radius = MediaCraftUi.radiusMedium;
 
   AvesVideoController? get controller => widget.controller;
 
@@ -52,8 +51,8 @@ class _SlowMotionBarState extends State<SlowMotionBar> {
                 constraints: const BoxConstraints(minHeight: kMinInteractiveDimension),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: Themes.overlayBackgroundColor(brightness: theme.brightness, blurred: blurred),
-                    border: AvesBorder.border(context),
+                    color: MediaCraftUi.viewerPanel,
+                    border: Border.all(color: MediaCraftUi.viewerOutline),
                     borderRadius: const BorderRadius.all(Radius.circular(_radius)),
                   ),
                   child: MediaQuery(

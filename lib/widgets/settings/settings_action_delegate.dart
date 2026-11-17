@@ -60,7 +60,7 @@ class SettingsActionDelegate with FeedbackMixin {
     );
     const mimeType = MimeTypes.json;
     final success = await storageService.createFile(
-      basename: 'aves-settings-$date',
+      basename: 'mediacraft-settings-$date',
       mimeType: mimeType,
       bytes: content,
     );

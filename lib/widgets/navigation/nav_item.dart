@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:aves/app_mode.dart';
 import 'package:aves/model/filters/filters.dart';
 import 'package:aves/model/settings/settings.dart';
 import 'package:aves/model/source/collection_lens.dart';
@@ -10,6 +11,8 @@ import 'package:aves/widgets/common/search/page.dart';
 import 'package:aves/widgets/debug/app_debug_page.dart';
 import 'package:aves/widgets/duplicates/duplicate_page.dart';
 import 'package:aves/services/duplicate_service.dart';
+import 'package:aves/widgets/discovery/explore_page.dart';
+import 'package:aves/widgets/discovery/tools_page.dart';
 import 'package:aves/widgets/explorer/page.dart';
 import 'package:aves/widgets/filter_grids/albums_page.dart';
 import 'package:aves/widgets/filter_grids/countries_page.dart';
@@ -50,6 +53,9 @@ class AvesNavItem extends Equatable {
 
   String getText(BuildContext context) {
     if (route == CollectionPage.routeName) {
+      if (filters == null || filters!.isEmpty) {
+        return Localizations.localeOf(context).languageCode == 'zh' ? '媒体' : 'Media';
+      }
       return NavigationDisplay.getFilterTitle(context, filters?.firstOrNull);
     }
     return NavigationDisplay.getPageTitle(context, route);
@@ -91,6 +97,22 @@ class AvesNavItem extends Equatable {
           context: context,
           parentCollection: topLevel ? currentCollection?.copyWith() : currentCollection,
         );
+      case ToolsPage.routeName:
+        final appMode = context.read<ValueNotifier<AppMode>>().value;
+        if (appMode != .main) {
+          final currentFilters = context.read<CollectionLens?>()?.filters.toSet();
+          return MaterialPageRoute(
+            settings: const RouteSettings(name: CollectionPage.routeName),
+            builder: (context) => CollectionPage(
+              source: context.read<CollectionSource>(),
+              filters: currentFilters,
+            ),
+          );
+        }
+        return MaterialPageRoute(
+          settings: const RouteSettings(name: ToolsPage.routeName),
+          builder: (_) => const ToolsPage(),
+        );
       default:
         return MaterialPageRoute(
           settings: RouteSettings(name: route),
@@ -124,6 +146,10 @@ class AvesNavItem extends Equatable {
         return (_) => const SettingsPage();
       case DuplicatePage.routeName:
         return (context) => DuplicatePage(source: context.read<CollectionSource>(), service: duplicateService);
+      case ExplorePage.routeName:
+        return (_) => const ExplorePage();
+      case ToolsPage.routeName:
+        return (_) => const ToolsPage();
       default:
         throw Exception('unknown route=$route');
     }

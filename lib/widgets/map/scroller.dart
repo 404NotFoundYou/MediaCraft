@@ -1,6 +1,7 @@
 import 'package:aves/model/entry/entry.dart';
 import 'package:aves/model/source/collection_lens.dart';
 import 'package:aves/theme/durations.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/utils/debouncer.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/common/identity/empty.dart';
@@ -63,56 +64,74 @@ class _MapEntryScrollerState extends State<MapEntryScroller> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Column(
-          crossAxisAlignment: .start,
-          children: [
-            SafeArea(
-              top: false,
-              bottom: false,
-              child: MapInfoRow(entryNotifier: _infoEntryNotifier),
-            ),
-            const SizedBox(height: 8),
-            NullableValueListenableBuilder<CollectionLens?>(
-              valueListenable: widget.regionCollectionNotifier,
-              builder: (context, regionCollection, child) {
-                // update when entries are added/removed
-                final regionEntries = regionCollection?.sortedEntries ?? [];
-                return ThumbnailScroller(
-                  availableWidth: MediaQuery.sizeOf(context).width,
-                  entryCount: regionEntries.length,
-                  entryBuilder: (index) => index < regionEntries.length ? regionEntries[index] : null,
-                  indexNotifier: widget.selectedIndexNotifier,
-                  onTap: widget.onTap,
-                  heroTagger: (entry) => EntryHeroInfo(regionCollection, entry).tag,
-                  highlightable: true,
-                  showLocation: false,
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: .start,
+            children: [
+              SafeArea(
+                top: false,
+                bottom: false,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainer,
+                    border: Border.all(color: colors.outlineVariant),
+                    borderRadius: BorderRadius.circular(MediaCraftUi.radiusMedium),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: MapInfoRow(entryNotifier: _infoEntryNotifier),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  return NullableValueListenableBuilder<CollectionLens?>(
+                    valueListenable: widget.regionCollectionNotifier,
+                    builder: (context, regionCollection, child) {
+                      // update when entries are added/removed
+                      final regionEntries = regionCollection?.sortedEntries ?? [];
+                      return ThumbnailScroller(
+                        availableWidth: constraints.maxWidth,
+                        entryCount: regionEntries.length,
+                        entryBuilder: (index) => index < regionEntries.length ? regionEntries[index] : null,
+                        indexNotifier: widget.selectedIndexNotifier,
+                        onTap: widget.onTap,
+                        heroTagger: (entry) => EntryHeroInfo(regionCollection, entry).tag,
+                        highlightable: true,
+                        showLocation: false,
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
+          ),
+          Positioned.fill(
+            child: ValueListenableBuilder<AvesEntry?>(
+              valueListenable: _infoEntryNotifier,
+              builder: (context, infoEntry, child) {
+                return ValueListenableBuilder<CollectionLens?>(
+                  valueListenable: widget.regionCollectionNotifier,
+                  builder: (context, regionCollection, child) {
+                    return infoEntry == null && regionCollection != null && regionCollection.isEmpty
+                        ? EmptyContent(
+                            text: context.l10n.mapEmptyRegion,
+                            alignment: .center,
+                            fontSize: 18,
+                          )
+                        : const SizedBox();
+                  },
                 );
               },
             ),
-          ],
-        ),
-        Positioned.fill(
-          child: ValueListenableBuilder<AvesEntry?>(
-            valueListenable: _infoEntryNotifier,
-            builder: (context, infoEntry, child) {
-              return ValueListenableBuilder<CollectionLens?>(
-                valueListenable: widget.regionCollectionNotifier,
-                builder: (context, regionCollection, child) {
-                  return infoEntry == null && regionCollection != null && regionCollection.isEmpty
-                      ? EmptyContent(
-                          text: context.l10n.mapEmptyRegion,
-                          alignment: .center,
-                          fontSize: 18,
-                        )
-                      : const SizedBox();
-                },
-              );
-            },
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

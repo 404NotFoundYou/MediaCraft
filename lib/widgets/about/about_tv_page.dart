@@ -3,8 +3,6 @@ import 'package:aves/theme/themes.dart';
 import 'package:aves/widgets/about/app_ref.dart';
 import 'package:aves/widgets/about/app_update.dart';
 import 'package:aves/widgets/about/credits.dart';
-import 'package:aves/widgets/about/derivation.dart';
-import 'package:aves/widgets/about/translators.dart';
 import 'package:aves/widgets/about/tv_license_page.dart';
 import 'package:aves/widgets/common/basic/insets.dart';
 import 'package:aves/widgets/common/basic/scaffold.dart';
@@ -68,7 +66,7 @@ class _Content extends StatefulWidget {
   State<_Content> createState() => _ContentState();
 }
 
-enum _Section { links, credits, translators, licenses }
+enum _Section { links, credits, licenses }
 
 class _ContentState extends State<_Content> {
   final FocusNode _railFocusNode = FocusNode();
@@ -103,9 +101,7 @@ class _ContentState extends State<_Content> {
                   return ListTile(
                     title: DefaultTextStyle(
                       style: theme.textTheme.bodyLarge!.copyWith(
-                        color: isSelected
-                            ? colors.primary
-                            : colors.onSurface.withValues(alpha: .64),
+                        color: isSelected ? colors.primary : colors.onSurface.withValues(alpha: .64),
                       ),
                       child: _getTitle(_Section.values[index]),
                     ),
@@ -150,8 +146,6 @@ class _ContentState extends State<_Content> {
         return Text('${context.l10n.appName} ${device.packageVersion}');
       case .credits:
         return Text(context.l10n.aboutCreditsSectionTitle);
-      case .translators:
-        return Text(context.l10n.aboutTranslatorsSectionTitle);
       case .licenses:
         return Text(context.l10n.aboutLicensesSectionTitle);
     }
@@ -161,26 +155,15 @@ class _ContentState extends State<_Content> {
     switch (key) {
       case .links:
         return ListView(
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: DerivationNotice(),
-            ),
-            const AppUpdateChecker(),
-            ...AppReference.buildLinks(
-              context,
-            ).map((v) => Padding(padding: const EdgeInsets.all(16), child: v)),
+          children: const [
+            Padding(padding: EdgeInsets.all(16), child: AppReference()),
+            AppUpdateChecker(),
           ],
         );
       case .credits:
         return Padding(
           padding: const EdgeInsets.all(16),
           child: AboutCredits.buildBody(context),
-        );
-      case .translators:
-        return Padding(
-          padding: const EdgeInsets.all(16),
-          child: AboutTranslators.buildBody(context),
         );
       case .licenses:
         return Padding(

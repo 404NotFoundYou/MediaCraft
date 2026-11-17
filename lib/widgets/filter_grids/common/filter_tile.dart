@@ -114,6 +114,7 @@ class FilterTile<T extends CollectionFilter> extends StatelessWidget {
           extent: chipExtent,
           selectable: selectable,
           highlightable: highlightable,
+          showText: true,
           child: CoveredFilterChip(
             filter: filter,
             extent: chipExtent,
@@ -135,6 +136,7 @@ class FilterTile<T extends CollectionFilter> extends StatelessWidget {
               extent: chipExtent,
               selectable: selectable,
               highlightable: highlightable,
+              showText: false,
               child: CoveredFilterChip(
                 filter: filter,
                 extent: chipExtent,
@@ -156,11 +158,10 @@ class FilterTile<T extends CollectionFilter> extends StatelessWidget {
           ],
         );
         if (_onTap != null) {
-          // larger than the chip corner radius, so ink effects will be effectively clipped from the leading chip corners
-          const radius = Radius.circular(123);
+          final radius = CoveredFilterChip.radius(chipExtent);
           child = InkWell(
             // as of Flutter v2.8.1, `InkWell` does not use `BorderRadiusGeometry`
-            borderRadius: context.isRtl ? const BorderRadius.only(topRight: radius, bottomRight: radius) : const BorderRadius.only(topLeft: radius, bottomLeft: radius),
+            borderRadius: context.isRtl ? BorderRadius.only(topRight: radius, bottomRight: radius) : BorderRadius.only(topLeft: radius, bottomLeft: radius),
             onTap: () => _onTap(filter),
             child: child,
           );

@@ -26,6 +26,7 @@ import 'package:aves/model/source/location/country.dart';
 import 'package:aves/model/source/location/place.dart';
 import 'package:aves/model/source/tag.dart';
 import 'package:aves/services/media/enums.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/widgets/collection/collection_page.dart';
 import 'package:aves/widgets/common/action_mixins/feedback.dart';
 import 'package:aves/widgets/common/action_mixins/vault_aware.dart';
@@ -132,7 +133,12 @@ class CollectionSearchDelegate extends AvesSearchDelegate with FeedbackMixin, Va
 
                 return ListView(
                   controller: _suggestionsScrollController,
-                  padding: const EdgeInsets.only(top: 8),
+                  padding: EdgeInsets.fromLTRB(
+                    12,
+                    8,
+                    12,
+                    16 + MediaQuery.paddingOf(context).bottom,
+                  ),
                   children: [
                     TvEdgeFocus(
                       focusNode: _suggestionsTopFocusNode,
@@ -179,10 +185,11 @@ class CollectionSearchDelegate extends AvesSearchDelegate with FeedbackMixin, Va
     required List<CollectionFilter> filters,
     HeroType Function(CollectionFilter filter)? heroTypeBuilder,
   }) {
+    final colors = Theme.of(context).colorScheme;
     final calendar = settings.avesLocale.calendar;
     void onTap(filter) => _select(context, {filter is QueryFilter ? QueryFilter(filter.query, calendar) : filter});
     const onLongPress = AvesFilterChip.showDefaultLongPressMenu;
-    return title != null
+    final row = title != null
         ? TitledExpandableFilterRow(
             title: title,
             filters: filters,
@@ -198,6 +205,23 @@ class CollectionSearchDelegate extends AvesSearchDelegate with FeedbackMixin, Va
             onTap: onTap,
             onLongPress: onLongPress,
           );
+    if (title == null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: row,
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerLow,
+          border: Border.all(color: colors.outlineVariant),
+          borderRadius: BorderRadius.circular(MediaCraftUi.radiusMedium),
+        ),
+        child: row,
+      ),
+    );
   }
 
   Widget _buildDateFilters(BuildContext context, CollectionFilterPredicate containQuery) {

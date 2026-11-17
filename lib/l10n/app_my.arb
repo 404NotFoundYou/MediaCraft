@@ -1,7 +1,7 @@
 {
     "sourceStateLocatingPlaces": "နေရာ တည်နေရာများ",
     "chipActionDelete": "ဖျက်ရန်",
-    "welcomeMessage": "Aves မှ ကြိုဆိုပါတယ်",
+    "welcomeMessage": "MediaCraft မှ ကြိုဆိုပါတယ်",
     "columnCount": "{count, plural, other{{count} ကော်လံ}}",
     "@columnCount": {
         "placeholders": {

@@ -7,7 +7,8 @@ import 'package:aves/services/media/enums.dart';
 import 'package:aves/widgets/collection/collection_page.dart';
 import 'package:aves/widgets/explorer/page.dart';
 import 'package:aves/widgets/duplicates/duplicate_page.dart';
-import 'package:aves/widgets/settings/settings_page.dart';
+import 'package:aves/widgets/discovery/explore_page.dart';
+import 'package:aves/widgets/discovery/tools_page.dart';
 import 'package:aves/widgets/filter_grids/albums_page.dart';
 import 'package:aves/widgets/filter_grids/countries_page.dart';
 import 'package:aves/widgets/filter_grids/tags_page.dart';
@@ -45,6 +46,8 @@ class SettingsDefaults {
   ];
   static const drawerPageBookmarks = [
     AlbumListPage.routeName,
+    ExplorePage.routeName,
+    ToolsPage.routeName,
     CountryListPage.routeName,
     TagListPage.routeName,
     ExplorerPage.routeName,
@@ -53,13 +56,13 @@ class SettingsDefaults {
   static final bottomNavigationActions = [
     const AvesNavItem(route: CollectionPage.routeName),
     const AvesNavItem(route: AlbumListPage.routeName),
-    const AvesNavItem(route: DuplicatePage.routeName),
-    const AvesNavItem(route: SettingsPage.routeName),
+    const AvesNavItem(route: ExplorePage.routeName),
+    const AvesNavItem(route: ToolsPage.routeName),
   ];
 
   // collection
   static const collectionSortFactor = SortFactor.date;
-  static const collectionSectionFactor = EntrySectionFactor.month;
+  static const collectionSectionFactor = EntrySectionFactor.day;
   static const collectionBrowsingQuickActions = <EntrySetAction>[
     .searchCollection,
   ];
@@ -84,9 +87,10 @@ class SettingsDefaults {
 
   // viewer
   static const viewerQuickActions = <EntryAction>[
-    .rotateScreen,
     .toggleFavourite,
+    .edit,
     .share,
+    .info,
     .delete,
   ];
   static const showOverlayOnOpening = true;
@@ -97,7 +101,7 @@ class SettingsDefaults {
   static const showOverlayDescription = false;
   static const showOverlayRatingTags = false;
   static const showOverlayShootingDetails = false;
-  static const showOverlayThumbnailPreview = false;
+  static const showOverlayThumbnailPreview = true;
   static const viewerGestureSideTapNext = false;
   static const viewerUseCutout = true;
   static const enableMotionPhotoAutoPlay = false;

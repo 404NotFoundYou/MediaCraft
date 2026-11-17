@@ -1,3 +1,4 @@
+import 'package:aves/app_mode.dart';
 import 'package:aves/model/filters/container/album_group.dart';
 import 'package:aves/model/filters/covered/stored_album.dart';
 import 'package:aves/model/filters/trash.dart';
@@ -21,6 +22,7 @@ import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/common/extensions/media_query.dart';
 import 'package:aves/widgets/common/identity/mediacraft_logo.dart';
 import 'package:aves/widgets/debug/app_debug_page.dart';
+import 'package:aves/widgets/discovery/tools_page.dart';
 import 'package:aves/widgets/explorer/page.dart';
 import 'package:aves/widgets/filter_grids/albums_page.dart';
 import 'package:aves/widgets/filter_grids/countries_page.dart';
@@ -370,7 +372,8 @@ class _AppDrawerState extends State<AppDrawer> with WidgetsBindingObserver {
   }
 
   List<Widget> _buildPageLinks(BuildContext context) {
-    final pageBookmarks = settings.drawerPageBookmarks;
+    final appMode = context.watch<ValueNotifier<AppMode>>().value;
+    final pageBookmarks = settings.drawerPageBookmarks.where((route) => appMode == .main || route != ToolsPage.routeName).toList();
     if (pageBookmarks.isEmpty) return [];
 
     final source = context.read<CollectionSource>();

@@ -2,7 +2,7 @@
     "appName": "MediaCraft",
     "welcomeTermsToggle": "Я згодны з умовамі",
     "welcomeOptional": "Неабавязковыя",
-    "welcomeMessage": "Сардэчна запрашаем у Aves",
+    "welcomeMessage": "Сардэчна запрашаем у MediaCraft",
     "itemCount": "{count, plural, =1{{count} элемент} other{{count} элементаў}}",
     "@itemCount": {
         "placeholders": {

@@ -5,6 +5,7 @@ import 'package:aves/model/entry/extensions/props.dart';
 import 'package:aves/model/selection.dart';
 import 'package:aves/model/settings/settings.dart';
 import 'package:aves/model/source/collection_lens.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/widgets/common/extensions/media_query.dart';
 import 'package:aves/widgets/viewer/controls/intents.dart';
 import 'package:aves/widgets/viewer/controls/notifications.dart';
@@ -179,8 +180,8 @@ class _BottomOverlayContentState extends State<_BottomOverlayContent> {
                   top: false,
                   bottom: false,
                   minimum: EdgeInsets.only(
-                    left: viewInsetsPadding.left,
-                    right: viewInsetsPadding.right,
+                    left: viewInsetsPadding.left + 4,
+                    right: viewInsetsPadding.right + 4,
                   ),
                   child: isWallpaperMode
                       ? WallpaperButtons(
@@ -208,7 +209,7 @@ class _BottomOverlayContentState extends State<_BottomOverlayContent> {
             children: [
               if (showMultiPageOverlay && !collapsedPageScroller)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.only(left: 8, right: 8, bottom: 8),
                   child: FadeTransition(
                     opacity: _thumbnailOpacity,
                     child: MultiPageOverlay(
@@ -264,7 +265,7 @@ class const ExtraBottomOverlay({
   final EdgeInsets? viewPadding,
   required final Widget child,
 }) extends StatelessWidget {
-  static const double padding = 8;
+  static const double padding = MediaCraftUi.radiusMedium;
 
   @override
   Widget build(BuildContext context) {

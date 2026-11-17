@@ -1,6 +1,6 @@
 {
     "appName": "MediaCraft",
-    "welcomeMessage": "Ласкаво просимо до Aves",
+    "welcomeMessage": "Ласкаво просимо до MediaCraft",
     "welcomeOptional": "Необов'язково",
     "welcomeTermsToggle": "Я погоджуюсь з умовами та положеннями",
     "timeDays": "{count, plural, =1{{count} день} few{{count} дні} other{{count} днів}}",

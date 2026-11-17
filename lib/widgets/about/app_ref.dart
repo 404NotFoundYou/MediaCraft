@@ -8,8 +8,6 @@ import 'package:aves/widgets/common/identity/mediacraft_logo.dart';
 import 'package:material_ui/material_ui.dart';
 
 class AppReference extends StatelessWidget {
-  static const avesGithub = 'https://github.com/deckerst/aves';
-  static const avesFaq = '$avesGithub/wiki/FAQ';
   static const mediaCraftGithub = 'https://github.com/404NotFoundYou/MediaCraft';
 
   const new({super.key});
@@ -19,7 +17,7 @@ class AppReference extends StatelessWidget {
     return Center(
       child: Column(
         children: [
-          _buildAvesLine(context),
+          _buildAppLine(context),
           const SizedBox(height: 16),
           Wrap(
             alignment: .center,
@@ -32,7 +30,7 @@ class AppReference extends StatelessWidget {
     );
   }
 
-  Widget _buildAvesLine(BuildContext context) {
+  Widget _buildAppLine(BuildContext context) {
     final textScaler = MediaQuery.textScalerOf(context);
     final appName = context.l10n.appName;
     const fontSize = 20.0;
@@ -69,21 +67,6 @@ class AppReference extends StatelessWidget {
         leading: const Icon(AIcons.privacy, size: 22),
         text: l10n.aboutLinkPolicy,
         onTap: () => _goToPolicyPage(context),
-      ),
-    ];
-  }
-
-  static List<Widget> buildSourceLinks() {
-    return const [
-      LinkChip(
-        leading: Icon(AIcons.github, size: 24),
-        text: 'Aves',
-        urlString: avesGithub,
-      ),
-      LinkChip(
-        leading: Icon(AIcons.legal, size: 22),
-        text: 'Aves BSD-3-Clause',
-        urlString: '$avesGithub/blob/develop/LICENSE',
       ),
     ];
   }

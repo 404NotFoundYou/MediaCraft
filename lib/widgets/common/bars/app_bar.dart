@@ -24,7 +24,7 @@ class const AvesAppBar({
   static const leadingHeroTag = 'appbar-leading';
   static const titleHeroTag = 'appbar-title';
   static const double _titleMinWidth = 96;
-  static const margin = EdgeInsets.all(8);
+  static const margin = EdgeInsets.zero;
 
   @override
   Widget build(BuildContext context) {
@@ -87,10 +87,11 @@ class const AvesAppBar({
           child: AnnotatedRegion<SystemUiOverlayStyle>(
             value: AvesApp.themeSystemOverlayStyle(theme),
             child: AvesFloatingBar(
+              flat: !useTvLayout,
               margin: margin,
               builder: (context, backgroundColor, child) => Material(
                 color: backgroundColor,
-                borderRadius: AvesFloatingBar.borderRadius,
+                borderRadius: useTvLayout ? AvesFloatingBar.borderRadius : BorderRadius.zero,
                 clipBehavior: Clip.antiAlias,
                 child: AInkResponse(
                   // absorb taps while providing visual feedback

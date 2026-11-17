@@ -519,7 +519,7 @@ class EntrySetActionDelegate with FeedbackMixin, PermissionAwareMixin, SizeAware
     const mimeType = MimeTypes.gpx;
     final date = DateFormat('yyyyMMdd_HHmmss', IntlUtils.rootLocaleName).format(gpxDate);
     final success = await storageService.createFile(
-      basename: 'aves-gpx-$date',
+      basename: 'mediacraft-gpx-$date',
       mimeType: mimeType,
       bytes: utf8.encode(gpxContent),
     );

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title">
+  <title id="title">MediaCraft mc monogram</title>
+  <g fill="none" stroke="#315F50" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 70V42C18 32 31 32 31 42V70M31 42C31 32 44 32 44 42V70"/>
+    <path d="M82 41C76 33 61 34 56 47C50 62 60 73 72 73C77 73 81 70 84 66"/>
+  </g>
+  <circle cx="70" cy="53" r="4.5" fill="#B78A35"/>
+</svg>

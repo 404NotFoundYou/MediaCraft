@@ -16,6 +16,7 @@ import 'package:aves/widgets/common/bars/app_bar.dart';
 import 'package:aves/widgets/common/bars/app_bar_subtitle.dart';
 import 'package:aves/widgets/common/bars/app_bar_title.dart';
 import 'package:aves/widgets/common/bars/crumb_line.dart';
+import 'package:aves/widgets/common/bars/mediacraft_browse_header.dart';
 import 'package:aves/widgets/common/basic/popup/menu_row.dart';
 import 'package:aves/widgets/common/basic/text/fading_line.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
@@ -41,6 +42,7 @@ typedef ActionsBuilder<T extends CollectionFilter, CSAD extends ChipSetActionDel
 class FilterGridAppBar<T extends CollectionFilter, CSAD extends ChipSetActionDelegate<T>> extends StatefulWidget {
   final CollectionSource source;
   final String title;
+  final Widget? browseControls;
   final CSAD actionDelegate;
   final ActionsBuilder<T, CSAD>? actionsBuilder;
   final ValueNotifier<double> appBarHeightNotifier;
@@ -51,6 +53,7 @@ class FilterGridAppBar<T extends CollectionFilter, CSAD extends ChipSetActionDel
     super.key,
     required this.source,
     required this.title,
+    this.browseControls,
     required this.actionDelegate,
     this.actionsBuilder,
     required this.appBarHeightNotifier,
@@ -82,6 +85,7 @@ class FilterGridAppBar<T extends CollectionFilter, CSAD extends ChipSetActionDel
 }
 
 class _FilterGridAppBarState<T extends CollectionFilter, CSAD extends ChipSetActionDelegate<T>> extends State<FilterGridAppBar<T, CSAD>> with RouteAware, SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  bool get showBrowseHeader => !settings.useTvLayout && context.read<ValueNotifier<AppMode>>().value == AppMode.main && !context.read<Selection<FilterGridItem<T>>>().isSelecting;
   final Set<StreamSubscription> _subscriptions = {};
   late AnimationController _browseToSelectAnimation;
   final ValueNotifier<bool> _isSelectingNotifier = ValueNotifier(false);
@@ -124,6 +128,12 @@ class _FilterGridAppBarState<T extends CollectionFilter, CSAD extends ChipSetAct
     if (route is PageRoute) {
       AvesApp.pageRouteObserver.subscribe(this, route);
     }
+  }
+
+  @override
+  void didUpdateWidget(covariant FilterGridAppBar<T, CSAD> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateAppBarHeight());
   }
 
   @override
@@ -181,6 +191,18 @@ class _FilterGridAppBarState<T extends CollectionFilter, CSAD extends ChipSetAct
             actions: (context, maxWidth) => useTvLayout ? [] : actionsBuilder(context, appMode, selection, actionDelegate),
             bottom: Column(
               children: [
+                if (showBrowseHeader)
+                  MediaCraftBrowseHeader(
+                    title: widget.title,
+                    subtitle: context.l10n.itemCount(widget.actionDelegate.allItems.length),
+                    searchHint: context.l10n.searchCollectionFieldHint,
+                    onSearch: _goToSearch,
+                    controls: widget.browseControls,
+                    trailing: TextButton(
+                      onPressed: widget.actionDelegate.allItems.isEmpty ? null : () => _onActionSelected(context, ChipSetAction.select, widget.actionDelegate),
+                      child: Text(context.l10n.menuActionSelect),
+                    ),
+                  ),
                 if (useTvLayout)
                   SizedBox(
                     height: CaptionedButton.getTelevisionButtonHeight(context),
@@ -242,9 +264,12 @@ class _FilterGridAppBarState<T extends CollectionFilter, CSAD extends ChipSetAct
 
   static bool _showQueryLine(BuildContext context) => context.read<Query?>()?.enabled ?? false;
 
-  static double _getAppBarContentHeight(BuildContext context) {
+  double _getAppBarContentHeight(BuildContext context) {
     final textScaler = MediaQuery.textScalerOf(context);
     double height = textScaler.scale(kToolbarHeight);
+    if (showBrowseHeader) {
+      height += MediaCraftBrowseHeader.preferredHeight(textScaler, hasControls: widget.browseControls != null);
+    }
     if (settings.useTvLayout) {
       height += CaptionedButton.getTelevisionButtonHeight(context);
     }
@@ -262,6 +287,18 @@ class _FilterGridAppBarState<T extends CollectionFilter, CSAD extends ChipSetAct
 
     if (!hasDrawer) {
       return const CloseButton();
+    }
+
+    if (showBrowseHeader) {
+      return IconButton(
+        key: const Key('appbar-leading-button'),
+        tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
+        onPressed: Scaffold.of(context).openDrawer,
+        icon: Text(
+          'mc',
+          style: TextStyle(fontFamily: 'serif', fontStyle: .italic, fontSize: 25, letterSpacing: -3, color: Theme.of(context).colorScheme.primary),
+        ),
+      );
     }
 
     VoidCallback? onPressed;
@@ -286,6 +323,12 @@ class _FilterGridAppBarState<T extends CollectionFilter, CSAD extends ChipSetAct
   }
 
   Widget _buildAppBarTitle(bool isSelecting) {
+    if (showBrowseHeader) {
+      return SourceStateAwareAppBarTitle(
+        title: Text(context.l10n.appName, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: .w600)),
+        source: source,
+      );
+    }
     if (isSelecting) {
       return Selector<Selection<FilterGridItem<T>>?, int>(
         selector: (context, selection) => selection?.selectedItemCount ?? 0,
@@ -498,6 +541,7 @@ class _FilterGridAppBarState<T extends CollectionFilter, CSAD extends ChipSetAct
     } else {
       _browseToSelectAnimation.reverse();
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateAppBarHeight());
   }
 
   void _onQueryFocusRequest() => _queryBarFocusNode.requestFocus();

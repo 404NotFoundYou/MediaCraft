@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: I have a question
-    url: https://github.com/deckerst/aves/discussions
-    about: Feel free to ask questions in the Discussions.
+  - name: MediaCraft issues
+    url: https://github.com/404NotFoundYou/MediaCraft/issues
+    about: Review existing reports and project support information.

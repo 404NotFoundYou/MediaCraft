@@ -8,6 +8,8 @@ import 'package:aves/ref/mime_types.dart';
 import 'package:aves/widgets/common/basic/scaffold.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/common/search/page.dart';
+import 'package:aves/widgets/discovery/explore_page.dart';
+import 'package:aves/widgets/discovery/tools_page.dart';
 import 'package:aves/widgets/explorer/page.dart';
 import 'package:aves/widgets/filter_grids/albums_page.dart';
 import 'package:aves/widgets/filter_grids/countries_page.dart';
@@ -44,6 +46,8 @@ class NavigationDrawerEditorPage extends StatefulWidget {
     TagListPage.routeName,
     ExplorerPage.routeName,
     SearchPage.routeName,
+    ExplorePage.routeName,
+    ToolsPage.routeName,
   ];
 
   const new({super.key});

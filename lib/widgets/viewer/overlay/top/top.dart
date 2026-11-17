@@ -2,7 +2,7 @@ import 'package:aves/model/entry/entry.dart';
 import 'package:aves/model/entry/extensions/multipage.dart';
 import 'package:aves/model/settings/settings.dart';
 import 'package:aves/model/viewer/view_state.dart';
-import 'package:aves/theme/themes.dart';
+import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/widgets/common/extensions/build_context.dart';
 import 'package:aves/widgets/common/fx/blurred.dart';
 import 'package:aves/widgets/common/fx/borders.dart';
@@ -29,7 +29,7 @@ class const ViewerTopOverlay({
   required final EdgeInsets? viewInsets,
   required final EdgeInsets? viewPadding,
 }) extends StatelessWidget {
-  static const Color componentBorderColor = Colors.white30;
+  static const Color componentBorderColor = MediaCraftUi.viewerOutline;
   static const double componentDimension = 96;
 
   @override
@@ -86,62 +86,87 @@ class const ViewerTopOverlay({
             ),
         ];
 
-        return Column(
-          mainAxisSize: .min,
-          crossAxisAlignment: .start,
-          children: [
-            if (showInfo)
-              GestureDetector(
-                onTap: () => expandedNotifier.value = !expandedNotifier.value,
-                child: BlurredRect(
-                  enabled: blurred,
-                  child: Container(
-                    color: Themes.overlayBackgroundColor(brightness: Theme.of(context).brightness, blurred: blurred),
-                    child: SafeArea(
-                      bottom: false,
-                      minimum: EdgeInsets.only(
-                        left: viewInsetsPadding.left,
-                        top: viewInsetsPadding.top,
-                        right: viewInsetsPadding.right,
+        final baseTheme = Theme.of(context);
+        final overlayTheme = baseTheme.copyWith(
+          brightness: Brightness.dark,
+          colorScheme: baseTheme.colorScheme.copyWith(
+            brightness: Brightness.dark,
+            surface: MediaCraftUi.viewerPanel,
+            onSurface: MediaCraftUi.viewerForeground,
+            onSurfaceVariant: MediaCraftUi.viewerForegroundMuted,
+            outlineVariant: MediaCraftUi.viewerOutline,
+          ),
+          iconTheme: baseTheme.iconTheme.copyWith(color: MediaCraftUi.viewerForeground),
+          textTheme: baseTheme.textTheme.apply(
+            bodyColor: MediaCraftUi.viewerForeground,
+            displayColor: MediaCraftUi.viewerForeground,
+          ),
+        );
+
+        return Theme(
+          data: overlayTheme,
+          child: Column(
+            mainAxisSize: .min,
+            crossAxisAlignment: .start,
+            children: [
+              if (showInfo)
+                GestureDetector(
+                  onTap: () => expandedNotifier.value = !expandedNotifier.value,
+                  child: BlurredRect(
+                    enabled: blurred,
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        color: MediaCraftUi.viewerPanel,
+                        border: Border(
+                          bottom: BorderSide(color: MediaCraftUi.viewerOutline),
+                        ),
                       ),
-                      child: ViewerDetailOverlay(
-                        index: index,
-                        entries: entries,
-                        hasCollection: hasCollection,
-                        multiPageController: multiPageController,
-                        expandedNotifier: expandedNotifier,
-                        availableSize: availableSize,
+                      child: SafeArea(
+                        bottom: false,
+                        minimum: EdgeInsets.only(
+                          left: viewInsetsPadding.left,
+                          top: viewInsetsPadding.top,
+                          right: viewInsetsPadding.right,
+                        ),
+                        child: ViewerDetailOverlay(
+                          index: index,
+                          entries: entries,
+                          hasCollection: hasCollection,
+                          multiPageController: multiPageController,
+                          expandedNotifier: expandedNotifier,
+                          availableSize: availableSize,
+                        ),
                       ),
                     ),
                   ),
                 ),
+              SafeArea(
+                top: !showInfo,
+                minimum: EdgeInsets.only(
+                  left: viewInsetsPadding.left,
+                  right: viewInsetsPadding.right,
+                ),
+                child: Row(
+                  crossAxisAlignment: .start,
+                  children: [
+                    if (startCornerChildren.isNotEmpty)
+                      Column(
+                        mainAxisSize: .min,
+                        crossAxisAlignment: .start,
+                        children: startCornerChildren.map(_decorateCornerChild).toList(),
+                      ),
+                    const Spacer(),
+                    if (endCornerChildren.isNotEmpty)
+                      Column(
+                        mainAxisSize: .min,
+                        crossAxisAlignment: .start,
+                        children: endCornerChildren.map(_decorateCornerChild).toList(),
+                      ),
+                  ],
+                ),
               ),
-            SafeArea(
-              top: !showInfo,
-              minimum: EdgeInsets.only(
-                left: viewInsetsPadding.left,
-                right: viewInsetsPadding.right,
-              ),
-              child: Row(
-                crossAxisAlignment: .start,
-                children: [
-                  if (startCornerChildren.isNotEmpty)
-                    Column(
-                      mainAxisSize: .min,
-                      crossAxisAlignment: .start,
-                      children: startCornerChildren.map(_decorateCornerChild).toList(),
-                    ),
-                  const Spacer(),
-                  if (endCornerChildren.isNotEmpty)
-                    Column(
-                      mainAxisSize: .min,
-                      crossAxisAlignment: .start,
-                      children: endCornerChildren.map(_decorateCornerChild).toList(),
-                    ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     );
@@ -159,7 +184,7 @@ class const ZoomLevelIndicator({
       context,
       width: AvesBorder.curvedBorderWidth(context),
     );
-    final borderRadius = BorderRadius.circular(4);
+    final borderRadius = BorderRadius.circular(MediaCraftUi.radiusSmall);
     final zoomScaleFactor = MediaQuery.devicePixelRatioOf(context) * 100;
 
     return IgnorePointer(
@@ -169,7 +194,7 @@ class const ZoomLevelIndicator({
         child: Material(
           type: MaterialType.button,
           borderRadius: borderRadius,
-          color: Themes.overlayBackgroundColor(brightness: Theme.of(context).brightness, blurred: blurred),
+          color: MediaCraftUi.viewerPanelSoft,
           child: ValueListenableBuilder<ViewState>(
             valueListenable: viewStateNotifier,
             builder: (context, viewState, child) {

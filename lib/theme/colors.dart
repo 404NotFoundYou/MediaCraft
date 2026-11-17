@@ -10,9 +10,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
 class AColors {
-  static const brandTeal = Color(0xff0f8f83);
-  static const brandCoral = Color(0xffff7d69);
-  static const brandAmber = Color(0xfff4bc44);
+  static const brandTeal = Color(0xff315f50);
+  static const brandCoral = Color(0xffb85f52);
+  static const brandAmber = Color(0xffb78a35);
 
   static const starEnabled = Colors.amber;
   static const starDisabled = Colors.grey;
@@ -60,7 +60,7 @@ class AvesColorsProvider extends StatelessWidget {
 abstract class AvesColorsData {
   static const defaultAccent = AColors.brandTeal;
   static const _neutralOnDark = Colors.white;
-  static const _neutralOnLight = Color(0xAA000000);
+  static const _neutralOnLight = Color(0xff66736d);
 
   Color get neutral;
 

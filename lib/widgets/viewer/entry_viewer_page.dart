@@ -1,9 +1,12 @@
 import 'package:aves/model/entry/entry.dart';
 import 'package:aves/model/source/collection_lens.dart';
+import 'package:aves/theme/ui_tokens.dart';
+import 'package:aves/widgets/aves_app.dart';
 import 'package:aves/widgets/common/basic/scaffold.dart';
 import 'package:aves/widgets/viewer/controls/controller.dart';
 import 'package:aves/widgets/viewer/entry_viewer_stack.dart';
 import 'package:aves/widgets/viewer/providers.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
@@ -19,7 +22,7 @@ class const EntryViewerPage({
   @override
   State<EntryViewerPage> createState() => _EntryViewerPageState();
 
-  static const viewerSurface = Color(0xfff4f8f7);
+  static const viewerSurface = MediaCraftUi.viewerSurface;
 
   static Color getBackground(BuildContext context) => viewerSurface;
 }
@@ -39,51 +42,66 @@ class _EntryViewerPageState extends State<EntryViewerPage> {
   @override
   Widget build(BuildContext context) {
     final collection = widget.collection;
-    return AvesScaffold(
-      body: MultiProvider(
-        providers: [
-          ViewStateConductorProvider(),
-          VideoConductorProvider(collection: collection),
-          MultiPageConductorProvider(),
-        ],
-        child: Theme(
-          data: _viewerTheme(context),
-          child: EntryViewerStack(
-            collection: collection,
-            initialEntry: widget.initialEntry,
-            viewerController: _viewerController,
+    final viewerTheme = _viewerTheme(context);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: AvesApp.themeSystemOverlayStyle(viewerTheme),
+      child: AvesScaffold(
+        body: MultiProvider(
+          providers: [
+            ViewStateConductorProvider(),
+            VideoConductorProvider(collection: collection),
+            MultiPageConductorProvider(),
+          ],
+          child: Theme(
+            data: viewerTheme,
+            child: DefaultTextStyle.merge(
+              style: const TextStyle(color: MediaCraftUi.viewerForeground),
+              child: EntryViewerStack(
+                collection: collection,
+                initialEntry: widget.initialEntry,
+                viewerController: _viewerController,
+              ),
+            ),
           ),
         ),
+        backgroundColor: Navigator.canPop(context) ? Colors.transparent : EntryViewerPage.getBackground(context),
+        resizeToAvoidBottomInset: false,
       ),
-      backgroundColor: Navigator.canPop(context) ? Colors.transparent : EntryViewerPage.getBackground(context),
-      resizeToAvoidBottomInset: false,
     );
   }
 
   ThemeData _viewerTheme(BuildContext context) {
     final baseTheme = Theme.of(context);
     final baseColors = baseTheme.colorScheme;
-    const viewerSurfaceElevated = Colors.white;
+    const viewerSurfaceElevated = Color(0xff252c29);
     final viewerColors = baseColors.copyWith(
-      brightness: Brightness.light,
+      brightness: Brightness.dark,
       surface: EntryViewerPage.viewerSurface,
-      onSurface: const Color(0xff17212b),
-      onSurfaceVariant: const Color(0xff5e6b73),
+      surfaceContainer: viewerSurfaceElevated,
+      surfaceContainerHigh: const Color(0xff303835),
+      onSurface: MediaCraftUi.viewerForeground,
+      onSurfaceVariant: MediaCraftUi.viewerForegroundMuted,
+      outline: MediaCraftUi.viewerOutline,
+      outlineVariant: MediaCraftUi.viewerOutline,
     );
     return baseTheme.copyWith(
-      brightness: Brightness.light,
+      brightness: Brightness.dark,
       colorScheme: viewerColors,
       canvasColor: EntryViewerPage.viewerSurface,
       scaffoldBackgroundColor: EntryViewerPage.viewerSurface,
       cardColor: viewerSurfaceElevated,
-      iconTheme: baseTheme.iconTheme.copyWith(color: const Color(0xff17212b)),
+      appBarTheme: baseTheme.appBarTheme.copyWith(systemOverlayStyle: AvesApp.systemUIStyleForBrightness(Brightness.dark, EntryViewerPage.viewerSurface)),
+      iconTheme: baseTheme.iconTheme.copyWith(color: MediaCraftUi.viewerForeground),
       textTheme: baseTheme.textTheme.apply(
-        bodyColor: const Color(0xff17212b),
-        displayColor: const Color(0xff17212b),
+        bodyColor: MediaCraftUi.viewerForeground,
+        displayColor: MediaCraftUi.viewerForeground,
       ),
       popupMenuTheme: baseTheme.popupMenuTheme.copyWith(
         color: viewerSurfaceElevated,
-        iconColor: Colors.white,
+        iconColor: MediaCraftUi.viewerForeground,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(MediaCraftUi.radiusMedium)),
+        ),
       ),
     );
   }

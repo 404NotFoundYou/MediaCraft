@@ -32,6 +32,7 @@ class FilterNavigationPage<T extends CollectionFilter, CSAD extends ChipSetActio
   final Map<ChipSectionKey, List<FilterGridItem<T>>> filterSections;
   final Set<T>? newFilters;
   final Widget Function() emptyBuilder;
+  final Widget? browseControls;
 
   const new({
     super.key,
@@ -43,6 +44,7 @@ class FilterNavigationPage<T extends CollectionFilter, CSAD extends ChipSetActio
     required this.filterSections,
     this.newFilters,
     required this.emptyBuilder,
+    this.browseControls,
   });
 
   @override
@@ -150,6 +152,7 @@ class _FilterNavigationPageState<T extends CollectionFilter, CSAD extends ChipSe
               appBar: FilterGridAppBar<T, CSAD>(
                 source: widget.source,
                 title: widget.title,
+                browseControls: widget.browseControls,
                 actionDelegate: widget.actionDelegate,
                 appBarHeightNotifier: _appBarHeightNotifier,
                 scrollController: scrollController,

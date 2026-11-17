@@ -199,7 +199,7 @@ class _BugReportContentState extends State<BugReportContent> with FeedbackMixin 
 
     final date = DateFormat('yyyyMMdd_HHmmss', IntlUtils.rootLocaleName).format(DateTime.now());
     final success = await storageService.createFile(
-      basename: 'aves-logs-$date',
+      basename: 'mediacraft-logs-$date',
       mimeType: MimeTypes.plainText,
       bytes: utf8.encode(mixedContent),
     );

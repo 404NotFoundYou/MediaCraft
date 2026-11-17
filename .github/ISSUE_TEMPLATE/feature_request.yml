@@ -6,7 +6,7 @@ body:
     attributes:
       label: Guidelines
       options:
-        - label: I have read the [guidelines to open issues](https://github.com/deckerst/aves/issues/234)
+        - label: I have read the [MediaCraft project information](https://github.com/404NotFoundYou/MediaCraft/blob/main/README.md)
           required: true
 
   - type: textarea

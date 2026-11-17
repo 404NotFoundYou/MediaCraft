@@ -139,6 +139,8 @@ class _DuplicatePageFixture {
   }
 
   Future<void> selectDuplicate(WidgetTester tester) async {
+    await tester.ensureVisible(find.byType(Checkbox).last);
+    await tester.pumpAndSettle();
     await tester.tap(find.byType(Checkbox).last);
     await tester.pumpAndSettle();
   }

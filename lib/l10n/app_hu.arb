@@ -10,7 +10,7 @@
     "doNotAskAgain": "Ne kérdezd újra",
     "chipActionDelete": "Törlés",
     "appName": "MediaCraft",
-    "welcomeMessage": "Üdvözöl az Aves",
+    "welcomeMessage": "Üdvözöl az MediaCraft",
     "cancelTooltip": "Mégse",
     "chipActionCreateAlbum": "Új album",
     "entryActionCopyToClipboard": "Vágolapra másolás",
@@ -489,7 +489,7 @@
     "viewerTransitionZoomIn": "Nagyítás",
     "widgetOpenPageHome": "Kezdőlap megnyitása",
     "widgetOpenPageViewer": "Megtekintő megnyitása",
-    "storageAccessDialogMessage": "Válaszd ki a {directory} mappát a „{volume}” tárhelyen a következő képernyőn, hogy az Aves hozzáférjen.",
+    "storageAccessDialogMessage": "Válaszd ki a {directory} mappát a „{volume}” tárhelyen a következő képernyőn, hogy az MediaCraft hozzáférjen.",
     "@storageAccessDialogMessage": {
         "placeholders": {
             "directory": {
@@ -503,7 +503,7 @@
             }
         }
     },
-    "restrictedAccessDialogMessage": "Az Avesnek nincs engedélyezve, hogy módosításokat végezzen a {directory} mappában a „{volume}” tárhelyen.\n\nHasználd a telefon fájlkezelőjét vagy galériáját az elemek másik mappába helyezéséhez.",
+    "restrictedAccessDialogMessage": "Az MediaCraftnek nincs engedélyezve, hogy módosításokat végezzen a {directory} mappában a „{volume}” tárhelyen.\n\nHasználd a telefon fájlkezelőjét vagy galériáját az elemek másik mappába helyezéséhez.",
     "@restrictedAccessDialogMessage": {
         "placeholders": {
             "directory": {
