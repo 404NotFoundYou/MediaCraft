@@ -1,5 +1,7 @@
 import 'package:aves/model/entry/entry.dart';
 import 'package:aves/model/source/collection_lens.dart';
+import 'package:aves/theme/colors.dart';
+import 'package:aves/theme/media_viewer_theme.dart';
 import 'package:aves/theme/ui_tokens.dart';
 import 'package:aves/widgets/aves_app.dart';
 import 'package:aves/widgets/common/basic/scaffold.dart';
@@ -42,7 +44,7 @@ class _EntryViewerPageState extends State<EntryViewerPage> {
   @override
   Widget build(BuildContext context) {
     final collection = widget.collection;
-    final viewerTheme = _viewerTheme(context);
+    final viewerTheme = mediaViewerTheme(context);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: AvesApp.themeSystemOverlayStyle(viewerTheme),
       child: AvesScaffold(
@@ -54,54 +56,20 @@ class _EntryViewerPageState extends State<EntryViewerPage> {
           ],
           child: Theme(
             data: viewerTheme,
-            child: DefaultTextStyle.merge(
-              style: const TextStyle(color: MediaCraftUi.viewerForeground),
-              child: EntryViewerStack(
-                collection: collection,
-                initialEntry: widget.initialEntry,
-                viewerController: _viewerController,
+            child: AvesColorsProvider(
+              child: DefaultTextStyle.merge(
+                style: const TextStyle(color: MediaCraftUi.viewerForeground),
+                child: EntryViewerStack(
+                  collection: collection,
+                  initialEntry: widget.initialEntry,
+                  viewerController: _viewerController,
+                ),
               ),
             ),
           ),
         ),
         backgroundColor: Navigator.canPop(context) ? Colors.transparent : EntryViewerPage.getBackground(context),
         resizeToAvoidBottomInset: false,
-      ),
-    );
-  }
-
-  ThemeData _viewerTheme(BuildContext context) {
-    final baseTheme = Theme.of(context);
-    final baseColors = baseTheme.colorScheme;
-    const viewerSurfaceElevated = Color(0xff252c29);
-    final viewerColors = baseColors.copyWith(
-      brightness: Brightness.dark,
-      surface: EntryViewerPage.viewerSurface,
-      surfaceContainer: viewerSurfaceElevated,
-      surfaceContainerHigh: const Color(0xff303835),
-      onSurface: MediaCraftUi.viewerForeground,
-      onSurfaceVariant: MediaCraftUi.viewerForegroundMuted,
-      outline: MediaCraftUi.viewerOutline,
-      outlineVariant: MediaCraftUi.viewerOutline,
-    );
-    return baseTheme.copyWith(
-      brightness: Brightness.dark,
-      colorScheme: viewerColors,
-      canvasColor: EntryViewerPage.viewerSurface,
-      scaffoldBackgroundColor: EntryViewerPage.viewerSurface,
-      cardColor: viewerSurfaceElevated,
-      appBarTheme: baseTheme.appBarTheme.copyWith(systemOverlayStyle: AvesApp.systemUIStyleForBrightness(Brightness.dark, EntryViewerPage.viewerSurface)),
-      iconTheme: baseTheme.iconTheme.copyWith(color: MediaCraftUi.viewerForeground),
-      textTheme: baseTheme.textTheme.apply(
-        bodyColor: MediaCraftUi.viewerForeground,
-        displayColor: MediaCraftUi.viewerForeground,
-      ),
-      popupMenuTheme: baseTheme.popupMenuTheme.copyWith(
-        color: viewerSurfaceElevated,
-        iconColor: MediaCraftUi.viewerForeground,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(MediaCraftUi.radiusMedium)),
-        ),
       ),
     );
   }

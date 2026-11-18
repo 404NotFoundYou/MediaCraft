@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## <a id="unreleased"></a>[Unreleased]
 
+## <a id="v0.6.6"></a>[v0.6.6] - 2026-11-18
+
+### Changed
+
+- 图片和视频查看器、操作栏、详情页及内置编辑器统一使用浅色主题，与媒体首页的纸面背景和深色文字保持一致。
+- 半透明深色面板改为不透明浅色面板，减少画面透色和背景层次的杂乱感。
+- 从深色主题进入这些页面时也使用可读的浅色控件、菜单和深色系统栏图标。
+- 移除设置首页顶部的搜索栏，分类列表从首项直接开始。
+
+### Verification
+
+- 发布版本、安装包与验证记录见 [v0.6.6 发布说明](docs/releases/v0.6.6.md)。
+
 ## <a id="v0.6.5"></a>[v0.6.5] - 2026-11-18
 
 ### Fixed

@@ -10,12 +10,12 @@ abstract final class MediaCraftUi {
   static const sage = Color(0xffdbe5dc);
   static const outline = Color(0xffd8ded8);
 
-  static const viewerSurface = Color(0xff101513);
-  static const viewerPanel = Color(0xe61b211f);
-  static const viewerPanelSoft = Color(0xd9242b28);
-  static const viewerOutline = Color(0x33ffffff);
-  static const viewerForeground = Color(0xfff3f5f0);
-  static const viewerForegroundMuted = Color(0xffb9c1bb);
+  static const viewerSurface = paper;
+  static const viewerPanel = paperElevated;
+  static const viewerPanelSoft = paperElevated;
+  static const viewerOutline = outline;
+  static const viewerForeground = ink;
+  static const viewerForegroundMuted = inkMuted;
 
   static const radiusSmall = 6.0;
   static const radiusMedium = 8.0;

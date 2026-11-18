@@ -42,119 +42,99 @@ class _VideoControlOverlayState extends State<VideoControlOverlay> with SingleTi
 
   @override
   Widget build(BuildContext context) {
-    final baseTheme = Theme.of(context);
-    final controlsTheme = baseTheme.copyWith(
-      brightness: Brightness.dark,
-      colorScheme: baseTheme.colorScheme.copyWith(
-        brightness: Brightness.dark,
-        surface: MediaCraftUi.viewerPanel,
-        onSurface: MediaCraftUi.viewerForeground,
-        onSurfaceVariant: MediaCraftUi.viewerForegroundMuted,
-        outline: MediaCraftUi.viewerOutline,
-        outlineVariant: MediaCraftUi.viewerOutline,
-      ),
-      iconTheme: baseTheme.iconTheme.copyWith(color: MediaCraftUi.viewerForeground),
-      textTheme: baseTheme.textTheme.apply(
-        bodyColor: MediaCraftUi.viewerForeground,
-        displayColor: MediaCraftUi.viewerForeground,
-      ),
-    );
-    return Theme(
-      data: controlsTheme,
-      child: StreamBuilder<PlaybackStatus>(
-        stream: statusStream,
-        builder: (context, _) {
-          // do not use stream snapshot because it is obsolete when switching between videos
-          final status = controller?.status ?? .idle;
+    return StreamBuilder<PlaybackStatus>(
+      stream: statusStream,
+      builder: (context, _) {
+        // do not use stream snapshot because it is obsolete when switching between videos
+        final status = controller?.status ?? .idle;
 
-          if (status == .error) {
-            const action = EntryAction.openVideoPlayer;
-            return Align(
-              alignment: .centerRight,
-              child: OverlayButton(
+        if (status == .error) {
+          const action = EntryAction.openVideoPlayer;
+          return Align(
+            alignment: .centerRight,
+            child: OverlayButton(
+              scale: scale,
+              child: IconButton(
+                icon: action.getIcon(),
+                onPressed: entry.trashed ? null : () => widget.onActionSelected(action),
+                tooltip: action.getText(context),
+              ),
+            ),
+          );
+        }
+
+        Widget progressBar = VideoProgressBar(
+          controller: controller,
+          scale: scale,
+        );
+        if (controller?.isSlowMotion ?? false) {
+          progressBar = Column(
+            children: [
+              SlowMotionBar(
+                controller: controller,
                 scale: scale,
-                child: IconButton(
-                  icon: action.getIcon(),
-                  onPressed: entry.trashed ? null : () => widget.onActionSelected(action),
-                  tooltip: action.getText(context),
+              ),
+              const SizedBox(height: 8),
+              progressBar,
+            ],
+          );
+        }
+        final controls = VideoControlRow(
+          controller: controller,
+          scale: scale,
+          canOpenVideoPlayer: !entry.trashed,
+          onActionSelected: widget.onActionSelected,
+        );
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            var progressOverControls = false;
+            final actions = context.select<Settings, List<EntryAction>>((v) => v.videoControlActions);
+            if (actions.isNotEmpty) {
+              final availableWidth = constraints.maxWidth - _padding - VideoControlRow.computeWidth(context, actions);
+              progressOverControls = availableWidth < _progressOverControlsWidthThreshold;
+            }
+            final progressAndControls = progressOverControls
+                ? [
+                    progressBar,
+                    const SizedBox(height: _padding),
+                    controls,
+                  ]
+                : [
+                    Row(
+                      crossAxisAlignment: .end,
+                      textDirection: ViewerBottomOverlay.actionsDirection,
+                      children: [
+                        Expanded(child: progressBar),
+                        if (actions.isNotEmpty) const SizedBox(width: _padding),
+                        controls,
+                      ],
+                    ),
+                  ];
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                color: MediaCraftUi.viewerPanelSoft,
+                border: Border.all(color: MediaCraftUi.viewerOutline),
+                borderRadius: BorderRadius.circular(MediaCraftUi.radiusLarge),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(_padding),
+                child: Column(
+                  crossAxisAlignment: .end,
+                  textDirection: ViewerBottomOverlay.actionsDirection,
+                  children: [
+                    VideoABRepeatOverlay(
+                      controller: controller,
+                      scale: scale,
+                    ),
+                    ...progressAndControls,
+                  ],
                 ),
               ),
             );
-          }
-
-          Widget progressBar = VideoProgressBar(
-            controller: controller,
-            scale: scale,
-          );
-          if (controller?.isSlowMotion ?? false) {
-            progressBar = Column(
-              children: [
-                SlowMotionBar(
-                  controller: controller,
-                  scale: scale,
-                ),
-                const SizedBox(height: 8),
-                progressBar,
-              ],
-            );
-          }
-          final controls = VideoControlRow(
-            controller: controller,
-            scale: scale,
-            canOpenVideoPlayer: !entry.trashed,
-            onActionSelected: widget.onActionSelected,
-          );
-
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              var progressOverControls = false;
-              final actions = context.select<Settings, List<EntryAction>>((v) => v.videoControlActions);
-              if (actions.isNotEmpty) {
-                final availableWidth = constraints.maxWidth - _padding - VideoControlRow.computeWidth(context, actions);
-                progressOverControls = availableWidth < _progressOverControlsWidthThreshold;
-              }
-              final progressAndControls = progressOverControls
-                  ? [
-                      progressBar,
-                      const SizedBox(height: _padding),
-                      controls,
-                    ]
-                  : [
-                      Row(
-                        crossAxisAlignment: .end,
-                        textDirection: ViewerBottomOverlay.actionsDirection,
-                        children: [
-                          Expanded(child: progressBar),
-                          if (actions.isNotEmpty) const SizedBox(width: _padding),
-                          controls,
-                        ],
-                      ),
-                    ];
-              return DecoratedBox(
-                decoration: BoxDecoration(
-                  color: MediaCraftUi.viewerPanelSoft,
-                  border: Border.all(color: MediaCraftUi.viewerOutline),
-                  borderRadius: BorderRadius.circular(MediaCraftUi.radiusLarge),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(_padding),
-                  child: Column(
-                    crossAxisAlignment: .end,
-                    textDirection: ViewerBottomOverlay.actionsDirection,
-                    children: [
-                      VideoABRepeatOverlay(
-                        controller: controller,
-                        scale: scale,
-                      ),
-                      ...progressAndControls,
-                    ],
-                  ),
-                ),
-              );
-            },
-          );
-        },
-      ),
+          },
+        );
+      },
     );
   }
 }

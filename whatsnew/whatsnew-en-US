@@ -1,6 +1,6 @@
-In v0.6.5:
-- Keep media filters and header geometry stable during interaction.
-- Fix viewer controls, overlay transitions, and editor back handling.
-- Guard delayed map and search updates when leaving a page.
-- Preserve loaded settings and scroll position across layout changes.
+In v0.6.6:
+- Use a consistent light theme for media viewing, details, and editing.
+- Replace dark translucent panels with clean, opaque light surfaces.
+- Keep controls, menus, and system bar icons readable on light backgrounds.
+- Remove the search bar above the settings categories.
 Full changelog available on GitHub

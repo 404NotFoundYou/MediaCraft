@@ -1,0 +1,6 @@
+In v0.6.6:
+- Use a consistent light theme for media viewing, details, and editing.
+- Replace dark translucent panels with clean, opaque light surfaces.
+- Keep controls, menus, and system bar icons readable on light backgrounds.
+- Remove the search bar above the settings categories.
+Full changelog available on GitHub

@@ -86,87 +86,67 @@ class const ViewerTopOverlay({
             ),
         ];
 
-        final baseTheme = Theme.of(context);
-        final overlayTheme = baseTheme.copyWith(
-          brightness: Brightness.dark,
-          colorScheme: baseTheme.colorScheme.copyWith(
-            brightness: Brightness.dark,
-            surface: MediaCraftUi.viewerPanel,
-            onSurface: MediaCraftUi.viewerForeground,
-            onSurfaceVariant: MediaCraftUi.viewerForegroundMuted,
-            outlineVariant: MediaCraftUi.viewerOutline,
-          ),
-          iconTheme: baseTheme.iconTheme.copyWith(color: MediaCraftUi.viewerForeground),
-          textTheme: baseTheme.textTheme.apply(
-            bodyColor: MediaCraftUi.viewerForeground,
-            displayColor: MediaCraftUi.viewerForeground,
-          ),
-        );
-
-        return Theme(
-          data: overlayTheme,
-          child: Column(
-            mainAxisSize: .min,
-            crossAxisAlignment: .start,
-            children: [
-              if (showInfo)
-                GestureDetector(
-                  onTap: () => expandedNotifier.value = !expandedNotifier.value,
-                  child: BlurredRect(
-                    enabled: blurred,
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        color: MediaCraftUi.viewerPanel,
-                        border: Border(
-                          bottom: BorderSide(color: MediaCraftUi.viewerOutline),
-                        ),
+        return Column(
+          mainAxisSize: .min,
+          crossAxisAlignment: .start,
+          children: [
+            if (showInfo)
+              GestureDetector(
+                onTap: () => expandedNotifier.value = !expandedNotifier.value,
+                child: BlurredRect(
+                  enabled: blurred,
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: MediaCraftUi.viewerPanel,
+                      border: Border(
+                        bottom: BorderSide(color: MediaCraftUi.viewerOutline),
                       ),
-                      child: SafeArea(
-                        bottom: false,
-                        minimum: EdgeInsets.only(
-                          left: viewInsetsPadding.left,
-                          top: viewInsetsPadding.top,
-                          right: viewInsetsPadding.right,
-                        ),
-                        child: ViewerDetailOverlay(
-                          index: index,
-                          entries: entries,
-                          hasCollection: hasCollection,
-                          multiPageController: multiPageController,
-                          expandedNotifier: expandedNotifier,
-                          availableSize: availableSize,
-                        ),
+                    ),
+                    child: SafeArea(
+                      bottom: false,
+                      minimum: EdgeInsets.only(
+                        left: viewInsetsPadding.left,
+                        top: viewInsetsPadding.top,
+                        right: viewInsetsPadding.right,
+                      ),
+                      child: ViewerDetailOverlay(
+                        index: index,
+                        entries: entries,
+                        hasCollection: hasCollection,
+                        multiPageController: multiPageController,
+                        expandedNotifier: expandedNotifier,
+                        availableSize: availableSize,
                       ),
                     ),
                   ),
                 ),
-              SafeArea(
-                top: !showInfo,
-                minimum: EdgeInsets.only(
-                  left: viewInsetsPadding.left,
-                  right: viewInsetsPadding.right,
-                ),
-                child: Row(
-                  crossAxisAlignment: .start,
-                  children: [
-                    if (startCornerChildren.isNotEmpty)
-                      Column(
-                        mainAxisSize: .min,
-                        crossAxisAlignment: .start,
-                        children: startCornerChildren.map(_decorateCornerChild).toList(),
-                      ),
-                    const Spacer(),
-                    if (endCornerChildren.isNotEmpty)
-                      Column(
-                        mainAxisSize: .min,
-                        crossAxisAlignment: .start,
-                        children: endCornerChildren.map(_decorateCornerChild).toList(),
-                      ),
-                  ],
-                ),
               ),
-            ],
-          ),
+            SafeArea(
+              top: !showInfo,
+              minimum: EdgeInsets.only(
+                left: viewInsetsPadding.left,
+                right: viewInsetsPadding.right,
+              ),
+              child: Row(
+                crossAxisAlignment: .start,
+                children: [
+                  if (startCornerChildren.isNotEmpty)
+                    Column(
+                      mainAxisSize: .min,
+                      crossAxisAlignment: .start,
+                      children: startCornerChildren.map(_decorateCornerChild).toList(),
+                    ),
+                  const Spacer(),
+                  if (endCornerChildren.isNotEmpty)
+                    Column(
+                      mainAxisSize: .min,
+                      crossAxisAlignment: .start,
+                      children: endCornerChildren.map(_decorateCornerChild).toList(),
+                    ),
+                ],
+              ),
+            ),
+          ],
         );
       },
     );

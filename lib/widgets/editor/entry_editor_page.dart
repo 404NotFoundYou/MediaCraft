@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:aves/model/entry/entry.dart';
 import 'package:aves/model/settings/settings.dart';
 import 'package:aves/model/viewer/view_state.dart';
+import 'package:aves/theme/colors.dart';
+import 'package:aves/theme/media_viewer_theme.dart';
+import 'package:aves/widgets/aves_app.dart';
 import 'package:aves/widgets/common/basic/divider.dart';
 import 'package:aves/widgets/editor/control_panel.dart';
 import 'package:aves/widgets/editor/image.dart';
@@ -11,6 +14,7 @@ import 'package:aves/widgets/editor/transform/cropper.dart';
 import 'package:aves/widgets/viewer/overlay/top/minimap.dart';
 import 'package:aves_magnifier/aves_magnifier.dart';
 import 'package:aves_model/aves_model.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
@@ -59,62 +63,71 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: MultiProvider(
-        providers: [
-          Provider<AvesMagnifierController>.value(value: _magnifierController),
-          Provider<TransformController>.value(value: _transformController),
-        ],
-        child: SafeArea(
-          child: Column(
-            children: [
-              Expanded(
-                child: Stack(
+    final editorTheme = mediaViewerTheme(context);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: AvesApp.themeSystemOverlayStyle(editorTheme),
+      child: Theme(
+        data: editorTheme,
+        child: AvesColorsProvider(
+          child: Scaffold(
+            body: MultiProvider(
+              providers: [
+                Provider<AvesMagnifierController>.value(value: _magnifierController),
+                Provider<TransformController>.value(value: _transformController),
+              ],
+              child: SafeArea(
+                child: Column(
                   children: [
-                    ClipRect(
-                      child: EditorImage(
-                        magnifierController: _magnifierController,
-                        transformController: _transformController,
-                        actionNotifier: _actionNotifier,
-                        marginNotifier: _marginNotifier,
-                        viewStateNotifier: _viewStateNotifier,
-                        entry: widget.entry,
-                      ),
-                    ),
-                    if (settings.showOverlayMinimap)
-                      PositionedDirectional(
-                        start: 8,
-                        bottom: 8,
-                        child: Minimap(viewStateNotifier: _viewStateNotifier),
-                      ),
-                    ValueListenableBuilder<EditorAction?>(
-                      valueListenable: _actionNotifier,
-                      builder: (context, action, child) {
-                        switch (action) {
-                          case .transform:
-                            return Cropper(
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          ClipRect(
+                            child: EditorImage(
                               magnifierController: _magnifierController,
                               transformController: _transformController,
+                              actionNotifier: _actionNotifier,
                               marginNotifier: _marginNotifier,
-                            );
-                          case null:
-                            return const SizedBox();
-                        }
-                      },
+                              viewStateNotifier: _viewStateNotifier,
+                              entry: widget.entry,
+                            ),
+                          ),
+                          if (settings.showOverlayMinimap)
+                            PositionedDirectional(
+                              start: 8,
+                              bottom: 8,
+                              child: Minimap(viewStateNotifier: _viewStateNotifier),
+                            ),
+                          ValueListenableBuilder<EditorAction?>(
+                            valueListenable: _actionNotifier,
+                            builder: (context, action, child) {
+                              switch (action) {
+                                case .transform:
+                                  return Cropper(
+                                    magnifierController: _magnifierController,
+                                    transformController: _transformController,
+                                    marginNotifier: _marginNotifier,
+                                  );
+                                case null:
+                                  return const SizedBox();
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const ThinDivider(),
+                    EditorControlPanel(
+                      entry: widget.entry,
+                      actionNotifier: _actionNotifier,
                     ),
                   ],
                 ),
               ),
-              const ThinDivider(),
-              EditorControlPanel(
-                entry: widget.entry,
-                actionNotifier: _actionNotifier,
-              ),
-            ],
+            ),
+            resizeToAvoidBottomInset: false,
           ),
         ),
       ),
-      resizeToAvoidBottomInset: false,
     );
   }
 

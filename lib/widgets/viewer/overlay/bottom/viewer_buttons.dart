@@ -56,40 +56,12 @@ class const ViewerButtons({
   Widget build(BuildContext context) {
     final actionDelegate = EntryActionDelegate(mainEntry, pageEntry, collection);
 
-    final baseTheme = Theme.of(context);
-    final controlsTheme = baseTheme.copyWith(
-      brightness: Brightness.dark,
-      colorScheme: baseTheme.colorScheme.copyWith(
-        brightness: Brightness.dark,
-        surface: MediaCraftUi.viewerPanel,
-        onSurface: MediaCraftUi.viewerForeground,
-        onSurfaceVariant: MediaCraftUi.viewerForegroundMuted,
-        outline: MediaCraftUi.viewerOutline,
-        outlineVariant: MediaCraftUi.viewerOutline,
-      ),
-      iconTheme: baseTheme.iconTheme.copyWith(color: MediaCraftUi.viewerForeground),
-      popupMenuTheme: baseTheme.popupMenuTheme.copyWith(
-        color: const Color(0xff252c29),
-        iconColor: MediaCraftUi.viewerForeground,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(MediaCraftUi.radiusMedium)),
-        ),
-      ),
-      textTheme: baseTheme.textTheme.apply(
-        bodyColor: MediaCraftUi.viewerForeground,
-        displayColor: MediaCraftUi.viewerForeground,
-      ),
-    );
-
     if (settings.useTvLayout) {
-      return Theme(
-        data: controlsTheme,
-        child: _TvButtonRowContent(
-          actionDelegate: actionDelegate,
-          scale: scale,
-          mainEntry: mainEntry,
-          pageEntry: pageEntry,
-        ),
+      return _TvButtonRowContent(
+        actionDelegate: actionDelegate,
+        scale: scale,
+        mainEntry: mainEntry,
+        pageEntry: pageEntry,
       );
     }
 
@@ -100,37 +72,34 @@ class const ViewerButtons({
     );
 
     final trashed = mainEntry.trashed;
-    return Theme(
-      data: controlsTheme,
-      child: SafeArea(
-        top: false,
-        bottom: false,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final buttonWidth = _buttonSize(context);
-            final availableCount = ((constraints.maxWidth - outerPadding * 2) / (buttonWidth + innerPadding)).floor();
-            return Selector<Settings, bool>(
-              selector: (context, s) => s.isRotationLocked,
-              builder: (context, _, child) {
-                final quickActions = (trashed ? EntryActions.trashed : settings.viewerQuickActions).where(isVisible).where(actionDelegate.canApply).take(max(0, availableCount - 1)).toList();
-                List<EntryAction> getMenuActions(List<EntryAction> categoryActions) {
-                  return categoryActions.where((action) => !quickActions.contains(action)).where(isVisible).toList();
-                }
+    return SafeArea(
+      top: false,
+      bottom: false,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final buttonWidth = _buttonSize(context);
+          final availableCount = ((constraints.maxWidth - outerPadding * 2) / (buttonWidth + innerPadding)).floor();
+          return Selector<Settings, bool>(
+            selector: (context, s) => s.isRotationLocked,
+            builder: (context, _, child) {
+              final quickActions = (trashed ? EntryActions.trashed : settings.viewerQuickActions).where(isVisible).where(actionDelegate.canApply).take(max(0, availableCount - 1)).toList();
+              List<EntryAction> getMenuActions(List<EntryAction> categoryActions) {
+                return categoryActions.where((action) => !quickActions.contains(action)).where(isVisible).toList();
+              }
 
-                return ViewerButtonRowContent(
-                  actionDelegate: actionDelegate,
-                  quickActions: quickActions,
-                  topLevelActions: getMenuActions(EntryActions.topLevel),
-                  exportActions: getMenuActions(EntryActions.export),
-                  videoActions: getMenuActions(EntryActions.video),
-                  scale: scale,
-                  mainEntry: mainEntry,
-                  pageEntry: pageEntry,
-                );
-              },
-            );
-          },
-        ),
+              return ViewerButtonRowContent(
+                actionDelegate: actionDelegate,
+                quickActions: quickActions,
+                topLevelActions: getMenuActions(EntryActions.topLevel),
+                exportActions: getMenuActions(EntryActions.export),
+                videoActions: getMenuActions(EntryActions.video),
+                scale: scale,
+                mainEntry: mainEntry,
+                pageEntry: pageEntry,
+              );
+            },
+          );
+        },
       ),
     );
   }

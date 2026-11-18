@@ -67,8 +67,6 @@ class _SettingsMobilePageState extends State<SettingsMobilePage> with FeedbackMi
           child: AnimationLimiter(
             child: SettingsListView(
               children: [
-                _SettingsSearchTile(onTap: () => _goToSearch(context)),
-                const SizedBox(height: 8),
                 ...SettingsPage.sections.map(
                   (section) => _SettingsSectionTile(section: section),
                 ),
@@ -83,26 +81,6 @@ class _SettingsMobilePageState extends State<SettingsMobilePage> with FeedbackMi
   void _goToSearch(BuildContext context) {
     Navigator.maybeOf(context)?.push(
       SettingsSearchPageRoute(context: context),
-    );
-  }
-}
-
-class _SettingsSearchTile extends StatelessWidget {
-  const new({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      child: ListTile(
-        leading: const Icon(AIcons.search),
-        title: Text(MaterialLocalizations.of(context).searchFieldLabel),
-        subtitle: Text(context.l10n.settingsPageTitle),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
-      ),
     );
   }
 }
