@@ -5,10 +5,8 @@ import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
-import android.util.Log
 import deckers.thibault.aves.channel.calls.Coresult.Companion.safe
 import deckers.thibault.aves.model.provider.MediaStoreImageProvider
-import deckers.thibault.aves.utils.LogUtils
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
@@ -23,7 +21,7 @@ class MediaStoreHandler(private val context: Context) : MethodCallHandler {
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "checkObsoleteContentIds" -> ioScope.launch { safe(call, result, ::checkObsoleteContentIds) }
-            "checkObsoletePaths" -> ioScope.launch { safe(call, result, ::checkObsoletePaths) }
+            "checkKnownEntries" -> ioScope.launch { safe(call, result, ::checkKnownEntries) }
             "getChangedUris" -> ioScope.launch { safe(call, result, ::getChangedUris) }
             "getGenerationByVolume" -> ioScope.launch { safe(call, result, ::getGenerationByVolume) }
             "scanFile" -> ioScope.launch { safe(call, result, ::scanFile) }
@@ -32,7 +30,7 @@ class MediaStoreHandler(private val context: Context) : MethodCallHandler {
     }
 
     private fun checkObsoleteContentIds(call: MethodCall, result: MethodChannel.Result) {
-        val knownContentIds = call.argument<List<Number?>>("knownContentIds")?.map { it?.toLong() }
+        val knownContentIds = call.argument<List<Number>>("knownContentIds")?.map { it.toLong() }
         if (knownContentIds == null) {
             result.error("checkObsoleteContentIds-args", "missing arguments", null)
             return
@@ -40,13 +38,13 @@ class MediaStoreHandler(private val context: Context) : MethodCallHandler {
         result.success(MediaStoreImageProvider().checkObsoleteContentIds(context, knownContentIds))
     }
 
-    private fun checkObsoletePaths(call: MethodCall, result: MethodChannel.Result) {
-        val knownPathById = call.argument<Map<Number?, String?>>("knownPathById")?.mapKeys { it.key?.toLong() }
+    private fun checkKnownEntries(call: MethodCall, result: MethodChannel.Result) {
+        val knownPathById = call.argument<Map<Number, String?>>("knownPathById")?.mapKeys { it.key.toLong() }
         if (knownPathById == null) {
-            result.error("checkObsoletePaths-args", "missing arguments", null)
+            result.error("checkKnownEntries-args", "missing arguments", null)
             return
         }
-        result.success(MediaStoreImageProvider().checkObsoletePaths(context, knownPathById))
+        result.success(MediaStoreImageProvider().checkKnownEntries(context, knownPathById))
     }
 
     private fun getChangedUris(call: MethodCall, result: MethodChannel.Result) {
@@ -60,18 +58,9 @@ class MediaStoreHandler(private val context: Context) : MethodCallHandler {
     }
 
     private fun getGenerationByVolume(@Suppress("unused_parameter") call: MethodCall, result: MethodChannel.Result) {
-        val generationByVolume: Map<String, Long?>? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        val generationByVolume = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             MediaStore.getExternalVolumeNames(context).associateWith { volumeName ->
-                try {
-                    MediaStore.getGeneration(context, volumeName)
-                } catch (ex: Exception) {
-                    if (ex is IllegalArgumentException || ex is IllegalStateException) {
-                        Log.w(LOG_TAG, "failed to get generation for volume=$volumeName", ex)
-                        null
-                    } else {
-                        throw ex
-                    }
-                }
+                MediaStore.getGeneration(context, volumeName)
             }
         } else {
             null
@@ -86,7 +75,6 @@ class MediaStoreHandler(private val context: Context) : MethodCallHandler {
     }
 
     companion object {
-        private val LOG_TAG = LogUtils.createTag<MediaStoreHandler>()
         const val CHANNEL = "deckers.thibault/aves/media_store"
     }
 }

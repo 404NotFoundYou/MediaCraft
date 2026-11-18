@@ -155,6 +155,29 @@ class DuplicateEngineTest {
     }
 
     @Test
+    fun largeDuplicateGroupUsesAtMostThreeScansWorthOfInput() = runBlocking {
+        val bytes = ByteArray(8 * 1024 * 1024) { it.toByte() }
+        val candidates = (1L..8L).map { candidate(it, bytes.size.toLong()) }
+        val bytesReadByUri = mutableMapOf<String, Long>()
+        val engine = DuplicateEngine(DuplicateInputSource { candidate ->
+            object : FilterInputStream(ByteArrayInputStream(bytes)) {
+                override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
+                    super.read(buffer, offset, length).also { count ->
+                        if (count > 0) bytesReadByUri[candidate.uri] = bytesReadByUri.getOrDefault(candidate.uri, 0) + count
+                    }
+            }
+        })
+
+        val result = engine.scan(candidates) { _, _, _ -> }
+        val totalRead = bytesReadByUri.values.sum()
+        println("Duplicate scan input: $totalRead bytes; representative: ${bytesReadByUri[candidates.first().uri]} bytes")
+
+        assertTrue(result.issues.isEmpty())
+        assertEquals(candidates, result.groups.single().members)
+        assertTrue(totalRead <= (3L * candidates.size - 2) * bytes.size, "Scanning identical files should not perform all-pairs comparisons")
+    }
+
+    @Test
     fun shortReadsDoNotCauseEqualContentToBeMissed() = runBlocking {
         val first = candidate(1, 5)
         val second = candidate(2, 5)

@@ -236,7 +236,7 @@ class AvesEntry with AvesEntryBase {
     _directory = null;
     _fileName = null;
     _extension = null;
-    _bestTitle = null;
+    _invalidateBestTitle();
   }
 
   @override
@@ -333,7 +333,7 @@ class AvesEntry with AvesEntryBase {
 
   set sourceTitle(String? sourceTitle) {
     _sourceTitle = sourceTitle;
-    _bestTitle = null;
+    _invalidateBestTitle();
   }
 
   int? get dateModifiedMillis => _dateModifiedMillis;
@@ -375,12 +375,19 @@ class AvesEntry with AvesEntryBase {
     return _tags!;
   }
 
-  String? _bestTitle;
+  String? _bestTitle, _bestTitleUpperCase;
 
   @override
   String? get bestTitle {
     _bestTitle ??= _catalogMetadata?.xmpTitle?.isNotEmpty == true ? _catalogMetadata!.xmpTitle : (fileNameWithoutExtension ?? sourceTitle);
     return _bestTitle;
+  }
+
+  String? get bestTitleUpperCase => _bestTitleUpperCase ??= bestTitle?.toUpperCase();
+
+  void _invalidateBestTitle() {
+    _bestTitle = null;
+    _bestTitleUpperCase = null;
   }
 
   int? get catalogDateMillis => _catalogDateMillis;
@@ -406,7 +413,7 @@ class AvesEntry with AvesEntryBase {
 
     setCatalogDate(newMetadata?.dateMillis, newMetadata?.timeZoneOffsetMinutes);
     _catalogMetadata = newMetadata;
-    _bestTitle = null;
+    _invalidateBestTitle();
     _tags = null;
     metadataChangeNotifier.notify();
 
@@ -505,7 +512,7 @@ class AvesEntry with AvesEntryBase {
   }) async {
     // clear derived fields
     _bestDate = null;
-    _bestTitle = null;
+    _invalidateBestTitle();
     _tags = null;
 
     if (persist) {

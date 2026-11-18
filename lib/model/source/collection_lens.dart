@@ -178,6 +178,8 @@ class CollectionLens with ChangeNotifier {
   }
 
   void setLiveQuery(String query) {
+    final current = filters.whereType<QueryFilter>().firstWhereOrNull((filter) => filter.live);
+    if (current == null ? query.isEmpty : current.query == query && current.calendar == calendar) return;
     filters.removeWhere((v) => v is QueryFilter && v.live);
     if (query.isNotEmpty) {
       filters.add(QueryFilter(query, calendar, live: true));
@@ -236,46 +238,50 @@ class CollectionLens with ChangeNotifier {
   }
 
   void _stackBursts() {
-    final byBurstKey = groupBy<AvesEntry, String?>(_filteredSortedEntries, (entry) => entry.getBurstKey(burstPatterns)).whereNotNullKey();
-    byBurstKey.forEach((burstKey, stackedEntries) {
-      if (stackedEntries.length > 1) {
-        stackedEntries.sort(AvesEntrySort.compareByName);
-        final mainEntry = stackedEntries.first;
-        final subEntries = stackedEntries.skip(1).toList();
-
-        final stackEntry = mainEntry.copyWith(stackedEntries: stackedEntries);
-        _syntheticEntries.add(stackEntry);
-
-        subEntries.forEach(_filteredSortedEntries.remove);
-        _filteredSortedEntries.replace(mainEntry, stackEntry);
-      }
-    });
+    if (burstPatterns.isEmpty) return;
+    final byBurstKey = <String, List<AvesEntry>>{};
+    for (final entry in _filteredSortedEntries) {
+      final key = entry.getBurstKey(burstPatterns);
+      if (key != null) byBurstKey.putIfAbsent(key, () => []).add(entry);
+    }
+    _replaceWithStacks(byBurstKey.values.where((entries) => entries.length > 1).map((entries) => entries..sort(AvesEntrySort.compareByName)));
   }
 
   void _stackDevelopedRaws() {
-    final allRawEntries = _filteredSortedEntries.where((entry) => entry.isRaw).toSet();
-    if (allRawEntries.isNotEmpty) {
-      final allDevelopedEntries = _filteredSortedEntries.where((entry) => MimeTypes.developedRawImages.contains(entry.mimeType)).toSet();
-      final rawEntriesByDir = groupBy<AvesEntry, String?>(allRawEntries, (entry) => entry.directory).whereNotNullKey();
-      rawEntriesByDir.forEach((dir, dirRawEntries) {
-        final dirDevelopedEntries = allDevelopedEntries.where((entry) => entry.directory == dir).toSet();
-        for (final rawEntry in dirRawEntries) {
-          final rawFileName = rawEntry.fileNameWithoutExtension;
-          final developedEntry = dirDevelopedEntries.firstWhereOrNull((entry) => entry.fileNameWithoutExtension == rawFileName);
-          if (developedEntry != null) {
-            final mainEntry = developedEntry;
-            final subEntry = rawEntry;
+    final rawEntries = _filteredSortedEntries.where((entry) => entry.isRaw).toSet();
+    if (rawEntries.isEmpty) return;
 
-            final stackedEntries = [mainEntry, subEntry];
-            final stackEntry = mainEntry.copyWith(stackedEntries: stackedEntries);
-            _syntheticEntries.add(stackEntry);
-
-            _filteredSortedEntries.remove(subEntry);
-            _filteredSortedEntries.replace(mainEntry, stackEntry);
-          }
-        }
-      });
+    final developedByName = <(String, String?), AvesEntry>{};
+    for (final entry in _filteredSortedEntries) {
+      final directory = entry.directory;
+      if (directory != null && MimeTypes.developedRawImages.contains(entry.mimeType)) {
+        developedByName.putIfAbsent((directory, entry.fileNameWithoutExtension), () => entry);
+      }
     }
+    final byMainEntry = <AvesEntry, List<AvesEntry>>{};
+    for (final raw in rawEntries) {
+      final main = developedByName[(raw.directory, raw.fileNameWithoutExtension)];
+      if (main != null) byMainEntry.putIfAbsent(main, () => [main]).add(raw);
+    }
+    _replaceWithStacks(byMainEntry.values);
+  }
+
+  void _replaceWithStacks(Iterable<List<AvesEntry>> groups) {
+    final replacements = <AvesEntry, AvesEntry?>{};
+    for (final members in groups) {
+      for (final entry in members.skip(1)) {
+        replacements[entry] = null;
+      }
+      final main = members.first;
+      final stack = main.copyWith(stackedEntries: members);
+      _syntheticEntries.add(stack);
+      replacements[main] = stack;
+    }
+    if (replacements.isEmpty) return;
+    _filteredSortedEntries = [
+      for (final entry in _filteredSortedEntries)
+        if ((replacements.containsKey(entry) ? replacements[entry] : entry) case final AvesEntry result) result,
+    ];
   }
 
   void _applySort() {

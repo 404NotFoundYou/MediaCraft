@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:aves_map/aves_map.dart';
 import 'package:aves_services_platform/src/coordinates.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_baidu_mapapi_base/flutter_baidu_mapapi_base.dart';
 import 'package:flutter_baidu_mapapi_map/flutter_baidu_mapapi_map.dart';
@@ -10,6 +11,7 @@ import 'package:latlong2/latlong.dart' as ll;
 import 'package:provider/provider.dart';
 
 typedef _BaiduMapSession = ({BMFMapController controller, int generation});
+typedef _MarkerVisual = ({ll.LatLng position, Uint8List bitmap, String? markerId});
 
 @visibleForTesting
 Future<void> replaceTrackedOverlays<T>({
@@ -89,8 +91,11 @@ class _EntryBaiduMapState<T> extends State<EntryBaiduMap<T>> {
   final BaiduCoordinates coordinates = BaiduCoordinates();
   final List<StreamSubscription<Object?>> _subscriptions = [];
   final Map<MarkerKey<T>, Uint8List> _markerBitmaps = {};
+  final Map<LocalKey, ({_MarkerVisual visual, BMFMarker marker})> _activeMarkers = {};
   final List<BMFPolyline> _trackOverlays = [];
 
+  List<GeoTrack>? _syncedTracks;
+  bool _markersNeedReset = false;
   BMFMapController? _serviceMapController;
   int _sessionGeneration = 0;
   Map<MarkerKey<T>, GeoEntry<T>> _geoEntryByMarkerKey = {};
@@ -241,7 +246,10 @@ class _EntryBaiduMapState<T> extends State<EntryBaiduMap<T>> {
     if (!mounted) return;
     _serviceMapController = controller;
     final session = (controller: controller, generation: ++_sessionGeneration);
+    _activeMarkers.clear();
+    _markersNeedReset = false;
     _trackOverlays.clear();
+    _syncedTracks = null;
     controller.setMapDidLoadCallback(
       callback: () {
         if (!_isSessionActive(session)) return;
@@ -287,7 +295,7 @@ class _EntryBaiduMapState<T> extends State<EntryBaiduMap<T>> {
         final session = _currentSession;
         if (session == null) break;
         try {
-          await _syncOverlays(session);
+          await Future.wait([_syncMarkers(session), _syncTracks(session)]);
         } catch (error, stack) {
           if (!_isSessionActive(session) || error is _BaiduMapSessionEnded) break;
           debugPrint('Failed to synchronize Baidu map overlays: $error\n$stack');
@@ -300,49 +308,70 @@ class _EntryBaiduMapState<T> extends State<EntryBaiduMap<T>> {
     }
   }
 
-  Future<void> _syncOverlays(_BaiduMapSession session) async {
+  Future<void> _syncMarkers(_BaiduMapSession session) async {
     final controller = session.controller;
-
-    final markers = <BMFMarker>[];
-    final markerEntries = _geoEntryByMarkerKey.entries.where((entry) {
-      final bytes = _markerBitmaps[entry.key];
-      final latitude = entry.value.latitude;
-      final longitude = entry.value.longitude;
-      return bytes != null && latitude != null && longitude != null;
-    }).toList();
-    final markerPositions = await coordinates.toMapMany(
-      markerEntries.map((entry) => ll.LatLng(entry.value.latitude!, entry.value.longitude!)).toList(),
-    );
-    _ensureSessionActive(session);
-    for (var i = 0; i < markerEntries.length; i++) {
-      final entry = markerEntries[i];
-      markers.add(
-        BMFMarker.iconData(
-          position: markerPositions[i],
-          iconData: _markerBitmaps[entry.key]!,
-          anchorX: .5,
-          anchorY: 1,
-          customMap: {'markerId': entry.value.markerId},
-        ),
-      );
+    const dotKey = ValueKey('dot');
+    final desired = <LocalKey, _MarkerVisual>{};
+    for (final MapEntry(:key, value: entry) in _geoEntryByMarkerKey.entries) {
+      final bitmap = _markerBitmaps[key];
+      final latitude = entry.latitude, longitude = entry.longitude;
+      if (bitmap != null && latitude != null && longitude != null) {
+        desired[key] = (position: ll.LatLng(latitude, longitude), bitmap: bitmap, markerId: entry.markerId);
+      }
     }
-
     final dotLocation = widget.dotLocationNotifier?.value;
-    if (dotLocation != null && _dotMarkerBitmap != null) {
-      markers.add(
-        BMFMarker.iconData(
-          position: await coordinates.toMap(dotLocation),
-          iconData: _dotMarkerBitmap!,
-          anchorX: .5,
-          anchorY: .5,
-          zIndex: 1,
-          customMap: const {'markerId': 'dot'},
-        ),
-      );
+    final dotBitmap = _dotMarkerBitmap;
+    if (dotLocation != null && dotBitmap != null) {
+      desired[dotKey] = (position: dotLocation, bitmap: dotBitmap, markerId: 'dot');
     }
 
+    if (_markersNeedReset) {
+      await _requireSuccess(session, '清理百度地图标记', controller.cleanAllMarkers);
+      _activeMarkers.clear();
+      _markersNeedReset = false;
+    }
+    final changed = desired.entries.where((kv) => _activeMarkers[kv.key]?.visual != kv.value).toList();
+    final obsolete = _activeMarkers.keys.where((key) => _activeMarkers[key]!.visual != desired[key]).toList();
+    if (changed.isEmpty && obsolete.isEmpty) return;
+
+    final positions = await coordinates.toMapMany(changed.map((kv) => kv.value.position).toList());
+    _ensureSessionActive(session);
+    try {
+      for (final key in obsolete) {
+        final marker = _activeMarkers[key]!.marker;
+        await _requireSuccess(session, '移除百度地图标记', () => controller.removeMarker(marker));
+        _activeMarkers.remove(key);
+      }
+      for (var i = 0; i < changed.length; i++) {
+        final MapEntry(:key, value: visual) = changed[i];
+        final isDot = key == dotKey;
+        final marker = BMFMarker.iconData(
+          position: positions[i],
+          iconData: visual.bitmap,
+          anchorX: .5,
+          anchorY: isDot ? .5 : 1,
+          zIndex: isDot ? 1 : 0,
+          customMap: {'markerId': visual.markerId},
+        );
+        await _requireSuccess(session, '添加百度地图标记', () => controller.addMarker(marker));
+        _activeMarkers[key] = (visual: visual, marker: marker);
+      }
+    } catch (_) {
+      // Native failures can have side effects before the reply arrives.
+      if (_isSessionActive(session)) _markersNeedReset = true;
+      rethrow;
+    }
+  }
+
+  Future<void> _syncTracks(_BaiduMapSession session) async {
+    final tracks = widget.tracksNotifier.value;
+    final previous = _syncedTracks;
+    if (identical(previous, tracks) || (previous != null && previous.length == tracks.length && Iterable<int>.generate(tracks.length).every((i) => previous[i].color == tracks[i].color && listEquals(previous[i].points, tracks[i].points)))) {
+      _syncedTracks = tracks;
+      return;
+    }
     final polylines = <BMFPolyline>[];
-    for (final track in widget.tracksNotifier.value) {
+    for (final track in tracks) {
       if (track.points.length < 2) continue;
       final points = await coordinates.toMapMany(track.points);
       _ensureSessionActive(session);
@@ -359,14 +388,15 @@ class _EntryBaiduMapState<T> extends State<EntryBaiduMap<T>> {
       );
     }
 
-    await _requireSuccess(session, '清理百度地图标记', controller.cleanAllMarkers);
-    if (markers.isNotEmpty) await _requireSuccess(session, '添加百度地图标记', () => controller.addMarkers(markers));
+    _syncedTracks = null;
     await replaceTrackedOverlays(
       active: _trackOverlays,
       replacements: polylines,
-      remove: (overlay) => _requireSuccess(session, '清理百度地图轨迹', () => controller.removeOverlay(overlay.id)),
-      add: (overlay) => _requireSuccess(session, '添加百度地图轨迹', () => controller.addPolyline(overlay)),
+      remove: (overlay) => _requireSuccess(session, '清理百度地图轨迹', () => session.controller.removeOverlay(overlay.id)),
+      add: (overlay) => _requireSuccess(session, '添加百度地图轨迹', () => session.controller.addPolyline(overlay)),
     );
+    _ensureSessionActive(session);
+    _syncedTracks = tracks;
   }
 
   Future<void> _dispatchMapTap(_BaiduMapSession session, BMFCoordinate coordinate) async {

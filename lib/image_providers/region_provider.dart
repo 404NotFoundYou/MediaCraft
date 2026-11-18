@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:aves/ref/mime_types.dart';
+import 'package:aves/services/common/service_policy.dart';
 import 'package:aves/services/common/services.dart';
 import 'package:aves_report/aves_report.dart';
 import 'package:equatable/equatable.dart';
@@ -37,6 +38,8 @@ class const RegionProvider(final RegionProviderKey key) extends ImageProvider<Re
         decode: decode,
         taskKey: key,
       );
+    } on CancelledException {
+      rethrow;
     } catch (error) {
       // loading may fail if the provided MIME type is incorrect (e.g. the Media Store may report a JPEG as a TIFF)
       debugPrint('$runtimeType _loadAsync failed for key=$key, error=$error');

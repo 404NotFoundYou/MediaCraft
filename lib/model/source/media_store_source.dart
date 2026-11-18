@@ -27,7 +27,7 @@ class MediaStoreSource extends CollectionSource {
   final Set<String> _changedUris = {};
   int _activeLoads = 0, _changeRetryCount = 0;
   bool _refreshing = false, _disposed = false, _teardownComplete = false;
-  Map<String, int?>? _lastGenerationByVolume;
+  Map<String, int>? _lastGenerationByVolume;
   SourceScope _loadedScope, _targetScope;
   bool _canAnalyze = true;
   Future<void>? _essentialLoader;
@@ -119,7 +119,11 @@ class MediaStoreSource extends CollectionSource {
       await _essentialLoader;
       if (_disposed) return;
       addDirectories(albums: settings.pinnedFilters.whereType<StoredAlbumFilter>().map((v) => v.album).toSet());
-      await updateGeneration();
+      try {
+        _lastGenerationByVolume = await mediaStoreService.getGenerationByVolume();
+      } catch (error, stack) {
+        await reportService.recordError(error, stack);
+      }
       if (_disposed) return;
       final loadController = analysisController ?? AnalysisController();
       _loadControllers.add(loadController);
@@ -231,21 +235,29 @@ class MediaStoreSource extends CollectionSource {
     unawaited(reportService.setCustomKey('is_large_collection', isLargeCollection));
     unawaited(reportService.log('$runtimeType found ${knownEntries.length} known entries'));
 
-    debugPrint('$runtimeType load ${stopwatch.elapsed} check obsolete entries');
-    final knownDateByContentId = Map.fromEntries(knownLiveEntries.map((entry) => MapEntry(entry.contentId, entry.dateModifiedMillis)));
-    final knownContentIds = knownDateByContentId.keys.toList();
-    final removedContentIds = (await mediaStoreService.checkObsoleteContentIds(knownContentIds)).toSet();
-    if (_disposed) {
+    debugPrint('$runtimeType load ${stopwatch.elapsed} check known entries and paths');
+    final knownPathByContentId = <int, String?>{
+      for (final entry in knownLiveEntries)
+        if (entry.contentId case final int id) id: entry.path,
+    };
+    final (:removed, :moved) = await mediaStoreService.checkKnownEntries(knownPathByContentId).onError<Object>((error, stack) {
       knownEntries.where((entry) => !entry.isDisposed).forEach((entry) => entry.dispose());
-      return;
-    }
-    if (topEntries.isNotEmpty) {
-      final removedTopEntries = topEntries.where((entry) => removedContentIds.contains(entry.contentId));
-      await removeEntries(removedTopEntries.map((entry) => entry.uri).toSet(), includeTrash: false);
+      Error.throwWithStackTrace(error, stack);
+    });
+    final removedContentIds = removed.toSet();
+    try {
       if (_disposed) return;
+      if (topEntries.isNotEmpty && removedContentIds.isNotEmpty) {
+        final removedTopEntries = topEntries.where((entry) => removedContentIds.contains(entry.contentId));
+        await removeEntries(removedTopEntries.map((entry) => entry.uri).toSet(), includeTrash: false);
+      }
+      if (_disposed) return;
+    } finally {
+      if (_disposed) knownEntries.where((entry) => !entry.isDisposed).forEach((entry) => entry.dispose());
     }
     final removedEntries = knownEntries.where((entry) => removedContentIds.contains(entry.contentId)).toSet();
     knownEntries.removeAll(removedEntries);
+    removedEntries.where((entry) => !entry.isDisposed).forEach((entry) => entry.dispose());
 
     // show known entries
     debugPrint('$runtimeType load ${stopwatch.elapsed} add known entries');
@@ -305,7 +317,11 @@ class MediaStoreSource extends CollectionSource {
         analysisController: analysisController,
         directory: scopeDirectory,
         knownLiveEntries: knownLiveEntries,
-        knownDateByContentId: knownDateByContentId,
+        knownDateByContentId: {
+          for (final entry in knownLiveEntries) entry.contentId: entry.dateModifiedMillis,
+          // Some apps move media without updating its modification date.
+          for (final id in moved) id: null,
+        },
       );
       if (_disposed) return;
     } else {
@@ -337,19 +353,6 @@ class MediaStoreSource extends CollectionSource {
       recoveredEntries.forEach((entry) => entry.origin = EntryOrigins.mediaStoreContent);
       newEntries.addAll(recoveredEntries);
     }
-
-    // verify paths because some apps move files without updating their `last modified date`
-    debugPrint('$runtimeType load ${stopwatch.elapsed} check obsolete paths');
-    final knownPathByContentId = Map.fromEntries(knownLiveEntries.map((entry) => MapEntry(entry.contentId, entry.path)));
-    final movedContentIds = (await mediaStoreService.checkObsoletePaths(knownPathByContentId)).toSet();
-    if (_disposed) {
-      newEntries.where((entry) => !entry.isDisposed).forEach((entry) => entry.dispose());
-      return;
-    }
-    movedContentIds.forEach((contentId) {
-      // make obsolete by resetting its modified date
-      knownDateByContentId[contentId] = 0;
-    });
 
     // fetch new & modified entries
     debugPrint('$runtimeType load ${stopwatch.elapsed} fetch new entries');
@@ -462,21 +465,28 @@ class MediaStoreSource extends CollectionSource {
     );
 
     // clean up obsolete entries
-    final obsoleteContentIds = (await mediaStoreService.checkObsoleteContentIds(changedUriByContentId.keys.toList())).toSet();
-    if (_disposed) return {};
-    final obsoleteUris = obsoleteContentIds.map((contentId) => changedUriByContentId[contentId]).nonNulls.toSet();
-    await removeEntries(obsoleteUris, includeTrash: false);
-    if (_disposed) return {};
-    obsoleteContentIds.forEach(changedUriByContentId.remove);
+    if (changedUriByContentId.isNotEmpty) {
+      final obsoleteContentIds = await mediaStoreService.checkObsoleteContentIds(changedUriByContentId.keys.toList());
+      if (_disposed) return {};
+      final obsoleteUris = obsoleteContentIds.map(changedUriByContentId.remove).nonNulls.toSet();
+      await removeEntries(obsoleteUris, includeTrash: false);
+      if (_disposed) return {};
+    }
 
     // fetch new entries
     final tempUris = <String>{};
     final newEntries = <AvesEntry>{}, entriesToRefresh = <AvesEntry>{};
     try {
       final existingDirectories = <String>{};
-      final existingEntryByContentId = <int?, AvesEntry>{};
-      for (final entry in allEntries) {
-        existingEntryByContentId.putIfAbsent(entry.contentId, () => entry);
+      final existingEntryByContentId = <int, AvesEntry>{};
+      if (changedUriByContentId.isNotEmpty) {
+        for (final entry in allEntries) {
+          final id = entry.contentId;
+          if (id != null && changedUriByContentId.containsKey(id)) {
+            existingEntryByContentId.putIfAbsent(id, () => entry);
+            if (existingEntryByContentId.length == changedUriByContentId.length) break;
+          }
+        }
       }
       for (final kv in changedUriByContentId.entries) {
         final contentId = kv.key;
@@ -605,16 +615,20 @@ class MediaStoreSource extends CollectionSource {
 
   @override
   Future<void> checkForChanges() async {
+    if (_disposed || _essentialLoader == null) return;
     final sinceGeneration = _lastGenerationByVolume;
-    await updateGeneration();
-    if (sinceGeneration != null) {
-      _changedUris.addAll(await mediaStoreService.getChangedUris(sinceGeneration));
+    try {
+      final generation = await mediaStoreService.getGenerationByVolume();
+      if (_disposed || generation == null) return;
+      // Read the next baseline before querying so changes made during the query are not skipped.
+      final changedUris = await mediaStoreService.getChangedUris({for (final volume in generation.keys) volume: sinceGeneration?[volume]});
+      if (_disposed) return;
+      _changedUris.addAll(changedUris);
+      if (identical(_lastGenerationByVolume, sinceGeneration)) _lastGenerationByVolume = generation;
       onStoreChanged(null);
+    } catch (error, stack) {
+      await reportService.recordError(error, stack);
     }
-  }
-
-  Future<void> updateGeneration() async {
-    _lastGenerationByVolume = await mediaStoreService.getGenerationByVolume();
   }
 
   // vault

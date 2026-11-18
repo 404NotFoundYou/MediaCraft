@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CancellationException
@@ -52,9 +53,12 @@ class DuplicateHandler(
         }
         scanJob = scope.launch {
             try {
+                val progressThrottle = DuplicateScanProgressThrottle(SystemClock::elapsedRealtime)
                 val outcome = engine.scan(candidates) { processed, total, stage ->
-                    mainHandler.post {
-                        channel.invokeMethod("scanProgress", mapOf("processed" to processed, "total" to total, "stage" to stage))
+                    if (progressThrottle.shouldEmit(stage)) {
+                        mainHandler.post {
+                            channel.invokeMethod("scanProgress", mapOf("processed" to processed, "total" to total, "stage" to stage))
+                        }
                     }
                 }
                 replySuccess(result, outcome.toMap(cancelled = false))
@@ -140,5 +144,18 @@ class DuplicateHandler(
 
     companion object {
         const val CHANNEL = "deckers.thibault/aves/duplicates"
+    }
+}
+
+internal class DuplicateScanProgressThrottle(private val nowMillis: () -> Long) {
+    private var lastStage: String? = null
+    private var lastEmissionMillis = 0L
+
+    fun shouldEmit(stage: String): Boolean {
+        val now = nowMillis()
+        if (stage == lastStage && now - lastEmissionMillis < 100L) return false
+        lastStage = stage
+        lastEmissionMillis = now
+        return true
     }
 }

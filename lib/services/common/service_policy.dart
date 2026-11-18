@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:math';
 
 import 'package:aves/model/device.dart';
+import 'package:aves_report/aves_report.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 
@@ -10,6 +11,7 @@ final ServicePolicy platformServicePolicy = ServicePolicy._private();
 final ServicePolicy scanServicePolicy = ServicePolicy._private();
 
 class ServicePolicy._private() {
+  static const _maxPausedTasks = 128;
   final StreamController<QueueState> _queueStreamController = StreamController.broadcast();
   final Map<Object, (int, _Task)> _paused = {};
   final SplayTreeMap<int, LinkedHashMap<Object, _Task>> _queues = SplayTreeMap();
@@ -110,8 +112,22 @@ class ServicePolicy._private() {
     return _takeOut(key, priorities, (priority, task) => task.completer.completeError(CancelledException()));
   }
 
-  bool pause(Object key, Iterable<int> priorities) {
-    return _takeOut(key, priorities, (priority, task) => _paused.putIfAbsent(key, () => (priority, task)));
+  bool pause(Object key, Iterable<int> priorities, {required ValueChanged<Object> onEvicted}) {
+    final paused = _takeOut(key, priorities, (priority, task) {
+      if (_paused.containsKey(key)) {
+        task.completer.completeError(CancelledException());
+        return;
+      }
+      _paused[key] = (priority, task);
+      if (_paused.length > _maxPausedTasks) {
+        final oldestKey = _paused.keys.first;
+        final (_, oldestTask) = _paused.remove(oldestKey)!;
+        onEvicted(oldestKey);
+        oldestTask.completer.completeError(CancelledException());
+      }
+    });
+    if (paused) _notifyQueueState();
+    return paused;
   }
 
   bool isPaused(Object key) => _paused.containsKey(key);
@@ -129,7 +145,9 @@ class const _Task<T>(
   final Completer<T> completer,
 );
 
-class CancelledException;
+class CancelledException extends UnreportedStateError {
+  new() : super('Queued request cancelled');
+}
 
 class ServiceCallPriority {
   static const int getFastThumbnail = 100;

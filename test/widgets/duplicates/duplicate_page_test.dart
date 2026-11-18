@@ -1,8 +1,14 @@
+import 'dart:async';
+import 'dart:ui' as ui;
+
+import 'package:aves/image_providers/thumbnail_provider.dart';
 import 'package:aves/model/duplicates/duplicate_models.dart';
 import 'package:aves/model/entry/entry.dart';
 import 'package:aves/model/settings/settings.dart';
 import 'package:aves/model/source/collection_source.dart';
+import 'package:aves/services/common/services.dart';
 import 'package:aves/services/duplicate_service.dart';
+import 'package:aves/services/media/media_fetch_service.dart';
 import 'package:aves/widgets/duplicates/duplicate_page.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,17 +16,58 @@ import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
 import '../../common.dart';
+import '../../fake/media_fetch_service.dart';
 import '../../fake/media_store_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUpAll(setUpAllServices);
+  setUpAll(() async {
+    await setUpAllServices();
+    await getIt.unregister<MediaFetchService>();
+    getIt.registerSingleton<MediaFetchService>(_PendingThumbnailService());
+  });
   setUp(() async {
     await setUpServices();
     settings.enableBin = true;
   });
   tearDownAll(tearDownAllServices);
+
+  testWidgets('大量重复组按需加载，滚动后仍保留勾选及保留项', (tester) async {
+    final fixture = _DuplicatePageFixture();
+    final groups = [fixture.group];
+    for (var i = 1; i < 120; i++) {
+      final keeper = FakeMediaStoreService.newImage('/storage/emulated/0/Pictures', 'keeper$i', id: 2 * i + 1);
+      final duplicate = FakeMediaStoreService.newImage('/storage/emulated/0/Pictures', 'duplicate$i', id: 2 * i + 2);
+      fixture.source.entries.addAll([keeper, duplicate]);
+      groups.add(
+        DuplicateGroup(id: 'group$i', sizeBytes: 42, digest: 'digest$i', members: [DuplicateMember.fromEntry(keeper), DuplicateMember.fromEntry(duplicate)]),
+      );
+    }
+    fixture.service.result = DuplicateScanResult(groups: groups, issues: const [], cancelled: false);
+    await fixture.pump(tester, moveAction: (context, {required entries, required beforeMove}) async => false);
+    expect(fixture.source.entryLookups, lessThan(20), reason: '首屏不应该查询尚未滚入视口的所有重复组');
+
+    final scrollable = find.byType(Scrollable);
+    final duplicateCheckbox = find.byWidgetPredicate((widget) => widget is Checkbox && widget.semanticLabel == '清理 ${fixture.deleteEntry.bestTitle}');
+    await tester.scrollUntilVisible(duplicateCheckbox, 100, scrollable: scrollable);
+    await Scrollable.ensureVisible(tester.element(duplicateCheckbox), alignment: .5);
+    await tester.pumpAndSettle();
+    await tester.tap(duplicateCheckbox);
+    await tester.pumpAndSettle();
+    final scrollPosition = tester.state<ScrollableState>(scrollable).position;
+    final firstGroupOffset = scrollPosition.pixels;
+    scrollPosition.jumpTo(firstGroupOffset + 1500);
+    await tester.pumpAndSettle();
+    expect(duplicateCheckbox, findsNothing);
+    expect(find.text('已选 1 项'), findsOneWidget);
+
+    scrollPosition.jumpTo(firstGroupOffset);
+    await tester.pumpAndSettle();
+    final keeperCheckbox = find.byWidgetPredicate((widget) => widget is Checkbox && widget.semanticLabel == '清理 ${fixture.keeperEntry.bestTitle}');
+    expect(tester.widget<Checkbox>(keeperCheckbox).onChanged, isNull, reason: '保留项始终不能被勾选清理');
+    expect(tester.widget<Checkbox>(duplicateCheckbox).value, isTrue, reason: '离开视口后重建卡片不能丢失勾选');
+  });
 
   testWidgets('取消确认不会进入移动流程', (tester) async {
     final fixture = _DuplicatePageFixture();
@@ -155,12 +202,29 @@ class _DuplicatePageFixture {
 
 class _FakeCollectionSource extends Fake implements CollectionSource {
   late Set<AvesEntry> entries;
+  int entryLookups = 0;
 
   @override
   Set<AvesEntry> get visibleEntries => entries;
 
   @override
-  AvesEntry? getEntryById(int id) => entries.where((entry) => entry.id == id).firstOrNull;
+  AvesEntry? getEntryById(int id) {
+    entryLookups++;
+    return entries.where((entry) => entry.id == id).firstOrNull;
+  }
+}
+
+class _PendingThumbnailService extends FakeMediaFetchService {
+  final _thumbnail = Completer<ui.Codec>();
+
+  @override
+  Future<T>? resumeLoading<T>(Object taskKey) => null;
+
+  @override
+  bool cancelThumbnail(Object taskKey) => false;
+
+  @override
+  Future<ui.Codec> getThumbnail({required bool decoded, required ThumbnailProviderKey request, ImageDecoderCallback? decode, Object? taskKey, int? priority}) => _thumbnail.future;
 }
 
 class _FakeDuplicateService extends DuplicateService {

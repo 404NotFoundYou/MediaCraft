@@ -127,8 +127,6 @@ class _DuplicatePageState extends State<DuplicatePage> {
     return ids.map(widget.source.getEntryById).whereType<AvesEntry>().where((entry) => !entry.trashed).toSet();
   }
 
-  int get _selectedBytes => _selectedEntries.fold(0, (sum, entry) => sum + (entry.sizeBytes ?? 0));
-
   Future<void> _reviewAndDelete() async {
     final result = _result;
     if (result == null || _selectedEntries.isEmpty || _submitting) return;
@@ -282,13 +280,16 @@ class _DuplicatePageState extends State<DuplicatePage> {
 
   @override
   Widget build(BuildContext context) {
+    final showActions = !_scanning && _scanError == null && _result?.cancelled == false && _result!.groups.isNotEmpty;
+    final selectedEntries = showActions ? _selectedEntries : const <AvesEntry>{};
+    final selectedSize = showActions ? formatFileSize(settings.avesLocale, selectedEntries.fold(0, (sum, entry) => sum + (entry.sizeBytes ?? 0))) : '';
     return AvesScaffold(
       appBar: AppBar(title: const Text('重复媒体清理')),
       body: SafeArea(
         bottom: false,
         child: _buildBody(),
       ),
-      bottomNavigationBar: _scanning || _scanError != null || (_result?.cancelled ?? true) || !(_result?.groups.isNotEmpty ?? false)
+      bottomNavigationBar: !showActions
           ? null
           : DecoratedBox(
               decoration: BoxDecoration(
@@ -308,19 +309,19 @@ class _DuplicatePageState extends State<DuplicatePage> {
                         spacing: 12,
                         runSpacing: 4,
                         children: [
-                          Text('已选 ${_selectedEntries.length} 项', style: Theme.of(context).textTheme.bodySmall),
-                          Text(formatFileSize(settings.avesLocale, _selectedBytes), style: Theme.of(context).textTheme.titleSmall),
+                          Text('已选 ${selectedEntries.length} 项', style: Theme.of(context).textTheme.bodySmall),
+                          Text(selectedSize, style: Theme.of(context).textTheme.titleSmall),
                         ],
                       ),
                       const SizedBox(height: 10),
                       FilledButton.icon(
-                        onPressed: _submitting || _selectedEntries.isEmpty ? null : _reviewAndDelete,
+                        onPressed: _submitting || selectedEntries.isEmpty ? null : _reviewAndDelete,
                         style: FilledButton.styleFrom(
                           minimumSize: const Size.fromHeight(48),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                         icon: _submitting ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.delete_outline),
-                        label: Text('复核 ${_selectedEntries.length} 项·${formatFileSize(settings.avesLocale, _selectedBytes)}', maxLines: 2, overflow: .ellipsis),
+                        label: Text('复核 ${selectedEntries.length} 项·$selectedSize', maxLines: 2, overflow: .ellipsis),
                       ),
                     ],
                   ),
@@ -370,55 +371,59 @@ class _DuplicatePageState extends State<DuplicatePage> {
         ),
       );
     }
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 20),
-      children: [
-        controls,
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-          child: Column(
-            crossAxisAlignment: .start,
-            children: [
-              Text('${result.groups.length} 组完全重复媒体', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              const Text('绿色行是保留项，右侧复选框是待清理项。保留项始终不会被勾选。'),
-            ],
+    final headers = <Widget>[
+      controls,
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+        child: Column(
+          crossAxisAlignment: .start,
+          children: [
+            Text('${result.groups.length} 组完全重复媒体', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            const Text('绿色行是保留项，右侧复选框是待清理项。保留项始终不会被勾选。'),
+          ],
+        ),
+      ),
+      if (result.issues.isNotEmpty)
+        Card(
+          child: ExpansionTile(
+            leading: const Icon(Icons.warning_amber),
+            title: Text('${result.issues.length} 项读取问题'),
+            children: result.issues
+                .map(
+                  (issue) => ListTile(
+                    dense: true,
+                    title: Text(issue.message),
+                    subtitle: issue.uri.isEmpty ? null : Text(issue.uri),
+                  ),
+                )
+                .toList(),
           ),
         ),
-        if (result.issues.isNotEmpty)
-          Card(
-            child: ExpansionTile(
-              leading: const Icon(Icons.warning_amber),
-              title: Text('${result.issues.length} 项读取问题'),
-              children: result.issues
-                  .map(
-                    (issue) => ListTile(
-                      dense: true,
-                      title: Text(issue.message),
-                      subtitle: issue.uri.isEmpty ? null : Text(issue.uri),
-                    ),
-                  )
-                  .toList(),
-            ),
+    ];
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 20),
+      itemCount: headers.length + result.groups.length,
+      itemBuilder: (context, index) {
+        if (index < headers.length) return headers[index];
+        final group = result.groups[index - headers.length];
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: _DuplicateGroupCard(
+            group: group,
+            entries: _entriesFor(group),
+            keeperId: _selection?.keepers[group.id],
+            selectedIds: _selection?.selected[group.id] ?? const {},
+            enabled: !_submitting,
+            onKeeperChanged: (id) => setState(() {
+              _selection?.keep(group.id, id);
+            }),
+            onSelectionChanged: (id, selected) => setState(() {
+              _selection?.select(group.id, id, selected);
+            }),
           ),
-        for (final group in result.groups)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: _DuplicateGroupCard(
-              group: group,
-              entries: _entriesFor(group),
-              keeperId: _selection?.keepers[group.id],
-              selectedIds: _selection?.selected[group.id] ?? const {},
-              enabled: !_submitting,
-              onKeeperChanged: (id) => setState(() {
-                _selection?.keep(group.id, id);
-              }),
-              onSelectionChanged: (id, selected) => setState(() {
-                _selection?.select(group.id, id, selected);
-              }),
-            ),
-          ),
-      ],
+        );
+      },
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:aves/services/common/service_policy.dart';
 import 'package:aves/services/common/services.dart';
 import 'package:aves_model/aves_model.dart';
 import 'package:aves_report/aves_report.dart';
@@ -37,6 +38,8 @@ class const ThumbnailProvider(final ThumbnailProviderKey key) extends ImageProvi
         decode: decode,
         taskKey: key,
       );
+    } on CancelledException {
+      rethrow;
     } catch (error) {
       // loading may fail if the provided MIME type is incorrect (e.g. the Media Store may report a JPEG as a TIFF)
       debugPrint('$runtimeType _loadAsync failed for key=$key, error=$error');

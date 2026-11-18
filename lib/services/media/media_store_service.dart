@@ -6,9 +6,9 @@ import 'package:aves/services/common/services.dart';
 import 'package:flutter/services.dart';
 
 abstract class MediaStoreService {
-  Future<List<int>> checkObsoleteContentIds(List<int?> knownContentIds);
+  Future<List<int>> checkObsoleteContentIds(List<int> knownContentIds);
 
-  Future<List<int>> checkObsoletePaths(Map<int?, String?> knownPathById);
+  Future<({List<int> removed, List<int> moved})> checkKnownEntries(Map<int, String?> knownPathById);
 
   Future<List<String>> getChangedUris(Map<String, int?> sinceGenerationByVolume);
 
@@ -26,53 +26,35 @@ class PlatformMediaStoreService implements MediaStoreService {
   static final _stream = AvesStreamsChannel('deckers.thibault/aves/media_store_stream');
 
   @override
-  Future<List<int>> checkObsoleteContentIds(List<int?> knownContentIds) async {
-    try {
-      final result = await _platform.invokeMethod('checkObsoleteContentIds', <String, Object?>{
-        'knownContentIds': knownContentIds,
-      });
-      return (result as List).cast<int>();
-    } on PlatformException catch (e, stack) {
-      await reportService.recordError(e, stack);
-    }
-    return [];
+  Future<List<int>> checkObsoleteContentIds(List<int> knownContentIds) async {
+    if (knownContentIds.isEmpty) return [];
+    final result = await _platform.invokeMethod('checkObsoleteContentIds', <String, Object?>{
+      'knownContentIds': knownContentIds,
+    });
+    return (result as List).cast<int>();
   }
 
   @override
-  Future<List<int>> checkObsoletePaths(Map<int?, String?> knownPathById) async {
-    try {
-      final result = await _platform.invokeMethod('checkObsoletePaths', <String, Object?>{
-        'knownPathById': knownPathById,
-      });
-      return (result as List).cast<int>();
-    } on PlatformException catch (e, stack) {
-      await reportService.recordError(e, stack);
-    }
-    return [];
+  Future<({List<int> removed, List<int> moved})> checkKnownEntries(Map<int, String?> knownPathById) async {
+    if (knownPathById.isEmpty) return (removed: <int>[], moved: <int>[]);
+    final result = await _platform.invokeMethod('checkKnownEntries', <String, Object?>{
+      'knownPathById': knownPathById,
+    }) as Map;
+    return (removed: (result['removed'] as List).cast<int>(), moved: (result['moved'] as List).cast<int>());
   }
 
   @override
   Future<List<String>> getChangedUris(Map<String, int?> sinceGenerationByVolume) async {
-    try {
-      final result = await _platform.invokeMethod('getChangedUris', <String, Object?>{
-        'sinceGenerationByVolume': sinceGenerationByVolume,
-      });
-      return (result as List).cast<String>();
-    } on PlatformException catch (e, stack) {
-      await reportService.recordError(e, stack);
-    }
-    return [];
+    final result = await _platform.invokeMethod('getChangedUris', <String, Object?>{
+      'sinceGenerationByVolume': sinceGenerationByVolume,
+    });
+    return (result as List).cast<String>();
   }
 
   @override
   Future<Map<String, int>?> getGenerationByVolume() async {
-    try {
-      var result = await _platform.invokeMethod('getGenerationByVolume');
-      if (result != null) return (result as Map).cast<String, int>();
-    } on PlatformException catch (e, stack) {
-      await reportService.recordError(e, stack);
-    }
-    return null;
+    final result = await _platform.invokeMethod('getGenerationByVolume');
+    return (result as Map?)?.cast<String, int>();
   }
 
   @override

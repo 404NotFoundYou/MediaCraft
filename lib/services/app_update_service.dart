@@ -13,14 +13,12 @@ class AppUpdateService {
   static Future<AppRelease?> checkForUpdate({
     required String currentVersion,
     http.Client? client,
+    Duration timeout = const Duration(seconds: 10),
   }) async {
     final ownsClient = client == null;
     final requestClient = client ?? http.Client();
     try {
-      final response = await requestClient.get(
-        latestReleaseUri,
-        headers: const {'Accept': 'application/vnd.github+json'},
-      );
+      final response = await requestClient.get(latestReleaseUri, headers: const {'Accept': 'application/vnd.github+json'}).timeout(timeout);
       if (response.statusCode != 200) {
         throw Exception('GitHub release request failed with status=${response.statusCode}');
       }

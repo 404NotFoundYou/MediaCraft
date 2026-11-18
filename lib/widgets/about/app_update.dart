@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:aves/model/device.dart';
 import 'package:aves/services/app_update_service.dart';
 import 'package:aves/theme/icons.dart';
@@ -46,6 +48,8 @@ class _AppUpdateCheckerState extends State<AppUpdateChecker> with FeedbackMixin 
           ),
         );
       }
+    } on TimeoutException {
+      if (mounted) showFeedback(context, FeedbackType.warn, '检查更新超时，请重试');
     } catch (error, stack) {
       debugPrint('failed to check for updates: $error\n$stack');
       if (mounted) showFeedback(context, FeedbackType.warn, '检查更新失败，请稍后重试');

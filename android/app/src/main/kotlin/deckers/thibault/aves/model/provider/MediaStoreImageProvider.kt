@@ -127,53 +127,39 @@ class MediaStoreImageProvider : ImageProvider() {
         }
     }
 
-    fun checkObsoleteContentIds(context: Context, knownContentIds: List<Long?>): List<Long> {
-        val foundContentIds = HashSet<Long>()
-        fun check(context: Context, contentUri: Uri) {
-            val projection = arrayOf(MediaStore.MediaColumns._ID)
-            try {
-                val cursor = context.contentResolver.query(contentUri, projection, null, null, null)
-                if (cursor != null) {
-                    val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-                    while (cursor.moveToNext()) {
-                        foundContentIds.add(cursor.getLong(idColumn))
-                    }
-                    cursor.close()
-                }
-            } catch (ex: Exception) {
-                Log.e(LOG_TAG, "failed to get content IDs for contentUri=$contentUri", ex)
-            }
-        }
-        check(context, IMAGE_CONTENT_URI)
-        check(context, VIDEO_CONTENT_URI)
-        return knownContentIds.subtract(foundContentIds).filterNotNull().toList()
+    fun checkObsoleteContentIds(context: Context, knownContentIds: List<Long>): List<Long> {
+        return reconcileMediaRows(knownContentIds, knownPaths = null) { selection, args, onRow ->
+            readKnownRows(context, false, selection, args, onRow)
+        }.first
     }
 
-    fun checkObsoletePaths(context: Context, knownPathById: Map<Long?, String?>): List<Long> {
-        val obsoleteIds = ArrayList<Long>()
-        fun check(context: Context, contentUri: Uri) {
-            val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DATA)
-            try {
-                val cursor = context.contentResolver.query(contentUri, projection, null, null, null)
-                if (cursor != null) {
-                    val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-                    val pathColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
-                    while (cursor.moveToNext()) {
-                        val id = cursor.getLong(idColumn)
-                        val path = cursor.getString(pathColumn)
-                        if (knownPathById.containsKey(id) && knownPathById[id] != path) {
-                            obsoleteIds.add(id)
-                        }
-                    }
-                    cursor.close()
+    fun checkKnownEntries(context: Context, knownPathById: Map<Long, String?>): Map<String, List<Long>> {
+        val (removed, moved) = reconcileMediaRows(knownPathById.keys, knownPathById) { selection, args, onRow ->
+            readKnownRows(context, true, selection, args, onRow)
+        }
+        return mapOf("removed" to removed, "moved" to moved)
+    }
+
+    private fun readKnownRows(
+        context: Context,
+        includePaths: Boolean,
+        selection: String?,
+        selectionArgs: Array<String>?,
+        onRow: (Long, String?) -> Unit,
+    ) {
+        val projection = if (includePaths) arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DATA) else arrayOf(MediaStore.MediaColumns._ID)
+        for (uri in listOf(IMAGE_CONTENT_URI, VIDEO_CONTENT_URI)) {
+            val cursor = checkNotNull(context.contentResolver.query(uri, projection, selection, selectionArgs, null)) {
+                "MediaStore reconciliation returned no cursor for $uri"
+            }
+            cursor.use {
+                val idColumn = it.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                val pathColumn = if (includePaths) it.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA) else -1
+                while (it.moveToNext()) {
+                    onRow(it.getLong(idColumn), if (includePaths) it.getString(pathColumn) else null)
                 }
-            } catch (ex: Exception) {
-                Log.e(LOG_TAG, "failed to get content IDs for contentUri=$contentUri", ex)
             }
         }
-        check(context, IMAGE_CONTENT_URI)
-        check(context, VIDEO_CONTENT_URI)
-        return obsoleteIds
     }
 
     fun getChangedUris(context: Context, sinceGenerationByVolume: Map<String, Long?>): List<String> {
@@ -182,18 +168,15 @@ class MediaStoreImageProvider : ImageProvider() {
             val projection = arrayOf(MediaStore.MediaColumns._ID)
             val selection = "${MediaStore.MediaColumns.GENERATION_MODIFIED} > ?"
             val selectionArgs = arrayOf((sinceGeneration ?: 0L).toString())
-            try {
-                val cursor = context.contentResolver.query(contentUri, projection, selection, selectionArgs, null)
-                if (cursor != null) {
-                    val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-                    while (cursor.moveToNext()) {
-                        val id = cursor.getLong(idColumn)
-                        changedUris.add(ContentUris.withAppendedId(contentUri, id).toString())
-                    }
-                    cursor.close()
+            val cursor = checkNotNull(context.contentResolver.query(contentUri, projection, selection, selectionArgs, null)) {
+                "MediaStore change query returned no cursor for $contentUri"
+            }
+            cursor.use {
+                val idColumn = it.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                while (it.moveToNext()) {
+                    val id = it.getLong(idColumn)
+                    changedUris.add(ContentUris.withAppendedId(contentUri, id).toString())
                 }
-            } catch (ex: Exception) {
-                Log.e(LOG_TAG, "failed to get content IDs for contentUri=$contentUri", ex)
             }
         }
         sinceGenerationByVolume.forEach { (volumeName, sinceGeneration) ->
@@ -771,3 +754,32 @@ object MediaColumns {
 typealias NewEntryHandler = (entry: FieldMap) -> Unit
 
 private typealias NewEntryChecker = (contentId: Long, dateModifiedMillis: Long) -> Boolean
+
+private const val MEDIA_ID_BATCH_SIZE = 500
+
+internal fun reconcileMediaRows(
+    knownIds: Collection<Long>,
+    knownPaths: Map<Long, String?>?,
+    readRows: (String?, Array<String>?, (Long, String?) -> Unit) -> Unit,
+): Pair<List<Long>, List<Long>> {
+    if (knownIds.isEmpty()) return emptyList<Long>() to emptyList()
+
+    val missing = knownIds.toMutableSet()
+    val moved = LinkedHashSet<Long>()
+    val onRow: (Long, String?) -> Unit = { id, path ->
+        missing.remove(id)
+        if (knownPaths != null && knownPaths.containsKey(id) && knownPaths[id] != path) {
+            moved.add(id)
+        }
+    }
+    if (knownPaths != null && knownIds.size > MEDIA_ID_BATCH_SIZE) {
+        // A populated startup cache needs one pass, not a round trip per batch.
+        readRows(null, null, onRow)
+    } else {
+        knownIds.chunked(MEDIA_ID_BATCH_SIZE).forEach { batch ->
+            val placeholders = batch.joinToString(",") { "?" }
+            readRows("${MediaStore.MediaColumns._ID} IN ($placeholders)", batch.map(Long::toString).toTypedArray(), onRow)
+        }
+    }
+    return missing.toList() to moved.toList()
+}

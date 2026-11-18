@@ -76,7 +76,7 @@ class QueryFilter extends CollectionFilter {
     }
 
     // default to title search
-    bool testTitle(AvesEntry entry) => entry.bestTitle?.toUpperCase().contains(upQuery) == true;
+    bool testTitle(AvesEntry entry) => entry.bestTitleUpperCase?.contains(upQuery) == true;
     _test = not ? (entry) => !testTitle(entry) : testTitle;
   }
 

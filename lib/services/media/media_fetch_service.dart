@@ -352,10 +352,18 @@ class PlatformMediaFetchService implements MediaFetchService {
   }
 
   @override
-  bool cancelRegion(Object taskKey) => platformServicePolicy.pause(taskKey, [ServiceCallPriority.getRegion]);
+  bool cancelRegion(Object taskKey) => platformServicePolicy.pause(
+    taskKey,
+    [ServiceCallPriority.getRegion],
+    onEvicted: PaintingBinding.instance.imageCache.evict,
+  );
 
   @override
-  bool cancelThumbnail(Object taskKey) => platformServicePolicy.pause(taskKey, [ServiceCallPriority.getFastThumbnail, ServiceCallPriority.getSizedThumbnail]);
+  bool cancelThumbnail(Object taskKey) => platformServicePolicy.pause(
+    taskKey,
+    [ServiceCallPriority.getFastThumbnail, ServiceCallPriority.getSizedThumbnail],
+    onEvicted: PaintingBinding.instance.imageCache.evict,
+  );
 
   @override
   Future<T>? resumeLoading<T>(Object taskKey) => platformServicePolicy.resume<T>(taskKey);

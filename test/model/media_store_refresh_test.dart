@@ -2,6 +2,10 @@ import 'dart:async';
 
 import 'package:aves/model/db/db.dart';
 import 'package:aves/model/entry/entry.dart';
+import 'package:aves/model/entry/origins.dart';
+import 'package:aves/model/filters/covered/stored_album.dart';
+import 'package:aves/model/metadata/address.dart';
+import 'package:aves/model/metadata/catalog.dart';
 import 'package:aves/model/settings/settings.dart';
 import 'package:aves/model/source/analysis_controller.dart';
 import 'package:aves/model/source/collection_source.dart';
@@ -12,6 +16,7 @@ import 'package:aves/services/media/media_fetch_service.dart';
 import 'package:aves/services/media/media_store_service.dart';
 import 'package:aves/theme/durations.dart';
 import 'package:aves_model/aves_model.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -41,11 +46,42 @@ void main() {
     await setUpServices();
     db.failInsert = false;
     db.insertCalls = 0;
+    db.cachedMedia = {};
+    db.removedIds.clear();
     fetch.response = null;
     fetch.started = null;
     (mediaFetchService as FakeMediaFetchService).entries = {};
   });
   tearDownAll(tearDownAllServices);
+
+  testWidgets('增量查询失败后从原基线补回媒体，再推进基线', (tester) async {
+    const volume = 'external_primary';
+    mediaStore.generation = {volume: 10};
+    final source = _RetryProbeSource()..fail = false;
+    await _initSource(source);
+    const uri = 'content://media/external_primary/images/media/42';
+
+    mediaStore.generation = {volume: 12};
+    mediaStore.queryChanges = (_) async => throw PlatformException(code: 'query-failed');
+    await source.checkForChanges();
+    await tester.pump(ADurations.mediaContentChangeDebounceDelay);
+    expect(source.calls, isEmpty, reason: '失败的查询不能当作一次成功同步');
+
+    mediaStore.generation = {volume: 14};
+    mediaStore.queryChanges = (baseline) async => (baseline[volume] ?? 0) < 11 ? [uri] : [];
+    await source.checkForChanges();
+    await tester.pump(ADurations.mediaContentChangeDebounceDelay);
+    expect(source.calls, [
+      {uri},
+    ], reason: '没有新的媒体通知时也必须补回失败窗口内的文件');
+
+    await source.checkForChanges();
+    expect(mediaStore.changeBaselines, [
+      {volume: 10},
+      {volume: 10},
+      {volume: 14},
+    ]);
+  });
 
   test('数据库临时写入失败后仍可再次刷新，无需重启图库', () async {
     final source = _LookupProbeSource();
@@ -63,6 +99,68 @@ void main() {
     expect(await source.refreshUris({entry.uri}), isEmpty);
     expect(source.allEntries.single.uri, entry.uri);
     expect(source.isReady, isTrue);
+  });
+
+  test('ID 核对失败不会清掉现有条目，空批次不访问媒体库', () async {
+    final entry = FakeMediaStoreService.newImage('${FakeStorageService.primaryPath}Pictures/test', 'keep');
+    mediaStore.entries = {entry};
+    final source = _LookupProbeSource();
+    await _initSource(source);
+    var queries = 0;
+    mediaStore.checkIds = (ids) async {
+      queries++;
+      expect(ids, [entry.contentId]);
+      throw PlatformException(code: 'partial-query-failed');
+    };
+
+    await source.refreshUris({'content://media/'});
+    expect(queries, 0);
+    await expectLater(source.refreshUris({entry.uri}), throwsA(isA<PlatformException>()));
+    expect(source.allEntries, {entry}, reason: '查询失败与 ID 确认不存在是两种结果');
+    expect(db.removedIds, isEmpty);
+    expect(source.isReady, isTrue);
+
+    mediaStore.checkIds = (ids) async => ids;
+    await source.refreshUris({entry.uri});
+    expect(source.allEntries, isEmpty);
+    expect(db.removedIds, {entry.id});
+  });
+
+  test('冷启动先提供顶部缓存，并在限定相册内刷新修改时间不变的媒体', () async {
+    const album = '${FakeStorageService.primaryPath}Pictures/test';
+    final old = FakeMediaStoreService.newImage(album, 'before');
+    final moved = old.copyWith(path: '$album/after.jpg');
+    final missing = FakeMediaStoreService.newImage(album, 'removed');
+    final other = FakeMediaStoreService.newImage('$album/Other', 'outside');
+    db.cachedMedia = {old, missing, other};
+    settings.topEntryIds = [old.id];
+    final checking = Completer<Map<int, String?>>();
+    final reconcile = Completer<({List<int> moved, List<int> removed})>();
+    mediaStore.checkPaths = (paths) {
+      checking.complete(paths);
+      return reconcile.future;
+    };
+    mediaStore.loadEntries = (known, directory) {
+      expect(directory, album, reason: '进入单一相册不能触发完整图库加载');
+      expect(known[moved.contentId], isNull, reason: '路径已变的文件不能靠修改时间跳过');
+      return Stream.value(moved);
+    };
+    final source = _LookupProbeSource();
+    addTearDown(source.dispose);
+
+    final scope = {StoredAlbumFilter(album, null)};
+    await source.init(scope: scope, loadTopEntriesFirst: true);
+    expect(await checking.future, {old.contentId: old.path, missing.contentId: missing.path});
+    expect(source.visibleEntries.single.path, old.path);
+    expect(source.isReady, isFalse, reason: '顶部缓存可用于首屏，但不能提前标记全流程就绪');
+
+    reconcile.complete((moved: [moved.contentId!], removed: [missing.contentId!]));
+    await source.waitUntilReady();
+    expect(source.allEntries, {moved});
+    expect(moved.id, old.id, reason: '路径变更应保留条目身份和已有索引关系');
+    expect(moved.dateModifiedMillis, old.dateModifiedMillis);
+    expect(source.loadedScope, scope);
+    expect(db.removedIds, {missing.id});
   });
 
   test('批量变更只读取固定次数的全库快照，避免每个 URI 都遍历全库', () async {
@@ -262,6 +360,29 @@ Future<void> _initSource(MediaStoreSource source) async {
 class _FaultDb extends FakeAvesDb {
   bool failInsert = false;
   int insertCalls = 0;
+  Set<AvesEntry> cachedMedia = {};
+  final removedIds = <int>{};
+
+  @override
+  Future<Set<AvesEntry>> loadEntries({int? origin, String? directory}) async => {
+    if (origin == EntryOrigins.mediaStoreContent)
+      for (final entry in cachedMedia)
+        if (directory == null || entry.directory == directory) entry.copyWith(),
+  };
+
+  @override
+  Future<Set<AvesEntry>> loadEntriesById(Set<int> ids) async => {for (final entry in cachedMedia.where((entry) => ids.contains(entry.id))) entry.copyWith()};
+
+  @override
+  Future<Set<CatalogMetadata>> loadCatalogMetadataById(Set<int> ids) async => {};
+
+  @override
+  Future<Set<AddressDetails>> loadAddressesById(Set<int> ids) async => {};
+
+  @override
+  Future<void> removeIds(Set<int> ids, {Set<EntryDataType>? dataTypes}) async {
+    if (dataTypes == null) removedIds.addAll(ids);
+  }
 
   @override
   Future<void> insertEntries(Set<AvesEntry> entries) async {
@@ -287,15 +408,42 @@ class _ControlledFetchService extends FakeMediaFetchService {
 
 class _ControlledMediaStoreService extends FakeMediaStoreService {
   StreamController<AvesEntry>? entryStream;
+  Map<String, int>? generation;
+  Future<List<String>> Function(Map<String, int?>)? queryChanges;
+  Future<List<int>> Function(List<int>)? checkIds;
+  Future<({List<int> moved, List<int> removed})> Function(Map<int, String?>)? checkPaths;
+  Stream<AvesEntry> Function(Map<int?, int?>, String?)? loadEntries;
+  final changeBaselines = <Map<String, int?>>[];
 
   @override
   void reset() {
     super.reset();
     entryStream = null;
+    generation = null;
+    queryChanges = null;
+    checkIds = null;
+    checkPaths = null;
+    loadEntries = null;
+    changeBaselines.clear();
   }
 
   @override
-  Stream<AvesEntry> getEntries(Map<int?, int?> knownEntries, {String? directory}) => entryStream?.stream ?? super.getEntries(knownEntries, directory: directory);
+  Future<Map<String, int>?> getGenerationByVolume() async => generation ?? await super.getGenerationByVolume();
+
+  @override
+  Future<List<String>> getChangedUris(Map<String, int?> sinceGenerationByVolume) async {
+    changeBaselines.add(sinceGenerationByVolume);
+    return await queryChanges?.call(sinceGenerationByVolume) ?? [];
+  }
+
+  @override
+  Future<List<int>> checkObsoleteContentIds(List<int> knownContentIds) => checkIds?.call(knownContentIds) ?? super.checkObsoleteContentIds(knownContentIds);
+
+  @override
+  Future<({List<int> moved, List<int> removed})> checkKnownEntries(Map<int, String?> knownPathById) => checkPaths?.call(knownPathById) ?? super.checkKnownEntries(knownPathById);
+
+  @override
+  Stream<AvesEntry> getEntries(Map<int?, int?> knownEntries, {String? directory}) => loadEntries?.call(knownEntries, directory) ?? entryStream?.stream ?? super.getEntries(knownEntries, directory: directory);
 }
 
 class _SelectionProbeSource extends MediaStoreSource {
