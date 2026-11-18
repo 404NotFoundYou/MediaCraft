@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## <a id="unreleased"></a>[Unreleased]
 
+## <a id="v0.6.7"></a>[v0.6.7] - 2026-11-18
+
+### Fixed
+
+- 图库增量查询失败时保留同步基线，以便重试补回变更；冷启动核对已删除、移动或改名的媒体。
+- 检查更新超时后提示重试，不再让按钮一直等待。
+
+### Changed
+
+- 限制离屏缩略图及大图分块请求的积压，避免重复搜索和堆叠计算。
+- 重复项扫描降低进度通知频率，结果列表按需构建，保留原有勾选和清理规则。
+- 减少百度地图重复刷新覆盖物的开销。
+
+### Verification
+
+- 安装包、版本号及验证范围见 [v0.6.7 发布说明](docs/releases/v0.6.7.md)。
+
 ## <a id="v0.6.6"></a>[v0.6.6] - 2026-11-18
 
 ### Changed
