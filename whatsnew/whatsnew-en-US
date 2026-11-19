@@ -1,6 +1,5 @@
-In v0.6.6:
-- Use a consistent light theme for media viewing, details, and editing.
-- Replace dark translucent panels with clean, opaque light surfaces.
-- Keep controls, menus, and system bar icons readable on light backgrounds.
-- Remove the search bar above the settings categories.
+In v0.6.8:
+- Reduce duplicate media decoding, image cache registration, and map refresh work.
+- Improve cancellation handling for media, region, thumbnail, SVG, and TIFF requests.
+- Clean up temporary Android region exports safely during concurrent decoding.
 Full changelog available on GitHub

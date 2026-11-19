@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## <a id="unreleased"></a>[Unreleased]
 
+## <a id="v0.6.8"></a>[v0.6.8] - 2026-11-19
+
+### Fixed
+
+- 修复媒体解码、区域读取、缩略图及 SVG/TIFF 请求取消时的异常处理，避免取消被误报为失败。
+- 修复 Android 区域解码临时文件在并发请求和清理时的生命周期问题。
+
+### Changed
+
+- 缓存国家拓扑、收藏查询、媒体 URI 索引和图片请求键，减少重复解析与无效缓存增长。
+- 复用媒体集合控制器并降低地图覆盖物重复刷新，减少图库滚动和地图交互中的 UI 开销。
+
 ## <a id="v0.6.7"></a>[v0.6.7] - 2026-11-18
 
 ### Fixed
