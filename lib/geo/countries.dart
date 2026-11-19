@@ -16,8 +16,31 @@ class CountryTopology {
   new _private();
 
   Topology? _topology;
+  Future<Topology?>? _topologyFuture;
 
-  Future<Topology?> getTopology() => _topology != null ? SynchronousFuture(_topology) : rootBundle.loadString(topoJsonAsset).then(TopoJson().parse);
+  Future<Topology?> getTopology() {
+    final topology = _topology;
+    if (topology != null) return SynchronousFuture(topology);
+
+    final topologyFuture = _topologyFuture;
+    if (topologyFuture != null) return topologyFuture;
+
+    final future = rootBundle.loadString(topoJsonAsset).then(TopoJson().parse);
+    _topologyFuture = future.then(
+      (topology) {
+        if (topology != null) {
+          _topology = topology;
+        }
+        _topologyFuture = null;
+        return topology;
+      },
+      onError: (Object error, StackTrace stack) {
+        _topologyFuture = null;
+        Error.throwWithStackTrace(error, stack);
+      },
+    );
+    return _topologyFuture!;
+  }
 
   // returns the country containing given coordinates
   Future<CountryCode?> countryCode(LatLng position) async {

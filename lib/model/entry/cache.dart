@@ -9,13 +9,19 @@ class EntryCache {
 
   static void registerKey(Object key) {
     Set<Object> ifAbsent() => {};
+    void register(String uri) {
+      final keys = _requestKeysByUri.putIfAbsent(uri, ifAbsent);
+      keys.removeWhere((existingKey) => existingKey != key && imageCache.statusForKey(existingKey).untracked);
+      keys.add(key);
+    }
+
     switch (key) {
       case ThumbnailProviderKey _:
-        _requestKeysByUri.putIfAbsent(key.uri, ifAbsent).add(key);
+        register(key.uri);
       case FullImage _:
-        _requestKeysByUri.putIfAbsent(key.uri, ifAbsent).add(key);
+        register(key.uri);
       case RegionProviderKey _:
-        _requestKeysByUri.putIfAbsent(key.uri, ifAbsent).add(key);
+        register(key.uri);
       default:
         debugPrint('failed to register image cache key because of unknown type for key=$key');
     }
@@ -29,6 +35,9 @@ class EntryCache {
 
   // return keys sorted by descending extent
   static List<ThumbnailProviderKey> getThumbnailProviderKeys(String uri) {
-    return (_requestKeysByUri[uri] ?? {}).whereType<ThumbnailProviderKey>().sortedByCompare((key) => key.extent, (a, b) => b.compareTo(a));
+    final keys = _requestKeysByUri[uri];
+    keys?.removeWhere((key) => imageCache.statusForKey(key).untracked);
+    if (keys?.isEmpty == true) _requestKeysByUri.remove(uri);
+    return (keys ?? {}).whereType<ThumbnailProviderKey>().sortedByCompare((key) => key.extent, (a, b) => b.compareTo(a));
   }
 }

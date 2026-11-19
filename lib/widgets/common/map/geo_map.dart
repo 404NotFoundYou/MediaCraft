@@ -76,6 +76,7 @@ class _GeoMapState extends State<GeoMap> {
   late final ValueNotifier<ZoomedBounds> _boundsNotifier;
   Fluster<GeoEntry<AvesEntry>>? _defaultMarkerCluster;
   Fluster<GeoEntry<AvesEntry>>? _slowMarkerCluster;
+  Map<String, AvesEntry> _entriesByUri = {};
   final AChangeNotifier _clusterChangeNotifier = .new();
 
   final ValueNotifier<List<GeoTrack>> _tracksNotifier = ValueNotifier([]);
@@ -102,6 +103,10 @@ class _GeoMapState extends State<GeoMap> {
     super.didUpdateWidget(oldWidget);
     _unregisterWidget(oldWidget);
     _registerWidget(widget);
+    final entriesChanged = !const ListEquality<AvesEntry>().equals(oldWidget.entries, widget.entries);
+    if (oldWidget.collection != widget.collection || entriesChanged) {
+      _onCollectionChanged();
+    }
   }
 
   @override
@@ -361,7 +366,9 @@ class _GeoMapState extends State<GeoMap> {
   }
 
   void _onCollectionChanged() {
-    _defaultMarkerCluster = _buildFluster();
+    final currentEntries = entries;
+    _entriesByUri = {for (final entry in currentEntries) entry.uri: entry};
+    _defaultMarkerCluster = _buildFluster(sourceEntries: currentEntries);
     _slowMarkerCluster = null;
     _clusterChangeNotifier.notify();
     _updateItemTracks();
@@ -402,8 +409,8 @@ class _GeoMapState extends State<GeoMap> {
     _tracksNotifier.value = tracks;
   }
 
-  Fluster<GeoEntry<AvesEntry>> _buildFluster({int nodeSize = 64}) {
-    final markers = entries
+  Fluster<GeoEntry<AvesEntry>> _buildFluster({List<AvesEntry>? sourceEntries, int nodeSize = 64}) {
+    final markers = (sourceEntries ?? entries)
         .map((entry) {
           final latLng = entry.latLng;
           return latLng != null
@@ -448,11 +455,11 @@ class _GeoMapState extends State<GeoMap> {
       geoEntries.map((v) {
         if (v.isCluster!) {
           final uri = v.childMarkerId;
-          final entry = entries.firstWhere((v) => v.uri == uri);
-          return MapEntry(MarkerKey(entry, v.pointsSize), v);
+          final entry = _entriesByUri[uri];
+          return entry == null ? null : MapEntry(MarkerKey(entry, v.pointsSize), v);
         }
         return MapEntry(MarkerKey(v.entry!, null), v);
-      }),
+      }).nonNulls,
     );
   }
 
@@ -481,7 +488,7 @@ class _GeoMapState extends State<GeoMap> {
     AvesEntry? markerEntry;
     if (clusterId != null) {
       final uri = geoEntry.childMarkerId;
-      markerEntry = entries.firstWhereOrNull((v) => v.uri == uri);
+      markerEntry = _entriesByUri[uri];
     } else {
       markerEntry = geoEntry.entry;
     }
@@ -505,7 +512,9 @@ class _GeoMapState extends State<GeoMap> {
     AvesEntry markerEntry;
     if (geoEntry.isCluster!) {
       final uri = geoEntry.childMarkerId;
-      markerEntry = entries.firstWhere((v) => v.uri == uri);
+      final entry = _entriesByUri[uri];
+      if (entry == null) return;
+      markerEntry = entry;
     } else {
       markerEntry = geoEntry.entry!;
     }

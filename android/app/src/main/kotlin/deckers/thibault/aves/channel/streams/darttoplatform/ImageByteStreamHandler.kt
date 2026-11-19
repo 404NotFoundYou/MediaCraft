@@ -20,6 +20,7 @@ import deckers.thibault.aves.utils.MimeTypes
 import deckers.thibault.aves.utils.MimeTypes.handleEncodedBytesInFlutter
 import deckers.thibault.aves.utils.MimeTypes.isVideo
 import deckers.thibault.aves.utils.MimeTypes.needRotationAfterGlide
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -106,6 +107,8 @@ class ImageByteStreamHandler(private val context: Context, private val arguments
             if (sent ?: false) {
                 success(BitmapUtils.FORMAT_BYTE_ENCODED_AS_BYTES)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             error("streamImage-image-read-exception", "failed to get image for $contentAddress", e.stackTraceToString())
         }
@@ -139,6 +142,8 @@ class ImageByteStreamHandler(private val context: Context, private val arguments
             } else {
                 error("streamImage-image-decode-null", "failed to get image for $contentAddress", null)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             error("streamImage-image-decode-exception", "failed to get image for $contentAddress", e.stackTraceToString())
         } finally {
@@ -167,6 +172,8 @@ class ImageByteStreamHandler(private val context: Context, private val arguments
             } else {
                 error("streamImage-video-null", "failed to get image for $contentAddress", null)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             error("streamImage-video-exception", "failed to get image for $contentAddress", e.stackTraceToString())
         } finally {

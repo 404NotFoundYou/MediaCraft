@@ -28,6 +28,7 @@ import deckers.thibault.aves.utils.MimeTypes.isVideo
 import deckers.thibault.aves.utils.MimeTypes.needRotationAfterContentResolverThumbnail
 import deckers.thibault.aves.utils.MimeTypes.needRotationAfterGlide
 import deckers.thibault.aves.utils.UriUtils.tryParseId
+import kotlinx.coroutines.CancellationException
 import java.io.ByteArrayInputStream
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -78,6 +79,8 @@ class ThumbnailFetcher internal constructor(
                     bitmap = getByMediaStore()
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             exception = e
         }
@@ -86,6 +89,8 @@ class ThumbnailFetcher internal constructor(
         if (bitmap == null) {
             try {
                 bitmap = getByGlide()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 exception = e
             }

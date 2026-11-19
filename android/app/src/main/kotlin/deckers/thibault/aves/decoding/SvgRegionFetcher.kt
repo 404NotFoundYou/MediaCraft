@@ -20,6 +20,7 @@ import deckers.thibault.aves.storage.StorageUtils
 import deckers.thibault.aves.utils.BitmapUtils
 import deckers.thibault.aves.utils.MemoryUtils
 import deckers.thibault.aves.utils.MimeTypes
+import kotlinx.coroutines.CancellationException
 import java.io.ByteArrayInputStream
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -102,6 +103,8 @@ class SvgRegionFetcher internal constructor(
             }
         } catch (e: SVGParseException) {
             result.error("fetch-parse", "failed to parse SVG for uri=$uri regionRect=$regionRect", e.message)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             result.error("fetch-exception", "failed to initialize region decoder for uri=$uri regionRect=$regionRect", e.message)
         }

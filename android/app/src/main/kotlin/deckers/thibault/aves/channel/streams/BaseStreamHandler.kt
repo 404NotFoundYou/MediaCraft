@@ -5,9 +5,14 @@ import android.os.Looper
 import android.util.Log
 import deckers.thibault.aves.utils.MemoryUtils
 import io.flutter.plugin.common.EventChannel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.io.InputStream
 
 abstract class BaseStreamHandler : EventChannel.StreamHandler {
@@ -26,7 +31,10 @@ abstract class BaseStreamHandler : EventChannel.StreamHandler {
     }
 
     override fun onCancel(arguments: Any?) {
-        // nothing
+        ioScope.cancel()
+        handler?.removeCallbacksAndMessages(null)
+        handler = null
+        eventSink = null
     }
 
     open fun success(event: Any?) {
@@ -63,6 +71,7 @@ abstract class BaseStreamHandler : EventChannel.StreamHandler {
         val buffer = ByteArray(BUFFER_SIZE)
         var len: Int
         while (inputStream.read(buffer).also { len = it } != -1) {
+            if (ioScope.coroutineContext[Job]?.isActive != true) return false
             // cannot decode image on Flutter side when using `buffer` directly
             if (MemoryUtils.canAllocate(len)) {
                 success(buffer.copyOf(len))
@@ -88,10 +97,13 @@ abstract class BaseStreamHandler : EventChannel.StreamHandler {
     suspend fun safeSuspend(function: suspend () -> Unit, closeStream: Boolean = true) {
         try {
             function()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             error("safeSuspend-exception", e.message, e.stackTraceToString())
         }
         if (closeStream) {
+            currentCoroutineContext().ensureActive()
             endOfStream()
         }
     }

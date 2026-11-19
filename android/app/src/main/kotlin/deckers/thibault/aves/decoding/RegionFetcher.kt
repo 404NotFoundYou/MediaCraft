@@ -23,9 +23,11 @@ import deckers.thibault.aves.utils.LogUtils
 import deckers.thibault.aves.utils.MathUtils
 import deckers.thibault.aves.utils.MemoryUtils
 import deckers.thibault.aves.utils.MimeTypes
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.nio.ByteBuffer
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -55,23 +57,28 @@ class RegionFetcher internal constructor(
 
         if (pageId != null && MultiPageImage.isSupported(mimeType)) {
             // use export for requested page
-            val exportUri = exportUris.getOrPut(requestKey) { createTemporaryExport(contentAddress) }
-            fetch(
-                ContentAddress(
-                    mimeType = EXPORT_MIME_TYPE,
-                    uri = exportUri,
-                    pageId = null,
-                    path = null,
-                ),
-                decoded = decoded,
-                applyGainmap = applyGainmap,
-                sampleSize = sampleSize,
-                regionRect = regionRect,
-                imageWidth = imageWidth,
-                imageHeight = imageHeight,
-                requestKey = requestKey,
-                result = result,
-            )
+            val exportUri = getOrCreateExportUri(contentAddress, requestKey)
+            retainExport(requestKey)
+            try {
+                fetch(
+                    ContentAddress(
+                        mimeType = EXPORT_MIME_TYPE,
+                        uri = exportUri,
+                        pageId = null,
+                        path = null,
+                    ),
+                    decoded = decoded,
+                    applyGainmap = applyGainmap,
+                    sampleSize = sampleSize,
+                    regionRect = regionRect,
+                    imageWidth = imageWidth,
+                    imageHeight = imageHeight,
+                    requestKey = requestKey,
+                    result = result,
+                )
+            } finally {
+                releaseExport(requestKey)
+            }
             return
         }
 
@@ -137,31 +144,80 @@ class RegionFetcher internal constructor(
             } else {
                 result.streamBytes(ByteArrayInputStream(bytes))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             if (EXPORT_MIME_TYPE != mimeType) {
                 // retry with export on failure,
                 // as some formats are not fully supported by `BitmapRegionDecoder`
-                val exportUri = exportUris.getOrPut(requestKey) { createTemporaryExport(contentAddress) }
-                fetch(
-                    ContentAddress(
-                        mimeType = EXPORT_MIME_TYPE,
-                        uri = exportUri,
-                        pageId = null,
-                        path = null,
-                    ),
-                    decoded = decoded,
-                    applyGainmap = applyGainmap,
-                    sampleSize = sampleSize,
-                    regionRect = regionRect,
-                    imageWidth = imageWidth,
-                    imageHeight = imageHeight,
-                    requestKey = requestKey,
-                    result = result,
-                )
+                val exportUri = getOrCreateExportUri(contentAddress, requestKey)
+                retainExport(requestKey)
+                try {
+                    fetch(
+                        ContentAddress(
+                            mimeType = EXPORT_MIME_TYPE,
+                            uri = exportUri,
+                            pageId = null,
+                            path = null,
+                        ),
+                        decoded = decoded,
+                        applyGainmap = applyGainmap,
+                        sampleSize = sampleSize,
+                        regionRect = regionRect,
+                        imageWidth = imageWidth,
+                        imageHeight = imageHeight,
+                        requestKey = requestKey,
+                        result = result,
+                    )
+                } finally {
+                    releaseExport(requestKey)
+                }
                 return
             }
 
             result.error("fetch-read-exception", "failed to initialize region decoder for $contentAddress regionRect=$regionRect", e.message)
+        }
+    }
+
+    private suspend fun getOrCreateExportUri(contentAddress: ContentAddress, requestKey: Pair<Uri, Int?>): Uri {
+        val existingUri = poolLock.withLock {
+            exportUris[requestKey]?.takeIf { uri -> uri.path?.let(::File)?.isFile == true }
+                ?: run {
+                    exportUris.remove(requestKey)
+                    null
+                }
+        }
+        if (existingUri != null) return existingUri
+
+        val createdUri = createTemporaryExport(contentAddress)
+        return poolLock.withLock {
+            val previousUri = exportUris.putIfAbsent(requestKey, createdUri)
+            if (previousUri == null) {
+                createdUri
+            } else {
+                deleteExport(createdUri)
+                previousUri
+            }
+        }
+    }
+
+    private fun retainExport(requestKey: Pair<Uri, Int?>) {
+        poolLock.withLock {
+            activeExports[requestKey] = (activeExports[requestKey] ?: 0) + 1
+        }
+    }
+
+    private fun releaseExport(requestKey: Pair<Uri, Int?>) {
+        poolLock.withLock {
+            val count = activeExports[requestKey] ?: return
+            if (count > 1) {
+                activeExports[requestKey] = count - 1
+                return
+            }
+            activeExports.remove(requestKey)
+            if (pendingExportCleanup.remove(requestKey)) {
+                exportUris.remove(requestKey)?.let(::deleteExport)
+            }
         }
     }
 
@@ -215,6 +271,8 @@ class RegionFetcher internal constructor(
         private val EXPORT_FORMAT = Bitmap.CompressFormat.JPEG
         private val decoderPool = ArrayList<DecoderRef>()
         private val exportUris = HashMap<Pair<Uri, Int?>, Uri>()
+        private val activeExports = HashMap<Pair<Uri, Int?>, Int>()
+        private val pendingExportCleanup = HashSet<Pair<Uri, Int?>>()
 
         private val poolLock = ReentrantLock()
 
@@ -242,7 +300,17 @@ class RegionFetcher internal constructor(
         fun clearDecoders() {
             poolLock.withLock {
                 trimDecoderPool(0)
+                val activeKeys = activeExports.keys.toSet()
+                val removableKeys = exportUris.keys.filterNot(activeKeys::contains)
+                removableKeys.forEach { requestKey ->
+                    exportUris.remove(requestKey)?.let(::deleteExport)
+                }
+                pendingExportCleanup.addAll(activeKeys)
             }
+        }
+
+        private fun deleteExport(uri: Uri) {
+            uri.path?.let(::File)?.delete()
         }
 
         private fun trimDecoderPool(size: Int) {

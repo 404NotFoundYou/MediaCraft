@@ -11,6 +11,7 @@ final Favourites favourites = Favourites._private();
 
 class Favourites with ChangeNotifier {
   Set<FavouriteRow> _rows = {};
+  Set<int> _entryIds = {};
 
   new _private() {
     if (kFlutterMemoryAllocationsEnabled) ChangeNotifier.maybeDispatchObjectCreation(this);
@@ -18,13 +19,14 @@ class Favourites with ChangeNotifier {
 
   Future<void> init() async {
     _rows = await localMediaDb.loadAllFavourites();
+    _entryIds = _rows.map((row) => row.entryId).toSet();
   }
 
   int get count => _rows.length;
 
-  Set<int> get all => Set.unmodifiable(_rows.map((v) => v.entryId));
+  Set<int> get all => Set.unmodifiable(_entryIds);
 
-  bool isFavourite(AvesEntry entry) => _rows.any((row) => row.entryId == entry.id);
+  bool isFavourite(AvesEntry entry) => _entryIds.contains(entry.id);
 
   FavouriteRow _entryToRow(AvesEntry entry) => FavouriteRow(entryId: entry.id);
 
@@ -33,6 +35,7 @@ class Favourites with ChangeNotifier {
 
     await localMediaDb.addFavourites(newRows);
     _rows.addAll(newRows);
+    _entryIds.addAll(newRows.map((row) => row.entryId));
 
     notifyListeners();
   }
@@ -44,6 +47,7 @@ class Favourites with ChangeNotifier {
 
     await localMediaDb.removeFavourites(removedRows);
     removedRows.forEach(_rows.remove);
+    _entryIds.removeAll(entryIds);
 
     notifyListeners();
   }
@@ -51,6 +55,7 @@ class Favourites with ChangeNotifier {
   Future<void> clear() async {
     await localMediaDb.clearFavourites();
     _rows.clear();
+    _entryIds.clear();
 
     notifyListeners();
   }

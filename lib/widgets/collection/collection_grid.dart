@@ -4,7 +4,6 @@ import 'package:aves/app_mode.dart';
 import 'package:aves/locale/calendar/calendar_utils.dart';
 import 'package:aves/model/app/permissions.dart';
 import 'package:aves/model/entry/entry.dart';
-import 'package:aves/model/favourites.dart';
 import 'package:aves/model/filters/favourite.dart';
 import 'package:aves/model/filters/filters.dart';
 import 'package:aves/model/filters/mime.dart';
@@ -103,15 +102,19 @@ class _CollectionGridState extends State<CollectionGrid> {
     });
 
     if (isCalendar) {
-      _tileExtentController = TileExtentController(
-        settingsRouteKey: null,
-        columnCountDefault: DateTime.daysPerWeek,
-        extentMin: 0,
-        extentMax: double.infinity,
-        spacing: spacing,
-        horizontalPadding: 2,
-      );
+      if (_tileExtentController?.settingsRouteKey != null || _tileExtentController?.spacing != spacing) {
+        _tileExtentController?.dispose();
+        _tileExtentController = TileExtentController(
+          settingsRouteKey: null,
+          columnCountDefault: DateTime.daysPerWeek,
+          extentMin: 0,
+          extentMax: double.infinity,
+          spacing: spacing,
+          horizontalPadding: 2,
+        );
+      }
     } else if (_tileExtentController?.settingsRouteKey != settingsRouteKey || _tileExtentController?.spacing != spacing) {
+      _tileExtentController?.dispose();
       _tileExtentController = TileExtentController(
         settingsRouteKey: settingsRouteKey,
         columnCountDefault: CollectionGrid.columnCountDefault,
@@ -203,41 +206,36 @@ class _CollectionGridContentState extends State<_CollectionGridContent> {
                               tileExtent: thumbnailExtent,
                               tileBuilder: (entry, tileSize) {
                                 final extent = tileSize.shortestSide;
-                                return ListenableBuilder(
-                                  listenable: favourites,
-                                  builder: (context, child) {
-                                    Widget tile = InteractiveTile(
-                                      key: ValueKey(entry.id),
-                                      collection: collection,
-                                      entry: entry,
-                                      thumbnailExtent: extent,
-                                      tileLayout: tileLayout,
-                                      isScrollingNotifier: _isScrollingNotifier,
-                                    );
-                                    if (!settings.useTvLayout) return tile;
+                                Widget tile = InteractiveTile(
+                                  key: ValueKey(entry.id),
+                                  collection: collection,
+                                  entry: entry,
+                                  thumbnailExtent: extent,
+                                  tileLayout: tileLayout,
+                                  isScrollingNotifier: _isScrollingNotifier,
+                                );
+                                if (!settings.useTvLayout) return tile;
 
-                                    return Focus(
-                                      onFocusChange: (focused) {
-                                        if (focused) {
-                                          _focusedItemNotifier.value = entry;
-                                        } else if (_focusedItemNotifier.value == entry) {
-                                          _focusedItemNotifier.value = null;
-                                        }
-                                      },
-                                      child: ValueListenableBuilder<AvesEntry?>(
-                                        valueListenable: _focusedItemNotifier,
-                                        builder: (context, focusedItem, child) {
-                                          return AnimatedScale(
-                                            scale: focusedItem == entry ? 1 : .9,
-                                            curve: Curves.fastOutSlowIn,
-                                            duration: context.select<DurationsData, Duration>((v) => v.tvImageFocusAnimation),
-                                            child: child!,
-                                          );
-                                        },
-                                        child: tile,
-                                      ),
-                                    );
+                                return Focus(
+                                  onFocusChange: (focused) {
+                                    if (focused) {
+                                      _focusedItemNotifier.value = entry;
+                                    } else if (_focusedItemNotifier.value == entry) {
+                                      _focusedItemNotifier.value = null;
+                                    }
                                   },
+                                  child: ValueListenableBuilder<AvesEntry?>(
+                                    valueListenable: _focusedItemNotifier,
+                                    builder: (context, focusedItem, child) {
+                                      return AnimatedScale(
+                                        scale: focusedItem == entry ? 1 : .9,
+                                        curve: Curves.fastOutSlowIn,
+                                        duration: context.select<DurationsData, Duration>((v) => v.tvImageFocusAnimation),
+                                        child: child!,
+                                      );
+                                    },
+                                    child: tile,
+                                  ),
                                 );
                               },
                               tileAnimationDelay: tileAnimationDelay,

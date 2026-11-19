@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:aves/model/entry/entry.dart';
+import 'package:aves/model/favourites.dart';
 import 'package:aves/model/highlight.dart';
 import 'package:aves/model/selection.dart';
 import 'package:aves/theme/durations.dart';
@@ -17,15 +18,20 @@ class const ThumbnailEntryOverlay({
   @override
   Widget build(BuildContext context) {
     final iconBuilder = context.select<GridThemeData, GridThemeIconBuilder>((t) => t.iconBuilder);
-    final children = iconBuilder(context, entry);
-    if (children.isEmpty) return const SizedBox();
-    return Align(
-      alignment: .bottomStart,
-      child: Column(
-        mainAxisSize: .min,
-        crossAxisAlignment: .start,
-        children: children,
-      ),
+    return ListenableBuilder(
+      listenable: favourites,
+      builder: (context, child) {
+        final children = iconBuilder(context, entry);
+        if (children.isEmpty) return const SizedBox();
+        return Align(
+          alignment: .bottomStart,
+          child: Column(
+            mainAxisSize: .min,
+            crossAxisAlignment: .start,
+            children: children,
+          ),
+        );
+      },
     );
   }
 }

@@ -14,7 +14,12 @@ void main() {
 
   test('Parse countries', () async {
     TestWidgetsFlutterBinding.ensureInitialized();
-    final topo = await countryTopology.getTopology();
+    final topologies = await Future.wait([
+      countryTopology.getTopology(),
+      countryTopology.getTopology(),
+    ]);
+    final topo = topologies.first;
+    expect(topo, same(topologies.last));
     expect(topo != null, true);
     if (topo == null) return;
 

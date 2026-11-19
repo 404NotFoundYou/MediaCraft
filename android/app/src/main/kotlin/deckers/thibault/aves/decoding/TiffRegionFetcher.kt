@@ -10,6 +10,7 @@ import deckers.thibault.aves.utils.BitmapUtils
 import deckers.thibault.aves.utils.MimeTypes
 import org.beyka.tiffbitmapfactory.DecodeArea
 import org.beyka.tiffbitmapfactory.TiffBitmapFactory
+import kotlinx.coroutines.CancellationException
 import java.io.ByteArrayInputStream
 
 class TiffRegionFetcher internal constructor(
@@ -44,6 +45,8 @@ class TiffRegionFetcher internal constructor(
                     result.streamBytes(ByteArrayInputStream(bytes))
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             result.error("fetch-exception", "failed to read from uri=$uri page=$page regionRect=$regionRect", e.message)
         }

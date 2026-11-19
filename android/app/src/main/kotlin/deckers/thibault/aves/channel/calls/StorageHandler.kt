@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.os.storage.StorageManager
 import deckers.thibault.aves.channel.calls.Coresult.Companion.safe
+import deckers.thibault.aves.decoding.RegionFetcher
 import deckers.thibault.aves.storage.MediaStoreUriHelper
 import deckers.thibault.aves.storage.PermissionManager
 import deckers.thibault.aves.storage.StorageUtils
@@ -197,6 +198,7 @@ class StorageHandler(private val context: Context) : MethodCallHandler {
     }
 
     private fun deleteTempDirectory(@Suppress("unused_parameter") call: MethodCall, result: MethodChannel.Result) {
+        RegionFetcher.clearDecoders()
         result.success(StorageUtils.deleteTempDirectory(context))
     }
 
