@@ -16,6 +16,10 @@ All notable changes to this project will be documented in this file.
 - 缓存国家拓扑、收藏查询、媒体 URI 索引和图片请求键，减少重复解析与无效缓存增长。
 - 复用媒体集合控制器并降低地图覆盖物重复刷新，减少图库滚动和地图交互中的 UI 开销。
 
+### Verification
+
+- ARM64 签名复核、真机覆盖升级及安装提示见 [v0.6.8 发布说明](docs/releases/v0.6.8.md)。
+
 ## <a id="v0.6.7"></a>[v0.6.7] - 2026-11-18
 
 ### Fixed
