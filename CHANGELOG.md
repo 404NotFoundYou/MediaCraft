@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## <a id="unreleased"></a>[Unreleased]
 
+## <a id="v0.6.9"></a>[v0.6.9] - 2026-11-20
+
+### Fixed
+
+- 修复覆盖导出失败时旧文件被提前删除的问题，保留已有输出以便恢复。
+- 修复后台媒体分析取消后无法再次启动的问题。
+- 修复图片字节流、输出缓冲、设置导入和未跟踪文件恢复的边界处理。
+- 修复数据库升级、媒体扫描和百度地图状态处理中的可靠性问题。
+
+### Changed
+
+- 强化 Android 媒体流、文件写入和 flavor 校验。
+- 移除未使用的 ExoPlayer 插件，并增加相关回归测试。
+
+### Verification
+
+- GitHub Actions 对 libre、baidu、CodeQL 和正式百度版构建执行验证。
+
 ## <a id="v0.6.8"></a>[v0.6.8] - 2026-11-19
 
 ### Fixed

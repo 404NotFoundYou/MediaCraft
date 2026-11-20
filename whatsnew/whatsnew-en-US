@@ -1,5 +1,5 @@
-In v0.6.8:
-- Reduce duplicate media decoding, image cache registration, and map refresh work.
-- Improve cancellation handling for media, region, thumbnail, SVG, and TIFF requests.
-- Clean up temporary Android region exports safely during concurrent decoding.
+In v0.6.9:
+- Improve recovery when exports fail, background analysis is cancelled, or settings are imported.
+- Improve media scanning, database upgrades, Android media streams, and Baidu map state handling.
+- Remove the unused ExoPlayer plugin and strengthen flavor validation.
 Full changelog available on GitHub
