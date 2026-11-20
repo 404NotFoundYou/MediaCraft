@@ -49,7 +49,7 @@ class SqfliteLocalMediaDb implements LocalMediaDb {
       await path,
       onCreate: (db, version) => SqfliteLocalMediaDbSchema.createLatestVersion(db),
       onUpgrade: LocalMediaDbUpgrader.upgradeDb,
-      version: 17,
+      version: 18,
     );
 
     final maxIdRows = await _db.rawQuery('SELECT MAX(id) AS maxId FROM $entryTable');
@@ -141,21 +141,19 @@ class SqfliteLocalMediaDb implements LocalMediaDb {
 
     final entries = <AvesEntry>{};
     if (directory != null) {
+      final parent = pContext.normalize(directory);
       final separator = pContext.separator;
-      if (!directory.endsWith(separator)) {
-        directory = '$directory$separator';
-      }
-
-      where = '${where != null ? '$where AND ' : ''}path LIKE ?';
-      whereArgs.add('$directory%');
+      final prefix = parent.endsWith(separator) ? parent : '$parent$separator';
+      final escapedPrefix = prefix.replaceAll('!', '!!').replaceAll('%', '!%').replaceAll('_', '!_');
+      where = "${where != null ? '$where AND ' : ''}path LIKE ? ESCAPE '!'";
+      whereArgs.add('$escapedPrefix%');
       final cursor = await _db.queryCursor(entryTable, where: where, whereArgs: whereArgs, bufferSize: _queryCursorBufferSize);
 
-      final dirLength = directory.length;
       while (await cursor.moveNext()) {
         final row = cursor.current;
         // skip entries in subfolders
         final path = row['path'] as String?;
-        if (path != null && !path.substring(dirLength).contains(separator)) {
+        if (path != null && pContext.dirname(path) == parent) {
           entries.add(AvesEntry.fromMap(row));
         }
       }

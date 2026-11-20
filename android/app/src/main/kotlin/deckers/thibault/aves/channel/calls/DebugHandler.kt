@@ -50,7 +50,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.beyka.tiffbitmapfactory.TiffBitmapFactory
 import java.io.IOException
-import java.io.InputStream
 import java.util.Date
 import androidx.exifinterface.media.ExifInterfaceFork as ExifInterface
 
@@ -485,7 +484,7 @@ class DebugHandler(private val context: Context) : MethodCallHandler {
             heightDip = heightDip,
             videoMethods = videoMethods,
             result = object : ByteSink {
-                override fun streamBytes(inputStream: InputStream): Boolean {
+                override fun streamBytes(bytes: ByteArray): Boolean {
                     Log.w(LOG_TAG, "this fetcher should not return bytes via stream")
                     return false
                 }

@@ -21,7 +21,6 @@ import deckers.thibault.aves.utils.BitmapUtils
 import deckers.thibault.aves.utils.MemoryUtils
 import deckers.thibault.aves.utils.MimeTypes
 import kotlinx.coroutines.CancellationException
-import java.io.ByteArrayInputStream
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.math.ceil
@@ -99,7 +98,7 @@ class SvgRegionFetcher internal constructor(
             if (bytes == null) {
                 result.error("fetch-null", "failed to decode SVG for uri=$uri regionRect=$regionRect", null)
             } else {
-                result.streamBytes(ByteArrayInputStream(bytes))
+                result.streamBytes(bytes)
             }
         } catch (e: SVGParseException) {
             result.error("fetch-parse", "failed to parse SVG for uri=$uri regionRect=$regionRect", e.message)

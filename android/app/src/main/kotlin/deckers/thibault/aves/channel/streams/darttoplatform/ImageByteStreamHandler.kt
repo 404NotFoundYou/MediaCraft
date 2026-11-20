@@ -20,11 +20,14 @@ import deckers.thibault.aves.utils.MimeTypes
 import deckers.thibault.aves.utils.MimeTypes.handleEncodedBytesInFlutter
 import deckers.thibault.aves.utils.MimeTypes.isVideo
 import deckers.thibault.aves.utils.MimeTypes.needRotationAfterGlide
+import deckers.thibault.aves.utils.UriUtils.isContentScheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
+import java.io.FileInputStream
+import java.io.IOException
 import java.io.InputStream
 import java.util.Date
 
@@ -103,15 +106,34 @@ class ImageByteStreamHandler(private val context: Context, private val arguments
 
     private fun streamOriginalBytesWithTrailer(contentAddress: ContentAddress) {
         try {
-            val sent = StorageUtils.openInputStream(context, contentAddress.uri)?.use(::streamBytes)
-            if (sent ?: false) {
-                success(BitmapUtils.FORMAT_BYTE_ENCODED_AS_BYTES)
+            val uri = contentAddress.uri
+            if (uri.isContentScheme) {
+                val asset = context.contentResolver.openAssetFileDescriptor(StorageUtils.getSafeInputUri(context, uri), "r")
+                    ?: throw IOException("failed to open image at $uri")
+                asset.use {
+                    val length = it.length
+                    it.createInputStream().use { input -> streamEncodedBytes(input, length) }
+                }
+            } else {
+                val input = StorageUtils.openInputStream(context, uri) ?: throw IOException("failed to open image at $uri")
+                input.use { streamEncodedBytes(it, (it as? FileInputStream)?.channel?.size() ?: -1L) }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             error("streamImage-image-read-exception", "failed to get image for $contentAddress", e.stackTraceToString())
         }
+    }
+
+    private fun streamEncodedBytes(input: InputStream, length: Long) {
+        val trailer = BitmapUtils.FORMAT_BYTE_ENCODED_AS_BYTES
+        if (length in 0..Long.MAX_VALUE - trailer.size) success(length + trailer.size)
+        if (streamBytes(input)) success(trailer)
+    }
+
+    override fun streamBytes(bytes: ByteArray): Boolean {
+        success(bytes.size)
+        return streamBytes(ByteArrayInputStream(bytes))
     }
 
     private suspend fun streamImageByGlide(
@@ -138,7 +160,7 @@ class ImageByteStreamHandler(private val context: Context, private val arguments
             if (bitmap != null) {
                 // do not recycle bitmaps fetched from Glide as their lifecycle is unknown
                 val bytes = BitmapUtils.getBytes(bitmap, recycle = false, decoded = decoded, applyGainmap = applyGainmap, mimeType = mimeType)
-                streamBytes(ByteArrayInputStream(bytes))
+                if (bytes != null) streamBytes(bytes) else error("streamImage-memory", "failed to produce image bytes", null)
             } else {
                 error("streamImage-image-decode-null", "failed to get image for $contentAddress", null)
             }
@@ -168,7 +190,7 @@ class ImageByteStreamHandler(private val context: Context, private val arguments
             if (bitmap != null) {
                 // do not recycle bitmaps fetched from Glide as their lifecycle is unknown
                 val bytes = BitmapUtils.getBytes(bitmap, recycle = false, decoded = decoded, applyGainmap = false, mimeType = mimeType)
-                streamBytes(ByteArrayInputStream(bytes))
+                if (bytes != null) streamBytes(bytes) else error("streamImage-memory", "failed to produce image bytes", null)
             } else {
                 error("streamImage-video-null", "failed to get image for $contentAddress", null)
             }
@@ -276,6 +298,6 @@ class ImageByteStreamHandler(private val context: Context, private val arguments
 }
 
 interface ByteSink {
-    fun streamBytes(inputStream: InputStream): Boolean
+    fun streamBytes(bytes: ByteArray): Boolean
     fun error(errorCode: String, errorMessage: String?, errorDetails: Any?)
 }

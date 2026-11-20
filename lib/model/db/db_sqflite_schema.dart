@@ -29,7 +29,12 @@ class SqfliteLocalMediaDbSchema {
 
   static Future<void> createLatestVersion(Database db) async {
     await Future.forEach(allTables, (table) => createTable(db, table));
+    await createLiveDuplicatesIndex(db);
   }
+
+  static Future<void> createLiveDuplicatesIndex(Database db) => db.execute(
+    'CREATE INDEX IF NOT EXISTS entry_content_id_origin_trashed ON $entryTable (contentId, origin, trashed)',
+  );
 
   static Future<void> createTable(Database db, String table) {
     switch (table) {

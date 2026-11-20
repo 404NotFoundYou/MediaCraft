@@ -1,37 +1,51 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-// adapted from Flutter `_OutputBuffer` in `/foundation/consolidate_response.dart`
-// unmodified, modulo format & lints
 class OutputBuffer extends ByteConversionSinkBase {
-  List<List<int>>? _chunks = <List<int>>[];
-  int _contentLength = 0;
-  Uint8List? _bytes;
+  final int? _maxLength;
+  final BytesBuilder _chunks = BytesBuilder(copy: false);
+  Uint8List? _buffer, _bytes;
+  int _length = 0;
+
+  new({int? expectedLength, this._maxLength}) {
+    if (expectedLength != null) {
+      _checkLength(expectedLength);
+      _buffer = Uint8List(expectedLength);
+    }
+  }
+
+  void _checkLength(int length) {
+    if (length < 0 || (_maxLength != null && length > _maxLength)) {
+      throw StateError('Byte stream length $length exceeds the allowed range 0..$_maxLength');
+    }
+  }
 
   @override
   void add(List<int> chunk) {
     assert(_bytes == null);
-    _chunks!.add(chunk);
-    _contentLength += chunk.length;
+    final length = _length + chunk.length;
+    _checkLength(length);
+    final buffer = _buffer;
+    if (buffer != null && length <= buffer.length) {
+      buffer.setRange(_length, length, chunk);
+    } else {
+      if (buffer != null) {
+        // The provider's length changed while reading. Keep the bytes already received.
+        _chunks.add(Uint8List.sublistView(buffer, 0, _length));
+        _buffer = null;
+      }
+      _chunks.add(chunk);
+    }
+    _length = length;
   }
 
   @override
   void close() {
-    if (_bytes != null) {
-      // We've already been closed; this is a no-op
-      return;
-    }
-    _bytes = Uint8List(_contentLength);
-    var offset = 0;
-    for (final List<int> chunk in _chunks!) {
-      _bytes!.setRange(offset, offset + chunk.length, chunk);
-      offset += chunk.length;
-    }
-    _chunks = null;
+    if (_bytes != null) return;
+    final buffer = _buffer;
+    _bytes = buffer == null ? _chunks.takeBytes() : Uint8List.sublistView(buffer, 0, _length);
+    _buffer = null;
   }
 
-  Uint8List get bytes {
-    assert(_bytes != null);
-    return _bytes!;
-  }
+  Uint8List get bytes => _bytes!;
 }

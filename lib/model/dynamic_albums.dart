@@ -122,21 +122,17 @@ class DynamicAlbums with ChangeNotifier {
     return jsonList.isNotEmpty ? jsonList : null;
   }
 
-  void import(Object jsonList) {
-    if (jsonList is! List) {
-      debugPrint('failed to import dynamic albums for jsonMap=$jsonList');
-      return;
-    }
+  Future<void> import(Object jsonList) async {
+    if (jsonList is! List) throw const FormatException('Dynamic album backup must be a list');
 
-    jsonList.forEach((row) {
+    final filters = jsonList.map((row) {
       final filter = CollectionFilter.fromJson(row);
-      if (filter == null || filter is! DynamicAlbumFilter) {
-        debugPrint('failed to import dynamic album for row=$row');
-        return;
-      }
-
-      add(filter);
-    });
+      if (filter is! DynamicAlbumFilter) throw const FormatException('Invalid dynamic album filter');
+      return filter;
+    }).toList();
+    for (final filter in filters) {
+      await add(filter);
+    }
   }
 }
 

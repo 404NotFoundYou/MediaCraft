@@ -49,8 +49,12 @@ object FlutterUtils {
             callbackInfo
         )
         runOnUiThread {
-            val engine = FlutterEngine(context).apply {
-                dartExecutor.executeDartCallback(args)
+            val engine = FlutterEngine(context)
+            try {
+                engine.dartExecutor.executeDartCallback(args)
+            } catch (ex: Throwable) {
+                engine.destroy()
+                throw ex
             }
             engineSetter(engine)
         }

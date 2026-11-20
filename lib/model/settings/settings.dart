@@ -208,20 +208,21 @@ class Settings
 
   Future<void> sanitize() async {
     if (timeToTakeAction == AccessibilityTimeout.system && !await AccessibilityService.hasRecommendedTimeouts()) {
-      set(SettingKeys.timeToTakeActionKey, null);
+      await _persistSetting(SettingKeys.timeToTakeActionKey, null);
     }
     if (viewerUseCutout != SettingsDefaults.viewerUseCutout && !await windowService.isCutoutAware()) {
-      set(SettingKeys.viewerUseCutoutKey, null);
+      await _persistSetting(SettingKeys.viewerUseCutoutKey, null);
     }
     if (videoBackgroundMode == VideoBackgroundMode.pip && !device.supportPictureInPicture) {
-      set(SettingKeys.videoBackgroundModeKey, null);
+      await _persistSetting(SettingKeys.videoBackgroundModeKey, null);
     }
-    collectionBurstPatterns = collectionBurstPatterns.where(BurstPatterns.options.contains).toSet();
+    await _persistSetting(SettingKeys.collectionBurstPatternsKey, collectionBurstPatterns.where(BurstPatterns.options.contains).toList());
 
     // emulator
     if (!device.isPhysicalDevice) {
-      set(SettingKeys.videoHardwareAccelerationKey, VideoHardwareAcceleration.disabled);
+      await _persistSetting(SettingKeys.videoHardwareAccelerationKey, VideoHardwareAcceleration.disabled.name);
     }
+    notifyListeners();
   }
 
   // tag editor
@@ -305,195 +306,207 @@ class Settings
 
   // import/export
 
-  Map<String, Object?> export() => Map.fromEntries(
-    store.getKeys().whereNot(SettingKeys.isInternalKey).map((k) => MapEntry(k, store.get(k))),
-  );
+  Map<String, Object?>? export() {
+    final values = {
+      for (final key in store.getKeys())
+        if (_importType(key) != null) key: store.get(key),
+    };
+    return values.isEmpty ? null : values;
+  }
+
+  static Type? _importType(String key) {
+    if (SettingKeys.isInternalKey(key)) return null;
+    if (key.startsWith(SettingKeys.tileExtentPrefixKey)) return double;
+    if (key.startsWith(SettingKeys.tileLayoutPrefixKey)) return String;
+    if (key.startsWith(SettingKeys.showTitleQueryPrefixKey)) return bool;
+
+    switch (key) {
+      case SettingKeys.convertQualityKey:
+      case SettingKeys.screenSaverIntervalKey:
+      case SettingKeys.slideshowIntervalKey:
+        return int;
+      case SettingKeys.subtitleFontSizeKey:
+      case SettingKeys.infoMapZoomKey:
+        return double;
+      case SettingKeys.isInstalledAppAccessAllowedKey:
+      case SettingKeys.isErrorReportingAllowedKey:
+      case SettingKeys.forceWesternArabicNumeralsKey:
+      case SettingKeys.enableDynamicColorKey:
+      case SettingKeys.enableBlurEffectKey:
+      case SettingKeys.mustBackTwiceToExitKey:
+      case SettingKeys.confirmCreateVaultKey:
+      case SettingKeys.confirmDeleteForeverKey:
+      case SettingKeys.confirmMoveToBinKey:
+      case SettingKeys.confirmAfterMoveToBinKey:
+      case SettingKeys.collectionSortReverseKey:
+      case SettingKeys.showCollectionLayoutBarKey:
+      case SettingKeys.showThumbnailFavouriteKey:
+      case SettingKeys.showThumbnailHdrKey:
+      case SettingKeys.showThumbnailFormatKey:
+      case SettingKeys.showThumbnailMotionPhotoKey:
+      case SettingKeys.showThumbnailRatingKey:
+      case SettingKeys.showThumbnailRawKey:
+      case SettingKeys.showThumbnailVideoDurationKey:
+      case SettingKeys.albumSortReverseKey:
+      case SettingKeys.countrySortReverseKey:
+      case SettingKeys.stateSortReverseKey:
+      case SettingKeys.placeSortReverseKey:
+      case SettingKeys.tagSortReverseKey:
+      case SettingKeys.showOverlayOnOpeningKey:
+      case SettingKeys.showOverlayMinimapKey:
+      case SettingKeys.showOverlayZoomLevelKey:
+      case SettingKeys.showOverlayInfoKey:
+      case SettingKeys.showOverlayDescriptionKey:
+      case SettingKeys.showOverlayRatingTagsKey:
+      case SettingKeys.showOverlayShootingDetailsKey:
+      case SettingKeys.showOverlayThumbnailPreviewKey:
+      case SettingKeys.viewerGestureSideTapNextKey:
+      case SettingKeys.viewerUseCutoutKey:
+      case SettingKeys.enableMotionPhotoAutoPlayKey:
+      case SettingKeys.videoGestureDoubleTapTogglePlayKey:
+      case SettingKeys.videoGestureSideDoubleTapSeekKey:
+      case SettingKeys.videoGestureVerticalDragBrightnessVolumeKey:
+      case SettingKeys.subtitleShowOutlineKey:
+      case SettingKeys.tagEditorCurrentFilterSectionExpandedKey:
+      case SettingKeys.convertWriteMetadataKey:
+      case SettingKeys.mapShowItemTracksKey:
+      case SettingKeys.saveSearchHistoryKey:
+      case SettingKeys.showPinchGestureAlternativesKey:
+      case SettingKeys.screenSaverFillScreenKey:
+      case SettingKeys.screenSaverAnimatedZoomEffectKey:
+      case SettingKeys.slideshowRepeatKey:
+      case SettingKeys.slideshowShuffleKey:
+      case SettingKeys.slideshowFillScreenKey:
+      case SettingKeys.slideshowAnimatedZoomEffectKey:
+      case SettingKeys.canUseAnalysisServiceKey:
+      case SettingKeys.forceTvLayoutKey:
+      case SettingKeys.enableBinKey:
+        return bool;
+      case SettingKeys.autoExportPathKey:
+      case SettingKeys.localeKey:
+      case SettingKeys.calendarKey:
+      case SettingKeys.displayRefreshRateModeKey:
+      case SettingKeys.themeBrightnessKey:
+      case SettingKeys.themeColorModeKey:
+      case SettingKeys.maxBrightnessKey:
+      case SettingKeys.keepScreenOnKey:
+      case SettingKeys.homePageKey:
+      case SettingKeys.homeCustomExplorerPathKey:
+      case SettingKeys.collectionSortFactorKey:
+      case SettingKeys.collectionSectionFactorKey:
+      case SettingKeys.thumbnailLocationIconKey:
+      case SettingKeys.thumbnailTagIconKey:
+      case SettingKeys.albumSectionFactorKey:
+      case SettingKeys.tagSectionFactorKey:
+      case SettingKeys.albumSortFactorKey:
+      case SettingKeys.countrySortFactorKey:
+      case SettingKeys.stateSortFactorKey:
+      case SettingKeys.placeSortFactorKey:
+      case SettingKeys.tagSortFactorKey:
+      case SettingKeys.albumGroupsKey:
+      case SettingKeys.tagGroupsKey:
+      case SettingKeys.imageBackgroundKey:
+      case SettingKeys.videoAutoPlayModeKey:
+      case SettingKeys.videoBackgroundModeKey:
+      case SettingKeys.videoHardwareAccelerationKey:
+      case SettingKeys.videoLoopModeKey:
+      case SettingKeys.videoResumptionModeKey:
+      case SettingKeys.subtitleTextAlignmentKey:
+      case SettingKeys.subtitleTextPositionKey:
+      case SettingKeys.subtitleTextColorKey:
+      case SettingKeys.subtitleBackgroundColorKey:
+      case SettingKeys.tagEditorExpandedSectionKey:
+      case SettingKeys.convertMimeTypeKey:
+      case SettingKeys.mapStyleKey:
+      case SettingKeys.mapDefaultCenterKey:
+      case SettingKeys.coordinateFormatKey:
+      case SettingKeys.unitSystemKey:
+      case SettingKeys.accessibilityAnimationsKey:
+      case SettingKeys.timeToTakeActionKey:
+      case SettingKeys.screenSaverTransitionKey:
+      case SettingKeys.screenSaverVideoPlaybackKey:
+      case SettingKeys.slideshowTransitionKey:
+      case SettingKeys.slideshowVideoPlaybackKey:
+      case SettingKeys.entryRenamingPatternKey:
+      case SettingKeys.overlayHistogramStyleKey:
+        return String;
+      case SettingKeys.customMapStylesKey:
+      case SettingKeys.homeCustomCollectionKey:
+      case SettingKeys.drawerTypeBookmarksKey:
+      case SettingKeys.drawerAlbumBookmarksKey:
+      case SettingKeys.drawerPageBookmarksKey:
+      case SettingKeys.bottomNavigationActionsKey:
+      case SettingKeys.collectionBurstPatternsKey:
+      case SettingKeys.pinnedFiltersKey:
+      case SettingKeys.hiddenFiltersKey:
+      case SettingKeys.deactivatedHiddenFiltersKey:
+      case SettingKeys.collectionBrowsingQuickActionsKey:
+      case SettingKeys.collectionSelectionQuickActionsKey:
+      case SettingKeys.thumbnailCredentialValidityKey:
+      case SettingKeys.viewerQuickActionsKey:
+      case SettingKeys.videoThumbnailMethodsKey:
+      case SettingKeys.videoControlActionsKey:
+      case SettingKeys.screenSaverCollectionFiltersKey:
+        return List<String>;
+      default:
+        return null;
+    }
+  }
+
+  static Map<String, Object?> validatedImport(Object jsonMap) {
+    if (jsonMap is! Map<String, Object?>) throw const FormatException('Settings backup must be an object');
+
+    final values = <String, Object?>{};
+    for (final MapEntry(:key, :value) in jsonMap.entries) {
+      final type = _importType(key);
+      if (type == null) continue;
+
+      if (value == null) {
+        values[key] = null;
+      } else if (type == double && value is num && value.isFinite) {
+        values[key] = value.toDouble();
+      } else if ((type == int && value is int) || (type == bool && value is bool) || (type == String && value is String)) {
+        values[key] = value;
+      } else if (type == (List<String>) && value is List && value.every((item) => item is String)) {
+        values[key] = List<String>.from(value);
+      } else {
+        throw FormatException('Invalid value for setting $key');
+      }
+    }
+    if (values.isEmpty) throw const FormatException('Backup contains no recognised settings');
+    return values;
+  }
 
   Future<void> import(Object jsonMap) async {
-    if (jsonMap is! Map) {
-      debugPrint('failed to import settings for jsonMap=$jsonMap');
-      return;
+    final values = validatedImport(jsonMap);
+    final omittedKeys = store.getKeys().where((key) => _importType(key) != null && !values.containsKey(key)).toList();
+
+    // Apply the validated backup before resetting settings it omits.
+    for (final MapEntry(:key, :value) in values.entries) {
+      await _persistSetting(key, value);
     }
-
-    // clear to restore defaults
-    await reset(includeInternalKeys: false);
-
-    // apply user modifications
-    jsonMap.cast<String, Object?>().forEach((key, newValue) {
-      final oldValue = store.get(key);
-
-      if (newValue == null) {
-        store.remove(key);
-      } else if (key.startsWith(SettingKeys.tileExtentPrefixKey)) {
-        if (newValue is double) {
-          store.setDouble(key, newValue);
-        } else {
-          debugPrint('failed to import key=$key, value=$newValue is not a double');
-        }
-      } else if (key.startsWith(SettingKeys.tileLayoutPrefixKey)) {
-        if (newValue is String) {
-          store.setString(key, newValue);
-        } else {
-          debugPrint('failed to import key=$key, value=$newValue is not a string');
-        }
-      } else if (key.startsWith(SettingKeys.showTitleQueryPrefixKey)) {
-        if (newValue is bool) {
-          store.setBool(key, newValue);
-        } else {
-          debugPrint('failed to import key=$key, value=$newValue is not a bool');
-        }
-      } else {
-        switch (key) {
-          case SettingKeys.convertQualityKey:
-          case SettingKeys.screenSaverIntervalKey:
-          case SettingKeys.slideshowIntervalKey:
-            if (newValue is int) {
-              store.setInt(key, newValue);
-            } else {
-              debugPrint('failed to import key=$key, value=$newValue is not an int');
-            }
-          case SettingKeys.subtitleFontSizeKey:
-          case SettingKeys.infoMapZoomKey:
-            if (newValue is double) {
-              store.setDouble(key, newValue);
-            } else {
-              debugPrint('failed to import key=$key, value=$newValue is not a double');
-            }
-          case SettingKeys.isInstalledAppAccessAllowedKey:
-          case SettingKeys.isErrorReportingAllowedKey:
-          case SettingKeys.forceWesternArabicNumeralsKey:
-          case SettingKeys.enableDynamicColorKey:
-          case SettingKeys.enableBlurEffectKey:
-          case SettingKeys.mustBackTwiceToExitKey:
-          case SettingKeys.confirmCreateVaultKey:
-          case SettingKeys.confirmDeleteForeverKey:
-          case SettingKeys.confirmMoveToBinKey:
-          case SettingKeys.confirmAfterMoveToBinKey:
-          case SettingKeys.collectionSortReverseKey:
-          case SettingKeys.showCollectionLayoutBarKey:
-          case SettingKeys.showThumbnailFavouriteKey:
-          case SettingKeys.showThumbnailHdrKey:
-          case SettingKeys.showThumbnailFormatKey:
-          case SettingKeys.showThumbnailMotionPhotoKey:
-          case SettingKeys.showThumbnailRatingKey:
-          case SettingKeys.showThumbnailRawKey:
-          case SettingKeys.showThumbnailVideoDurationKey:
-          case SettingKeys.albumSortReverseKey:
-          case SettingKeys.countrySortReverseKey:
-          case SettingKeys.stateSortReverseKey:
-          case SettingKeys.placeSortReverseKey:
-          case SettingKeys.tagSortReverseKey:
-          case SettingKeys.showOverlayOnOpeningKey:
-          case SettingKeys.showOverlayMinimapKey:
-          case SettingKeys.showOverlayZoomLevelKey:
-          case SettingKeys.showOverlayInfoKey:
-          case SettingKeys.showOverlayDescriptionKey:
-          case SettingKeys.showOverlayRatingTagsKey:
-          case SettingKeys.showOverlayShootingDetailsKey:
-          case SettingKeys.showOverlayThumbnailPreviewKey:
-          case SettingKeys.viewerGestureSideTapNextKey:
-          case SettingKeys.viewerUseCutoutKey:
-          case SettingKeys.enableMotionPhotoAutoPlayKey:
-          case SettingKeys.videoGestureDoubleTapTogglePlayKey:
-          case SettingKeys.videoGestureSideDoubleTapSeekKey:
-          case SettingKeys.videoGestureVerticalDragBrightnessVolumeKey:
-          case SettingKeys.subtitleShowOutlineKey:
-          case SettingKeys.tagEditorCurrentFilterSectionExpandedKey:
-          case SettingKeys.convertWriteMetadataKey:
-          case SettingKeys.mapShowItemTracksKey:
-          case SettingKeys.saveSearchHistoryKey:
-          case SettingKeys.showPinchGestureAlternativesKey:
-          case SettingKeys.screenSaverFillScreenKey:
-          case SettingKeys.screenSaverAnimatedZoomEffectKey:
-          case SettingKeys.slideshowRepeatKey:
-          case SettingKeys.slideshowShuffleKey:
-          case SettingKeys.slideshowFillScreenKey:
-          case SettingKeys.slideshowAnimatedZoomEffectKey:
-            if (newValue is bool) {
-              store.setBool(key, newValue);
-            } else {
-              debugPrint('failed to import key=$key, value=$newValue is not a bool');
-            }
-          case SettingKeys.autoExportPathKey:
-          case SettingKeys.localeKey:
-          case SettingKeys.calendarKey:
-          case SettingKeys.displayRefreshRateModeKey:
-          case SettingKeys.themeBrightnessKey:
-          case SettingKeys.themeColorModeKey:
-          case SettingKeys.maxBrightnessKey:
-          case SettingKeys.keepScreenOnKey:
-          case SettingKeys.homePageKey:
-          case SettingKeys.homeCustomExplorerPathKey:
-          case SettingKeys.collectionSortFactorKey:
-          case SettingKeys.collectionSectionFactorKey:
-          case SettingKeys.thumbnailLocationIconKey:
-          case SettingKeys.thumbnailTagIconKey:
-          case SettingKeys.albumSectionFactorKey:
-          case SettingKeys.tagSectionFactorKey:
-          case SettingKeys.albumSortFactorKey:
-          case SettingKeys.countrySortFactorKey:
-          case SettingKeys.stateSortFactorKey:
-          case SettingKeys.placeSortFactorKey:
-          case SettingKeys.tagSortFactorKey:
-          case SettingKeys.albumGroupsKey:
-          case SettingKeys.tagGroupsKey:
-          case SettingKeys.imageBackgroundKey:
-          case SettingKeys.videoAutoPlayModeKey:
-          case SettingKeys.videoBackgroundModeKey:
-          case SettingKeys.videoHardwareAccelerationKey:
-          case SettingKeys.videoLoopModeKey:
-          case SettingKeys.videoResumptionModeKey:
-          case SettingKeys.subtitleTextAlignmentKey:
-          case SettingKeys.subtitleTextPositionKey:
-          case SettingKeys.subtitleTextColorKey:
-          case SettingKeys.subtitleBackgroundColorKey:
-          case SettingKeys.tagEditorExpandedSectionKey:
-          case SettingKeys.convertMimeTypeKey:
-          case SettingKeys.mapStyleKey:
-          case SettingKeys.mapDefaultCenterKey:
-          case SettingKeys.coordinateFormatKey:
-          case SettingKeys.unitSystemKey:
-          case SettingKeys.accessibilityAnimationsKey:
-          case SettingKeys.timeToTakeActionKey:
-          case SettingKeys.screenSaverTransitionKey:
-          case SettingKeys.screenSaverVideoPlaybackKey:
-          case SettingKeys.slideshowTransitionKey:
-          case SettingKeys.slideshowVideoPlaybackKey:
-            if (newValue is String) {
-              store.setString(key, newValue);
-            } else {
-              debugPrint('failed to import key=$key, value=$newValue is not a string');
-            }
-          case SettingKeys.customMapStylesKey:
-          case SettingKeys.homeCustomCollectionKey:
-          case SettingKeys.drawerTypeBookmarksKey:
-          case SettingKeys.drawerAlbumBookmarksKey:
-          case SettingKeys.drawerPageBookmarksKey:
-          case SettingKeys.bottomNavigationActionsKey:
-          case SettingKeys.collectionBurstPatternsKey:
-          case SettingKeys.pinnedFiltersKey:
-          case SettingKeys.hiddenFiltersKey:
-          case SettingKeys.deactivatedHiddenFiltersKey:
-          case SettingKeys.collectionBrowsingQuickActionsKey:
-          case SettingKeys.collectionSelectionQuickActionsKey:
-          case SettingKeys.thumbnailCredentialValidityKey:
-          case SettingKeys.viewerQuickActionsKey:
-          case SettingKeys.videoThumbnailMethodsKey:
-          case SettingKeys.videoControlActionsKey:
-          case SettingKeys.screenSaverCollectionFiltersKey:
-            if (newValue is List) {
-              store.setStringList(key, newValue.cast<String>());
-            } else {
-              debugPrint('failed to import key=$key, value=$newValue is not a list');
-            }
-        }
-      }
-      if (hasValueChanged(oldValue, newValue)) {
-        notifyKeyChange(key, oldValue, newValue);
-      }
-    });
+    for (final key in omittedKeys) {
+      await _persistSetting(key, null);
+    }
     await sanitize();
-    notifyListeners();
+  }
+
+  Future<void> _persistSetting(String key, Object? value) async {
+    final oldValue = store.get(key);
+    final saved = await switch (value) {
+      null => store.remove(key),
+      int() => store.setInt(key, value),
+      double() => store.setDouble(key, value),
+      bool() => store.setBool(key, value),
+      String() => store.setString(key, value),
+      List<String>() => store.setStringList(key, value),
+      _ => throw ArgumentError.value(value, key),
+    };
+    if (!saved) {
+      await store.reload();
+      throw StateError('Failed to persist setting $key');
+    }
+    if (hasValueChanged(oldValue, value)) notifyKeyChange(key, oldValue, value);
   }
 
   @override

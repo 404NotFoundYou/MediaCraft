@@ -99,17 +99,25 @@ void main() {
     failNextMarker = true;
     bitmapReady(second);
     await tester.pump();
+    expect(find.text('百度地图标记或轨迹暂时无法显示'), findsOneWidget);
     expect(commands, ['addMarker:second'], reason: 'One newly available bitmap must not re-send unrelated native overlays.');
     commands.clear();
 
     tracks.value = [GeoTrack(points: List.of(points), color: Colors.red)];
     await tester.pump();
+    expect(find.text('百度地图标记或轨迹暂时无法显示'), findsNothing, reason: 'A successful retry clears the temporary overlay error.');
     expect(commands, ['cleanAllMarkers', 'addMarker:first', 'addMarker:second'], reason: 'After a partial marker failure, recover marker state without rebuilding an equal track.');
 
     commands.clear();
+    await messenger.handlePlatformMessage(
+      mapChannel.name,
+      const StandardMethodCodec().encodeMethodCall(const MethodCall('flutter_bmfmap/map/mapRenderValidDataCallback', {'isValid': false, 'errorCode': 1, 'errorMessage': 'invalid key'})),
+      null,
+    );
     tracks.value = [const GeoTrack(points: points, color: Colors.blue)];
     await tester.pump();
     expect(commands, ['removeOverlay', 'addPolyline'], reason: 'A track change must not resend marker bitmaps.');
+    expect(find.text('百度地图暂不可用，请切换其他地图样式'), findsOneWidget, reason: 'A successful track sync must preserve the base map error.');
     await tester.pumpWidget(const SizedBox());
     commands.clear();
     // The SDK schedules a map-loaded fallback even if the widget was disposed.

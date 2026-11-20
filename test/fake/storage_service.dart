@@ -9,6 +9,7 @@ class FakeStorageService extends Fake implements StorageService {
   static const primaryDescription = 'Internal Storage';
   static const removablePath = '/storage/1234-5678/';
   static const removableDescription = 'SD Card';
+  Set<String> untrackedTrashPaths = {}, untrackedVaultPaths = {};
   final Map<String, int?> freeSpaceByPath = {};
 
   @override
@@ -32,7 +33,10 @@ class FakeStorageService extends Fake implements StorageService {
   });
 
   @override
-  Future<Set<String>> getUntrackedTrashPaths(Iterable<String> knownPaths) => SynchronousFuture({});
+  Future<Set<String>> getUntrackedTrashPaths(Iterable<String> knownPaths) => SynchronousFuture(untrackedTrashPaths.difference(knownPaths.toSet()));
+
+  @override
+  Future<Set<String>> getUntrackedVaultPaths(String vaultName, Iterable<String> knownPaths) => SynchronousFuture(untrackedVaultPaths.difference(knownPaths.toSet()));
 
   @override
   Future<String> getVaultRoot() => SynchronousFuture('/vault/');

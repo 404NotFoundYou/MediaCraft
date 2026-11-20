@@ -26,7 +26,6 @@ import deckers.thibault.aves.utils.MimeTypes
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.ByteBuffer
 import java.util.concurrent.locks.ReentrantLock
@@ -142,7 +141,7 @@ class RegionFetcher internal constructor(
             if (bytes == null) {
                 result.error("fetch-null", "failed to decode region for $contentAddress regionRect=$regionRect", null)
             } else {
-                result.streamBytes(ByteArrayInputStream(bytes))
+                result.streamBytes(bytes)
             }
         } catch (e: CancellationException) {
             throw e

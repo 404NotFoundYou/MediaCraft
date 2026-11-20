@@ -613,12 +613,24 @@ class MediaStoreImageProvider : ImageProvider() {
             val uri = resolver.insert(rootContentUri, values)
                 ?: throw Exception("MediaStore failed to insert for an unknown reason")
 
-            resolver.openOutputStream(uri)?.use(write)
-            values.clear()
-            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
-
-            return File(targetDir, targetFileName).path
+            try {
+                val output = resolver.openOutputStream(uri) ?: throw IOException("Could not open inserted file at $uri")
+                output.use(write)
+                values.clear()
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                if (resolver.update(uri, values, null, null) == 0) throw IOException("Could not publish file at $uri")
+                // Pending rows can have a different backing path until published.
+                return resolver.query(uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null)?.use {
+                    if (it.moveToFirst()) it.getString(0) else null
+                } ?: throw IOException("Could not query inserted file at $uri")
+            } catch (ex: Exception) {
+                try {
+                    if (resolver.delete(uri, null, null) == 0) throw IOException("Could not remove unfinished file at $uri")
+                } catch (cleanupError: Exception) {
+                    ex.addSuppressed(cleanupError)
+                }
+                throw ex
+            }
         }
 
         suspend fun rename(

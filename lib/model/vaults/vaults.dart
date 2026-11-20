@@ -187,30 +187,25 @@ class Vaults {
       debugPrint('Recovering ${untrackedPaths.length} untracked vault items');
       await Future.forEach(untrackedPaths, (untrackedPath) async {
         debugPrint('Recovering vault item at path=$untrackedPath');
-        final isDirectory = await FileSystemEntity.isDirectory(untrackedPath);
-        if (isDirectory) {
-          await reportService.recordError('Untracked vault item at path=$untrackedPath is a directory. Deleting...');
-          try {
-            await Directory(untrackedPath).delete(recursive: true);
-          } catch (error, stack) {
-            await reportService.recordError('Failed to remove invalid untracked vault item at path=$untrackedPath with error=$error\n$stack');
-          }
+        if (await FileSystemEntity.type(untrackedPath, followLinks: false) != FileSystemEntityType.file) {
+          await reportService.recordError('Untracked vault item at path=$untrackedPath is not a regular file. Preserved for recovery.');
+          return;
+        }
+        final uri = Uri.file(untrackedPath).toString();
+        AvesEntry? sourceEntry;
+        try {
+          sourceEntry = await mediaFetchService.getEntry(uri, null, allowUnsized: true);
+        } catch (error, stack) {
+          await reportService.recordError('Failed to inspect untracked vault item at uri=$uri. Preserved for recovery: $error', stack);
+          return;
+        }
+        debugPrint('Recovering vault item at uri=$uri yielded new entry=$sourceEntry');
+        if (sourceEntry != null) {
+          sourceEntry.id = localMediaDb.nextId;
+          sourceEntry.origin = EntryOrigins.vault;
+          newEntries.add(sourceEntry);
         } else {
-          final uri = Uri.file(untrackedPath).toString();
-          final sourceEntry = await mediaFetchService.getEntry(uri, null, allowUnsized: true);
-          debugPrint('Recovering vault item at uri=$uri yielded new entry=$sourceEntry');
-          if (sourceEntry != null) {
-            sourceEntry.id = localMediaDb.nextId;
-            sourceEntry.origin = EntryOrigins.vault;
-            newEntries.add(sourceEntry);
-          } else {
-            await reportService.recordError('Untracked vault item at uri=$uri is not a valid media file. Deleting...');
-            try {
-              await File(untrackedPath).delete();
-            } catch (error, stack) {
-              await reportService.recordError('Failed to remove invalid untracked vault item at path=$untrackedPath with error=$error\n$stack');
-            }
-          }
+          await reportService.recordError('Could not identify untracked vault item at uri=$uri. Preserved for recovery.');
         }
       });
     }

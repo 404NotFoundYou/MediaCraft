@@ -32,15 +32,17 @@ Windows 环境：
 
 ```powershell
 .\scripts\bootstrap.ps1
-.\tooling\flutter\bin\flutter.bat pub get --enforce-lockfile
-.\tooling\flutter\bin\flutter.bat analyze lib
-.\tooling\flutter\bin\flutter.bat test
+.\.tooling\flutter\bin\flutter.bat pub get --enforce-lockfile
+.\.tooling\flutter\bin\flutter.bat analyze lib
+.\.tooling\flutter\bin\flutter.bat test
 ```
+
+Windows 下也可通过 `scripts/build.ps1` 一次运行 libre 的静态分析、测试和 Debug 构建。
 
 构建 libre Debug APK：
 
 ```powershell
-.\tooling\flutter\bin\flutter.bat build apk --debug --flavor libre -t lib/main_libre.dart
+.\.tooling\flutter\bin\flutter.bat build apk --debug --flavor libre -t lib/main_libre.dart
 ```
 
 构建百度地图 Release APK：
@@ -48,7 +50,7 @@ Windows 环境：
 ```powershell
 Copy-Item flavors\pubspec_baidu.yaml pubspec.yaml -Force
 Copy-Item flavors\pubspec_baidu.lock pubspec.lock -Force
-.\tooling\flutter\bin\flutter.bat build apk --release --flavor baidu -t lib/main_baidu.dart --split-per-abi
+.\.tooling\flutter\bin\flutter.bat build apk --release --flavor baidu -t lib/main_baidu.dart --split-per-abi
 ```
 
 百度地图 Release 包需要有效的百度 Key、签名配置和对应 SHA-1。构建完成后应恢复默认 flavor 配置，并使用 APK 签名校验和 SHA-256 校验文件确认交付物。

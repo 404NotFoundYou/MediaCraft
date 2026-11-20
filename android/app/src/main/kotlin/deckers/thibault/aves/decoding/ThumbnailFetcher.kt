@@ -29,7 +29,6 @@ import deckers.thibault.aves.utils.MimeTypes.needRotationAfterContentResolverThu
 import deckers.thibault.aves.utils.MimeTypes.needRotationAfterGlide
 import deckers.thibault.aves.utils.UriUtils.tryParseId
 import kotlinx.coroutines.CancellationException
-import java.io.ByteArrayInputStream
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -132,7 +131,7 @@ class ThumbnailFetcher internal constructor(
             }
             result.error("getThumbnail-null", "failed to get thumbnail for $contentAddress", errorDetails)
         } else {
-            result.streamBytes(ByteArrayInputStream(bytes))
+            result.streamBytes(bytes)
         }
     }
 

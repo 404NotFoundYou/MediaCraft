@@ -65,6 +65,7 @@ class PlatformMediaFetchService implements MediaFetchService {
   static const _platformObject = AvesMethodChannel('deckers.thibault/aves/media_fetch_object');
   static final _byteStream = AvesStreamsChannel('deckers.thibault/aves/media_byte_stream');
 
+  static const int _maxImageStreamLength = 512 * 1024 * 1024;
   static const int _formatTrailerLength = 1; // single format byte
   static const int _formatByteEncoded = 0xCA;
   static const int _formatByteDecoded = 0xFE;
@@ -119,35 +120,25 @@ class PlatformMediaFetchService implements MediaFetchService {
     BytesReceivedCallback? onBytesReceived,
     int? sizeBytes,
   }) async {
-    var bytesReceived = 0;
-    final opCompleter = Completer<Uint8List>();
-    final sink = OutputBuffer();
+    var received = 0;
+    var started = false;
+    var sink = OutputBuffer(maxLength: _maxImageStreamLength);
     try {
-      _byteStream
-          .receiveBroadcastStream(arguments)
-          .listen(
-            (data) {
-              final chunk = data as Uint8List;
-              sink.add(chunk);
-              if (onBytesReceived != null) {
-                bytesReceived += chunk.length;
-                try {
-                  onBytesReceived(bytesReceived, sizeBytes);
-                } catch (error, stack) {
-                  opCompleter.completeError(error, stack);
-                  return;
-                }
-              }
-            },
-            onError: opCompleter.completeError,
-            onDone: () {
-              sink.close();
-              opCompleter.complete(sink.bytes);
-            },
-            cancelOnError: true,
-          );
-      // `await` here, so that `completeError` will be caught below
-      return await opCompleter.future;
+      await for (final event in _byteStream.receiveBroadcastStream(arguments)) {
+        if (!started && event is int) {
+          // Native sends a length only when it can describe the output, including the format trailer.
+          sink = OutputBuffer(expectedLength: event, maxLength: _maxImageStreamLength);
+        } else if (event is Uint8List) {
+          sink.add(event);
+          received += event.length;
+          onBytesReceived?.call(received, sizeBytes);
+        } else {
+          throw const FormatException('Unexpected image byte stream event');
+        }
+        started = true;
+      }
+      sink.close();
+      return sink.bytes;
     } on PlatformException catch (e, stack) {
       debugPrint('$runtimeType _getBytes failed with error=$e');
       if (MimeTypes.isVisual(mimeType) && !_knownMediaTypes.contains(mimeType)) {

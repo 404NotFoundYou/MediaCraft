@@ -58,6 +58,8 @@ class LocalMediaDbUpgrader {
           await _upgradeFrom15(db);
         case 16:
           await _upgradeFrom16(db);
+        case 17:
+          await SqfliteLocalMediaDbSchema.createLiveDuplicatesIndex(db);
       }
       oldVersion++;
     }

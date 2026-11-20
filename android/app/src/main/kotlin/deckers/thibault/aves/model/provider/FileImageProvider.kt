@@ -14,6 +14,7 @@ import deckers.thibault.aves.utils.FileUtils.getFileSize
 import deckers.thibault.aves.utils.LogUtils
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.io.OutputStream
 
 internal class FileImageProvider : ImageProvider() {
@@ -142,8 +143,14 @@ internal class FileImageProvider : ImageProvider() {
             }
 
             val file = File(targetDir, targetFileName)
-            FileOutputStream(file).use(write)
-            return file.path
+            if (!file.createNewFile()) throw IOException("Target already exists at $file")
+            try {
+                FileOutputStream(file).use(write)
+                return file.path
+            } catch (ex: Exception) {
+                if (!file.delete()) ex.addSuppressed(IOException("Could not remove unfinished file $file"))
+                throw ex
+            }
         }
 
         fun move(

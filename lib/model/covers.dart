@@ -286,49 +286,38 @@ class Covers {
     return jsonList.isNotEmpty ? jsonList : null;
   }
 
-  void import(Object jsonList, CollectionSource source) {
-    if (jsonList is! List) {
-      debugPrint('failed to import covers for jsonMap=$jsonList');
-      return;
-    }
+  Future<void> import(Object jsonList, CollectionSource source) async {
+    if (jsonList is! List) throw const FormatException('Cover backup must be a list');
 
     final visibleEntries = source.visibleEntries;
-    jsonList.cast<Map<String, Object?>>().forEach((row) {
-      try {
-        final filter = CollectionFilter.fromJson(row['filter']);
-        if (filter == null) {
-          debugPrint('failed to import cover for row=$row');
-          return;
-        }
+    // Validate each row before applying any covers from this backup.
+    final rows = jsonList.map((row) {
+      if (row is! Map) throw const FormatException('Invalid cover row');
+      final filter = CollectionFilter.fromJson(row['filter']);
+      if (filter == null) throw const FormatException('Invalid cover filter');
+      final volume = row['volume'] as String?;
+      final relativePath = row['relativePath'] as String?;
+      final packageName = row['packageName'] as String?;
+      final colorValue = row['color'];
+      // Older backups stored the color as an int.
+      final color = colorValue is int ? Color(colorValue) : ExtraColor.fromJson(colorValue);
+      if (colorValue != null && color == null) throw const FormatException('Invalid cover color');
 
-        final volume = row['volume'] as String?;
-        final relativePath = row['relativePath'] as String?;
-        final packageName = row['packageName'] as String?;
-        final color = row['color'];
-        // for backward compatibility, color used to be an `int`, now a `string`
-        final colorJson = color is String ? color : null;
-
-        AvesEntry? entry;
-        if (volume != null && relativePath != null) {
-          final path = pContext.join(volume, relativePath);
-          entry = visibleEntries.firstWhereOrNull((entry) => entry.path == path && filter.test(entry));
-          if (entry == null) {
-            debugPrint('failed to import cover entry for path=$path, filter=$filter');
-          }
-        }
-
-        if (entry != null || packageName != null || colorJson != null) {
-          set(
-            filter: filter,
-            entryId: entry?.id,
-            packageName: packageName,
-            color: ExtraColor.fromJson(colorJson),
-          );
-        }
-      } catch (error, stack) {
-        debugPrint('failed to import cover for row=$row with error=$error\n$stack');
+      AvesEntry? entry;
+      if (volume != null && relativePath != null) {
+        final path = pContext.join(volume, relativePath);
+        entry = visibleEntries.firstWhereOrNull((entry) => entry.path == path && filter.test(entry));
+        if (entry == null) debugPrint('failed to import cover entry for path=$path, filter=$filter');
       }
-    });
+      return CoverRow(filter: filter, coverProps: CoverProps(entry?.id, packageName, color));
+    }).toList();
+
+    for (final row in rows) {
+      final CoverProps(:entryId, :packageName, :color) = row.coverProps;
+      if (entryId != null || packageName != null || color != null) {
+        await set(filter: row.filter, entryId: entryId, packageName: packageName, color: color);
+      }
+    }
   }
 }
 

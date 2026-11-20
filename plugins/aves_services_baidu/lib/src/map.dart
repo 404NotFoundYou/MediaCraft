@@ -103,7 +103,7 @@ class _EntryBaiduMapState<T> extends State<EntryBaiduMap<T>> {
   late Future<BMFCoordinate> _initialCenter;
   bool _overlaySyncRequested = false;
   bool _overlaySyncing = false;
-  String? _mapError;
+  String? _mapError, _overlayError;
   int _boundsRequest = 0;
 
   ZoomedBounds get bounds => widget.boundsNotifier.value;
@@ -162,6 +162,7 @@ class _EntryBaiduMapState<T> extends State<EntryBaiduMap<T>> {
 
   @override
   Widget build(BuildContext context) {
+    final error = _mapError ?? _overlayError;
     return Stack(
       children: [
         MarkerGeneratorWidget<Key>(
@@ -183,7 +184,7 @@ class _EntryBaiduMapState<T> extends State<EntryBaiduMap<T>> {
         ),
         widget.decoratorBuilder(context, _buildMap()),
         widget.buttonPanelBuilder(context),
-        if (_mapError != null || widget.overlayEntry != null)
+        if (error != null || widget.overlayEntry != null)
           Positioned(
             left: 8,
             right: 8,
@@ -193,7 +194,7 @@ class _EntryBaiduMapState<T> extends State<EntryBaiduMap<T>> {
               child: Padding(
                 padding: const EdgeInsets.all(8),
                 child: Text(
-                  _mapError ?? '百度地图暂不支持 GeoTIFF 叠加层，请切换到其他地图样式。',
+                  error ?? '百度地图暂不支持 GeoTIFF 叠加层，请切换到其他地图样式。',
                   style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
                 ),
               ),
@@ -250,6 +251,7 @@ class _EntryBaiduMapState<T> extends State<EntryBaiduMap<T>> {
     _markersNeedReset = false;
     _trackOverlays.clear();
     _syncedTracks = null;
+    _mapError = _overlayError = null;
     controller.setMapDidLoadCallback(
       callback: () {
         if (!_isSessionActive(session)) return;
@@ -296,10 +298,15 @@ class _EntryBaiduMapState<T> extends State<EntryBaiduMap<T>> {
         if (session == null) break;
         try {
           await Future.wait([_syncMarkers(session), _syncTracks(session)]);
+          if (_isSessionActive(session) && _overlayError != null) {
+            setState(() => _overlayError = null);
+          }
         } catch (error, stack) {
           if (!_isSessionActive(session) || error is _BaiduMapSessionEnded) break;
           debugPrint('Failed to synchronize Baidu map overlays: $error\n$stack');
-          _showMapError();
+          if (_overlayError == null) {
+            setState(() => _overlayError = '百度地图标记或轨迹暂时无法显示');
+          }
         }
       }
     } finally {

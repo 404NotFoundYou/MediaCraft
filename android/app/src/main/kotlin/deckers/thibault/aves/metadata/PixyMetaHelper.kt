@@ -25,6 +25,7 @@ import pixy.meta.meta.jpeg.JPGMeta
 import pixy.meta.meta.xmp.XMP
 import pixy.meta.string.XMLUtils
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -116,40 +117,32 @@ object PixyMetaHelper {
         sourceMimeType: String,
         sourceUri: Uri,
         targetMimeType: String,
-        targetUri: Uri,
         editableFile: File,
     ) {
-        var pixyIptc: IPTC? = null
-        var pixyXmp: XMP? = null
-        if (MimeTypes.canReadWithPixyMeta(sourceMimeType)) {
-            StorageUtils.openInputStream(context, sourceUri)?.use { input ->
-                val metadata = Metadata.readMetadata(input)
-                if (MimeTypes.canEditIptc(targetMimeType)) {
-                    pixyIptc = metadata[MetadataType.IPTC] as IPTC?
-                }
-                if (MimeTypes.canEditXmp(targetMimeType)) {
-                    pixyXmp = metadata[MetadataType.XMP] as XMP?
-                }
+        if (!MimeTypes.canReadWithPixyMeta(sourceMimeType)) return
+        val copyIptc = MimeTypes.canEditIptc(targetMimeType)
+        val copyXmp = MimeTypes.canEditXmp(targetMimeType)
+        if (!copyIptc && !copyXmp) return
+
+        val input = StorageUtils.openInputStream(context, sourceUri) ?: throw IOException("Could not read metadata at $sourceUri")
+        val metadata = input.use { Metadata.readMetadata(it) }
+        fun applyMetadata(edit: (InputStream, OutputStream) -> Unit) {
+            val updatedFile = StorageUtils.createTempFile(context)
+            try {
+                editableFile.inputStream().use { before -> updatedFile.outputStream().use { after -> edit(before, after) } }
+                if (updatedFile.length() == 0L) throw IOException("Metadata edit produced an empty file")
+                updatedFile.inputStream().use { before -> editableFile.outputStream().use { after -> before.copyTo(after) } }
+            } finally {
+                updatedFile.delete()
             }
         }
-        if (pixyIptc != null || pixyXmp != null) {
-            editableFile.outputStream().use { output ->
-                if (pixyIptc != null) {
-                    // reopen input to read from start
-                    StorageUtils.openInputStream(context, targetUri)?.use { input ->
-                        val iptcs = pixyIptc.dataSets.flatMap { it.value }
-                        Metadata.insertIPTC(input, output, iptcs)
-                    }
-                }
-                if (pixyXmp != null) {
-                    // reopen input to read from start
-                    StorageUtils.openInputStream(context, targetUri)?.use { input ->
-                        val xmpString = pixyXmp.xmpDocString()
-                        val extendedXmp = if (pixyXmp.hasExtendedXmp()) pixyXmp.extendedXmpDocString() else null
-                        setXmp(input, output, xmpString, if (targetMimeType == MimeTypes.JPEG) extendedXmp else null)
-                    }
-                }
-            }
+
+        if (copyIptc) (metadata[MetadataType.IPTC] as? IPTC)?.let { iptc ->
+            applyMetadata { before, after -> Metadata.insertIPTC(before, after, iptc.dataSets.flatMap { it.value }) }
+        }
+        if (copyXmp) (metadata[MetadataType.XMP] as? XMP)?.let { xmp ->
+            val extendedXmp = if (targetMimeType == MimeTypes.JPEG && xmp.hasExtendedXmp()) xmp.extendedXmpDocString() else null
+            applyMetadata { before, after -> setXmp(before, after, xmp.xmpDocString(), extendedXmp) }
         }
     }
 

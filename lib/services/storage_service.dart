@@ -218,27 +218,15 @@ class PlatformStorageService implements StorageService {
   @override
   Future<Uint8List> openFile([String? mimeType]) async {
     try {
-      final opCompleter = Completer<Uint8List>();
       final sink = OutputBuffer();
-      _stream
-          .receiveBroadcastStream(<String, Object?>{
-            'op': 'openFile',
-            'mimeType': mimeType,
-          })
-          .listen(
-            (data) {
-              final chunk = data as Uint8List;
-              sink.add(chunk);
-            },
-            onError: opCompleter.completeError,
-            onDone: () {
-              sink.close();
-              opCompleter.complete(sink.bytes);
-            },
-            cancelOnError: true,
-          );
-      // `await` here, so that `completeError` will be caught below
-      return await opCompleter.future;
+      await for (final data in _stream.receiveBroadcastStream(<String, Object?>{
+        'op': 'openFile',
+        'mimeType': mimeType,
+      })) {
+        sink.add(data as Uint8List);
+      }
+      sink.close();
+      return sink.bytes;
     } on PlatformException catch (e, stack) {
       await reportService.recordError(e, stack);
     }

@@ -9,6 +9,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.provider.BaseColumns
+import android.system.Os
 import android.util.Log
 import androidx.core.net.toUri
 import com.bumptech.glide.Glide
@@ -43,14 +44,15 @@ import deckers.thibault.aves.model.ExifInterfaceException
 import deckers.thibault.aves.model.ExifOrientationOp
 import deckers.thibault.aves.model.FieldMap
 import deckers.thibault.aves.model.FileDescriptorException
-import deckers.thibault.aves.model.NameConflictResolution
 import deckers.thibault.aves.model.NameConflictStrategy
+import deckers.thibault.aves.model.OutputStreamException
 import deckers.thibault.aves.model.SourceEntry
 import deckers.thibault.aves.storage.MediaStoreUriHelper
 import deckers.thibault.aves.storage.PermissionManager
 import deckers.thibault.aves.storage.StorageUtils
 import deckers.thibault.aves.storage.StorageUtils.ensureTrailingSeparator
 import deckers.thibault.aves.storage.StorageUtils.getVolumePath
+import deckers.thibault.aves.storage.apis.FilePermissions
 import deckers.thibault.aves.storage.apis.MediaStorePermissions
 import deckers.thibault.aves.storage.apis.StorageApi
 import deckers.thibault.aves.utils.BitmapUtils
@@ -71,17 +73,20 @@ import deckers.thibault.aves.utils.MimeTypes.isVideo
 import deckers.thibault.aves.utils.TimeZones
 import deckers.thibault.aves.utils.UriUtils.isContentScheme
 import deckers.thibault.aves.utils.UriUtils.isFileScheme
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.OutputStream
-import java.io.SyncFailedException
 import java.nio.channels.Channels
 import java.util.Date
 import java.util.TimeZone
+import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import kotlin.math.roundToInt
 import kotlin.time.Clock
@@ -100,6 +105,32 @@ internal fun buildRenameTarget(dir: String, fileName: String): File {
     val target = File(sourceDir, fileName).canonicalFile
     require(target.parentFile == sourceDir) { "Rename target must stay in the source directory" }
     return target
+}
+
+internal inline fun <T> withStagedOutput(staged: File, prepare: (File) -> Unit, publish: (File) -> T): T {
+    try {
+        prepare(staged)
+        return publish(staged)
+    } finally {
+        staged.delete()
+    }
+}
+
+internal fun writeReplacement(staged: File, target: File, recovery: File, openOutput: () -> OutputStream) {
+    fun writeFrom(source: File) {
+        source.inputStream().use { input -> openOutput().use { input.copyTo(it) } }
+        if (!target.isFile || target.length() != source.length()) throw IOException("Incomplete write at $target")
+    }
+    try {
+        writeFrom(staged)
+    } catch (writeError: Exception) {
+        try {
+            writeFrom(recovery)
+        } catch (restoreError: Exception) {
+            writeError.addSuppressed(restoreError)
+        }
+        throw IOException("Failed to replace the file. A copy of the original is at ${recovery.path}", writeError)
+    }
 }
 
 abstract class ImageProvider {
@@ -178,6 +209,86 @@ abstract class ImageProvider {
                 )
             }
         }
+    }
+
+    private suspend fun writeTarget(
+        context: Context,
+        targetFile: File,
+        targetNameWithoutExtension: String,
+        mimeType: String,
+        defaultExtension: String?,
+        conflictStrategy: NameConflictStrategy,
+        write: (OutputStream) -> Unit,
+        editMetadata: ((File) -> Unit)? = null,
+    ): String {
+        val targetDir = ensureTrailingSeparator(targetFile.parent ?: throw IOException("missing target directory"))
+        val replacing = conflictStrategy == NameConflictStrategy.REPLACE && targetFile.exists()
+        val replaceByFile = replacing && FilePermissions.canEdit(context, targetFile.path)
+        if (replacing && !targetFile.isFile) throw IOException("Cannot replace a non-file at $targetFile")
+        if (!replacing && editMetadata == null) {
+            return createSingle(context, mimeType, targetDir, targetNameWithoutExtension, defaultExtension, write)
+        }
+
+        // Only same-directory staging guarantees an atomic filesystem replacement.
+        val staged = if (replaceByFile) File.createTempFile(".mediacraft-", ".tmp", targetFile.parentFile) else StorageUtils.createTempFile(context)
+        return withStagedOutput(staged, prepare = {
+            it.outputStream().use(write)
+            editMetadata?.invoke(it)
+        }) { prepared ->
+            currentCoroutineContext().ensureActive()
+            when {
+                replaceByFile -> {
+                    Os.rename(prepared.path, targetFile.path)
+                    targetFile.path
+                }
+
+                replacing -> replaceProviderFile(context, targetFile, mimeType, prepared)
+
+                else -> createSingle(context, mimeType, targetDir, targetNameWithoutExtension, defaultExtension) { output ->
+                    prepared.inputStream().use { it.copyTo(output) }
+                }
+            }
+        }
+    }
+
+    private fun replaceProviderFile(context: Context, targetFile: File, mimeType: String, staged: File): String {
+        val path = targetFile.path
+        val mediaUri = MediaStoreImageProvider().getContentUriForPath(context, path)
+        val fileUri = Uri.fromFile(targetFile)
+        val address = ContentAddress(mimeType = mimeType, uri = mediaUri ?: fileUri, path = path, pageId = null)
+        val originalSize = targetFile.length()
+        val recoveryPath = createSingle(
+            context = context,
+            mimeType = mimeType,
+            targetDir = ensureTrailingSeparator(targetFile.parent!!),
+            targetNameWithoutExtension = "MediaCraft recovery ${UUID.randomUUID()}",
+            defaultExtension = targetFile.extension,
+        ) { output ->
+            val input = StorageUtils.openInputStream(context, address.uri) ?: throw IOException("Could not read original at $path")
+            val copied = input.use { it.copyTo(output) }
+            if (copied != originalSize) throw IOException("Original size changed while backing up $path")
+        }
+        val recovery = File(recoveryPath)
+        if (!recovery.isFile || recovery.length() != originalSize) {
+            throw IOException("Could not verify recovery copy at $recoveryPath")
+        }
+        writeReplacement(staged, targetFile, recovery) {
+            // The provider can allow editing an owned row without an explicit URI grant.
+            if (mediaUri != null) {
+                try {
+                    return@writeReplacement StorageUtils.openOutputStream(context, address, "wt")
+                } catch (ex: OutputStreamException) {
+                    if (ex.cause !is SecurityException) throw ex
+                }
+            }
+            outputStream(context, address)
+        }
+        try {
+            deletePath(context, recoveryPath, mimeType)
+        } catch (ex: Exception) {
+            Log.w(LOG_TAG, "Replacement succeeded, but recovery copy remains at $recoveryPath", ex)
+        }
+        return path
     }
 
     private fun insertByTreeDoc(
@@ -440,18 +551,6 @@ abstract class ImageProvider {
             throw Exception("failed to move file because it is missing at path=$sourcePath")
         }
 
-        val desiredNameWithoutExtension = desiredName.substringBeforeLast(".")
-        val resolution = resolveTargetFileNameWithoutExtension(
-            context = context,
-            dir = targetDirPath,
-            desiredNameWithoutExtension = desiredNameWithoutExtension,
-            mimeType = mimeType,
-            defaultExtension = sourceExtension,
-            conflictStrategy = nameConflictStrategy,
-        )
-        val targetNameWithoutExtension = resolution.nameWithoutExtension ?: return skippedFieldMap
-        val targetFile = File(targetDirPath, "$targetNameWithoutExtension.$sourceExtension")
-
         var moveApi: StorageApi? = null
 
         if (sourceDirPath != null) {
@@ -472,7 +571,7 @@ abstract class ImageProvider {
             if (sourceEditionApi == targetEditionApi && sourceEditionApi == StorageApi.MEDIA_STORE) {
                 // Media Store tables are segregated by storage volume,
                 // so the API does not allow moving a file to a different volume
-                if (!copy && getVolumePath(context, sourceFile.path) == getVolumePath(context, targetFile.path)) {
+                if (!copy && getVolumePath(context, sourceFile.path) == getVolumePath(context, targetDirPath)) {
                     // when moving via the Media Store API, the primary directory of the target is constrained according to the content URI:
                     // - for `content://media/XXXX/images/media/`, allowed directories are [DCIM, Pictures]
                     // - for `content://media/XXXX/video/media/`, allowed directories are [DCIM, Movies, Pictures]
@@ -499,8 +598,19 @@ abstract class ImageProvider {
             }
         }
 
+        val extension = if (moveApi != null && !sourceExtension.isNullOrEmpty()) ".$sourceExtension" else extensionFor(mimeType, sourceExtension)
+        val targetNameWithoutExtension = resolveTargetFileNameWithoutExtension(
+            dir = targetDirPath,
+            desiredNameWithoutExtension = desiredName.substringBeforeLast("."),
+            extension = extension,
+            conflictStrategy = nameConflictStrategy,
+        ) ?: return skippedFieldMap
+        val targetFile = File(targetDirPath, "$targetNameWithoutExtension$extension")
+        if (sourceFile?.canonicalFile == targetFile.canonicalFile) return skippedFieldMap
+
         val beforeMove = System.nanoTime()
-        val effectiveTargetPath = when (moveApi) {
+        val replacing = nameConflictStrategy == NameConflictStrategy.REPLACE && targetFile.exists()
+        val effectiveTargetPath = when (if (replacing) null else moveApi) {
             StorageApi.FILE -> {
                 FileImageProvider.move(
                     sourceFile = sourceFile!!,
@@ -528,34 +638,24 @@ abstract class ImageProvider {
             else -> {
                 Log.d(LOG_TAG, "move doc at uri=$sourceUri")
                 // always copy, even for move, then delete if necessary
-                val targetPath = createSingle(
+                val targetPath = writeTarget(
                     context = context,
-                    mimeType = mimeType,
-                    targetDir = targetDirPath,
+                    targetFile = targetFile,
                     targetNameWithoutExtension = targetNameWithoutExtension,
+                    mimeType = mimeType,
                     defaultExtension = sourceExtension,
-                ) { output: OutputStream ->
-                    try {
+                    conflictStrategy = nameConflictStrategy,
+                    write = { output ->
                         val input = StorageUtils.openInputStream(context, sourceUri)
                             ?: throw IOException("failed to open input stream for uri=$sourceUri")
                         input.use { it.copyTo(output) }
-                    } catch (ex: SyncFailedException) {
-                        // The copied file is synced after writing, but it consistently fails in some cases
-                        // (e.g. copying to SD card on Xiaomi 2201117PG with Android 11).
-                        // It seems this failure can be safely ignored, as the new file is complete.
-                        Log.w(LOG_TAG, "sync failure after copying from uri=$sourceUri, path=$sourcePath to targetDir=$targetDirPath", ex)
-                    }
-                }
+                    },
+                )
 
                 if (!copy) {
-                    // delete original entry
-                    try {
-                        deleteSingle(context, ContentAddress(mimeType = mimeType, uri = sourceUri, path = sourcePath, pageId = null))
-                    } catch (ex: Exception) {
-                        Log.w(LOG_TAG, "failed to delete entry with path=$sourcePath", ex)
-                    }
+                    // Do not delete the source until the destination is complete.
+                    deleteSingle(context, ContentAddress(mimeType = mimeType, uri = sourceUri, path = sourcePath, pageId = null))
                 }
-
                 targetPath
             }
         } ?: throw Exception("failed to get target path")
@@ -607,16 +707,14 @@ abstract class ImageProvider {
                         if (oldFile.nameWithoutExtension != desiredNameWithoutExtension) {
                             val defaultExtension = oldFile.extension
                             oldFile.parent?.let { dir ->
-                                val resolution = resolveTargetFileNameWithoutExtension(
-                                    context = context,
+                                val extension = extensionFor(mimeType, defaultExtension)
+                                resolveTargetFileNameWithoutExtension(
                                     dir = dir,
                                     desiredNameWithoutExtension = desiredNameWithoutExtension,
-                                    mimeType = mimeType,
-                                    defaultExtension = defaultExtension,
+                                    extension = extension,
                                     conflictStrategy = NameConflictStrategy.RENAME,
-                                )
-                                resolution.nameWithoutExtension?.let { targetNameWithoutExtension ->
-                                    val targetFileName = "$targetNameWithoutExtension${extensionFor(mimeType, defaultExtension)}"
+                                )?.let { targetNameWithoutExtension ->
+                                    val targetFileName = "$targetNameWithoutExtension$extension"
                                     val newFile = buildRenameTarget(dir, targetFileName)
                                     if (oldFile != newFile) {
                                         newFields = renameSingle(
@@ -720,6 +818,8 @@ abstract class ImageProvider {
                 )
                 result["newFields"] = newFields
                 result["success"] = true
+            } catch (ex: CancellationException) {
+                throw ex
             } catch (ex: Exception) {
                 Log.w(LOG_TAG, "failed to convert to targetDir=$targetDir entry with sourcePath=$sourcePath pageId=$pageId", ex)
             }
@@ -740,7 +840,7 @@ abstract class ImageProvider {
         exportMimeType: String,
     ): FieldMap {
         val sourceMimeType = sourceEntry.mimeType
-        var sourceUri = sourceEntry.uri
+        val sourceUri = sourceEntry.uri
         val sourcePath = sourceEntry.path
         val pageId = sourceEntry.pageId
 
@@ -755,34 +855,22 @@ abstract class ImageProvider {
             desiredNameWithoutExtension += "_${page.toString().padStart(3, '0')}"
         }
 
-        // there is no benefit providing input extension
-        // for known output MIME type
-        val defaultExtension = null
-
-        val resolution = resolveTargetFileNameWithoutExtension(
-            context = context,
+        val extension = extensionFor(exportMimeType, null)
+        val targetNameWithoutExtension = resolveTargetFileNameWithoutExtension(
             dir = targetDir,
             desiredNameWithoutExtension = desiredNameWithoutExtension,
-            mimeType = exportMimeType,
-            defaultExtension = defaultExtension,
+            extension = extension,
             conflictStrategy = nameConflictStrategy,
-        )
-        val targetNameWithoutExtension = resolution.nameWithoutExtension ?: return skippedFieldMap
-        resolution.replacedFileCopy?.let { file ->
-            // TODO TLAD only do this when the source is the file being replaced
-            sourceUri = Uri.fromFile(file)
-        }
+        ) ?: return skippedFieldMap
+        val targetFile = File(targetDir, "$targetNameWithoutExtension$extension")
 
-        val targetMimeType: String
         val write: (OutputStream) -> Unit
         var target: FutureTarget<Bitmap>? = null
         try {
             if (isVideo(sourceMimeType)) {
-                targetMimeType = sourceMimeType
                 write = { output ->
-                    StorageUtils.openInputStream(context, sourceUri)?.use { input ->
-                        input.copyTo(output)
-                    }
+                    val input = StorageUtils.openInputStream(context, sourceUri) ?: throw IOException("Could not read source at $sourceUri")
+                    if (input.use { it.copyTo(output) } == 0L) throw IOException("Empty source at $sourceUri")
                 }
             } else {
                 var targetWidthPx: Int
@@ -819,7 +907,6 @@ abstract class ImageProvider {
                 }
                 bitmap ?: throw Exception("failed to get image for $contentAddress")
 
-                targetMimeType = exportMimeType
                 write = { output ->
                     if (exportMimeType == MimeTypes.BMP) {
                         BmpWriter.writeRGB24(bitmap, output)
@@ -840,42 +927,27 @@ abstract class ImageProvider {
 
                             else -> throw Exception("unsupported export MIME type=$exportMimeType")
                         }
-                        bitmap.compress(format, quality, output)
+                        if (!bitmap.compress(format, quality, output)) throw IOException("Failed to encode $exportMimeType")
                     }
                 }
             }
 
-            val targetPath = createSingle(
+            val targetPath = writeTarget(
                 context = context,
-                mimeType = targetMimeType,
-                targetDir = targetDir,
+                targetFile = targetFile,
                 targetNameWithoutExtension = targetNameWithoutExtension,
-                defaultExtension = defaultExtension,
+                mimeType = exportMimeType,
+                defaultExtension = null,
+                conflictStrategy = nameConflictStrategy,
                 write = write,
+                editMetadata = if (writeMetadata && !isVideo(sourceMimeType)) {
+                    { file -> copyMetadata(context, sourceMimeType, sourceUri, exportMimeType, file) }
+                } else null,
             )
-
-            val newFields = scanNewPath(context, targetPath, exportMimeType)
-            val targetUri = (newFields[EntryFields.URI] as String).toUri()
-            if (writeMetadata) {
-                copyMetadata(
-                    context = context,
-                    sourceMimeType = sourceMimeType,
-                    sourceUri = sourceUri,
-                    targetContentAddress = ContentAddress(
-                        mimeType = targetMimeType,
-                        uri = targetUri,
-                        path = targetPath,
-                        pageId = null,
-                    ),
-                )
-            }
-
-            return newFields
+            return scanNewPath(context, targetPath, exportMimeType)
         } finally {
             // clearing Glide target should happen after effectively writing the bitmap
             Glide.with(context.applicationContext).clear(target)
-
-            resolution.replacedFileCopy?.delete()
         }
     }
 
@@ -883,17 +955,10 @@ abstract class ImageProvider {
         context: Context,
         sourceMimeType: String,
         sourceUri: Uri,
-        targetContentAddress: ContentAddress,
+        targetMimeType: String,
+        editableFile: File,
     ) {
-        val targetMimeType = targetContentAddress.mimeType
-        val targetUri = targetContentAddress.uri
-        val targetPath = targetContentAddress.path ?: throw IllegalArgumentException("null path for $targetContentAddress")
-
-        // copy original file to a temporary file for editing
-        val editableFile = StorageUtils.createTempFile(context, targetUri, getFileSize(targetPath))
-
-        // copy IPTC / XMP via PixyMeta
-        PixyMetaHelper.copyIptcXmp(context, sourceMimeType, sourceUri, targetMimeType, targetUri, editableFile)
+        PixyMetaHelper.copyIptcXmp(context, sourceMimeType, sourceUri, targetMimeType, editableFile)
 
         // copy Exif via `ExifInterface`
         val exifData = HashMap<String, String?>()
@@ -909,7 +974,8 @@ abstract class ImageProvider {
             ExifInterface.TAG_PIXEL_Y_DIMENSION,
         )
         if (canReadWithExifInterface(sourceMimeType) && canEditExif(targetMimeType)) {
-            StorageUtils.openInputStream(context, sourceUri)?.use { input ->
+            val input = StorageUtils.openInputStream(context, sourceUri) ?: throw IOException("Could not read Exif at $sourceUri")
+            input.use {
                 ExifInterface(input).apply {
                     ExifInterfaceHelper.allTags.keys.filterNot { skippedTags.contains(it) }.filter { hasAttribute(it) }.forEach { tag ->
                         exifData[tag] = getAttribute(tag)
@@ -929,10 +995,6 @@ abstract class ImageProvider {
                 throw ExifInterfaceException(ex)
             }
         }
-
-        // copy the edited temporary file back to the original
-        editableFile.copyTo(outputStream(context, targetContentAddress))
-        editableFile.delete()
     }
 
     suspend fun captureFrame(
@@ -946,104 +1008,86 @@ abstract class ImageProvider {
     ) {
         val captureMimeType = MimeTypes.JPEG
 
-        // there is no benefit providing input extension
-        // for known output MIME type
-        val defaultExtension = null
-
-        val resolution = try {
-            resolveTargetFileNameWithoutExtension(
-                context = context,
-                dir = targetDir,
-                desiredNameWithoutExtension = desiredNameWithoutExtension,
-                mimeType = captureMimeType,
-                defaultExtension = defaultExtension,
-                conflictStrategy = nameConflictStrategy,
-            )
-        } catch (ex: Exception) {
-            callback.onFailure(ex)
-            return
-        }
-
-        val targetNameWithoutExtension = resolution.nameWithoutExtension
+        val extension = extensionFor(captureMimeType, null)
+        val targetNameWithoutExtension = resolveTargetFileNameWithoutExtension(
+            dir = targetDir,
+            desiredNameWithoutExtension = desiredNameWithoutExtension,
+            extension = extension,
+            conflictStrategy = nameConflictStrategy,
+        )
         if (targetNameWithoutExtension == null) {
-            // skip it
             callback.onSuccess(skippedFieldMap)
             return
         }
 
-        val write: (OutputStream) -> Unit = { output ->
-            if (exifFields.isEmpty()) {
-                output.write(bytes)
-            } else {
-                val editableFile = StorageUtils.createTempFile(context, bytes)
+        val editMetadata: ((File) -> Unit)? = if (exifFields.isEmpty()) null else { editableFile ->
+            val exifInterface = ExifInterface(editableFile)
 
-                val exifInterface = ExifInterface(editableFile)
-
-                val rotationDegrees = exifFields[Metadata.FIELD_ROTATION_DEGREES] as Int?
-                if (rotationDegrees != null) {
-                    // when the orientation is not defined, it returns `undefined (0)` instead of the orientation default value `normal (1)`
-                    // in that case we explicitly set it to `normal` first
-                    // because `ExifInterface` fails to rotate an image with undefined orientation
-                    // as of androidx.exifinterface:exifinterface:1.3.0
-                    val currentOrientation = exifInterface.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-                    if (currentOrientation == ExifInterface.ORIENTATION_UNDEFINED) {
-                        exifInterface.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
-                    }
-                    exifInterface.rotate(rotationDegrees)
+            val rotationDegrees = exifFields[Metadata.FIELD_ROTATION_DEGREES] as Int?
+            if (rotationDegrees != null) {
+                // when the orientation is not defined, it returns `undefined (0)` instead of the orientation default value `normal (1)`
+                // in that case we explicitly set it to `normal` first
+                // because `ExifInterface` fails to rotate an image with undefined orientation
+                // as of androidx.exifinterface:exifinterface:1.3.0
+                val currentOrientation = exifInterface.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+                if (currentOrientation == ExifInterface.ORIENTATION_UNDEFINED) {
+                    exifInterface.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
                 }
-
-                val dateMillis = (exifFields["dateTimeMillis"] as Number?)?.toLong()
-                val timeZoneOffsetMinutes = exifFields["timeZoneOffsetMinutes"] as Int?
-                if (dateMillis != null) {
-                    val dateString = ExifInterfaceHelper.formatDateTime(dateMillis, isUtc = timeZoneOffsetMinutes != null)
-                    exifInterface.setAttribute(ExifInterface.TAG_DATETIME, dateString)
-                    exifInterface.setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, dateString)
-
-                    val timeZoneString = if (timeZoneOffsetMinutes != null) {
-                        TimeZones.format(timeZoneOffsetMinutes)
-                    } else {
-                        TimeZones.format(TimeZone.getDefault(), dateMillis)
-                    }
-                    exifInterface.setAttribute(ExifInterface.TAG_OFFSET_TIME, timeZoneString)
-                    exifInterface.setAttribute(ExifInterface.TAG_OFFSET_TIME_ORIGINAL, timeZoneString)
-
-                    val sub = dateMillis % 1000
-                    if (sub > 0) {
-                        val subString = sub.toString()
-                        exifInterface.setAttribute(ExifInterface.TAG_SUBSEC_TIME, subString)
-                        exifInterface.setAttribute(ExifInterface.TAG_SUBSEC_TIME_ORIGINAL, subString)
-                    }
-                }
-
-                val latitude = (exifFields["latitude"] as Number?)?.toDouble()
-                val longitude = (exifFields["longitude"] as Number?)?.toDouble()
-                if (latitude != null && longitude != null) {
-                    exifInterface.setLatLong(latitude, longitude)
-                }
-
-                try {
-                    exifInterface.saveAttributes()
-                } catch (ex: IOException) {
-                    throw ExifInterfaceException(ex)
-                }
-
-                // copy the edited temporary file back to the original
-                editableFile.copyTo(output)
-                editableFile.delete()
+                exifInterface.rotate(rotationDegrees)
             }
+
+            val dateMillis = (exifFields["dateTimeMillis"] as Number?)?.toLong()
+            val timeZoneOffsetMinutes = exifFields["timeZoneOffsetMinutes"] as Int?
+            if (dateMillis != null) {
+                val dateString = ExifInterfaceHelper.formatDateTime(dateMillis, isUtc = timeZoneOffsetMinutes != null)
+                exifInterface.setAttribute(ExifInterface.TAG_DATETIME, dateString)
+                exifInterface.setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, dateString)
+
+                val timeZoneString = if (timeZoneOffsetMinutes != null) {
+                    TimeZones.format(timeZoneOffsetMinutes)
+                } else {
+                    TimeZones.format(TimeZone.getDefault(), dateMillis)
+                }
+                exifInterface.setAttribute(ExifInterface.TAG_OFFSET_TIME, timeZoneString)
+                exifInterface.setAttribute(ExifInterface.TAG_OFFSET_TIME_ORIGINAL, timeZoneString)
+
+                val sub = dateMillis % 1000
+                if (sub > 0) {
+                    val subString = sub.toString()
+                    exifInterface.setAttribute(ExifInterface.TAG_SUBSEC_TIME, subString)
+                    exifInterface.setAttribute(ExifInterface.TAG_SUBSEC_TIME_ORIGINAL, subString)
+                }
+            }
+
+            val latitude = (exifFields["latitude"] as Number?)?.toDouble()
+            val longitude = (exifFields["longitude"] as Number?)?.toDouble()
+            if (latitude != null && longitude != null) {
+                exifInterface.setLatLong(latitude, longitude)
+            }
+
+            try {
+                exifInterface.saveAttributes()
+            } catch (ex: IOException) {
+                throw ExifInterfaceException(ex)
+            }
+
         }
 
         try {
-            val targetPath = createSingle(
+            val targetPath = writeTarget(
                 context = context,
-                mimeType = captureMimeType,
-                targetDir = targetDir,
+                targetFile = File(targetDir, "$targetNameWithoutExtension$extension"),
                 targetNameWithoutExtension = targetNameWithoutExtension,
-                defaultExtension = defaultExtension,
-                write = write,
+                mimeType = captureMimeType,
+                defaultExtension = null,
+                conflictStrategy = nameConflictStrategy,
+                write = { it.write(bytes) },
+                editMetadata = editMetadata,
             )
             val newFields = scanNewPath(context, targetPath, captureMimeType)
             callback.onSuccess(newFields)
+        } catch (ex: CancellationException) {
+            throw ex
         } catch (ex: Exception) {
             callback.onFailure(ex)
         }
@@ -1064,50 +1108,25 @@ abstract class ImageProvider {
     }
 
     // returns available name to use, or `null` to skip it
-    fun resolveTargetFileNameWithoutExtension(
-        context: Context,
+    private fun resolveTargetFileNameWithoutExtension(
         dir: String,
         desiredNameWithoutExtension: String,
-        mimeType: String,
-        defaultExtension: String?,
+        extension: String,
         conflictStrategy: NameConflictStrategy,
-    ): NameConflictResolution {
-        val sanitizedNameWithoutExtension = sanitizeDesiredFileName(desiredNameWithoutExtension)
-        var resolvedName: String? = sanitizedNameWithoutExtension
-        var replacedFileCopy: File? = null
-
-        val extension = extensionFor(mimeType, defaultExtension)
-        val targetFile = File(dir, "$sanitizedNameWithoutExtension$extension")
-        when (conflictStrategy) {
+    ): String? {
+        val name = sanitizeDesiredFileName(desiredNameWithoutExtension)
+        return when (conflictStrategy) {
+            NameConflictStrategy.REPLACE -> name
+            NameConflictStrategy.SKIP -> name.takeUnless { File(dir, "$it$extension").exists() }
             NameConflictStrategy.RENAME -> {
-                var nameWithoutExtension = sanitizedNameWithoutExtension
+                var candidate = name
                 var i = 0
-                while (File(dir, "$nameWithoutExtension$extension").exists()) {
-                    i++
-                    nameWithoutExtension = "$sanitizedNameWithoutExtension ($i)"
+                while (File(dir, "$candidate$extension").exists()) {
+                    candidate = "$name (${++i})"
                 }
-                resolvedName = nameWithoutExtension
-            }
-
-            NameConflictStrategy.REPLACE -> {
-                if (targetFile.exists()) {
-                    // move replaced file to temp storage
-                    // so that it can be used as a source for conversion or metadata copy
-                    replacedFileCopy = StorageUtils.createTempFile(context).apply {
-                        targetFile.copyTo(outputStream())
-                    }
-                    deletePath(context, targetFile.path, mimeType)
-                }
-            }
-
-            NameConflictStrategy.SKIP -> {
-                if (targetFile.exists()) {
-                    resolvedName = null
-                }
+                candidate
             }
         }
-
-        return NameConflictResolution(resolvedName, replacedFileCopy)
     }
 
     // editing may corrupt the file for various reasons,

@@ -29,78 +29,65 @@ import deckers.thibault.aves.utils.LogUtils
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
-import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.withContext
 
 class AnalysisWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
     private val defaultScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private var workCont: CancellableContinuation<Any?>? = null
+    private val analysisFinished = CompletableDeferred<Unit>()
     private var flutterEngine: FlutterEngine? = null
     private var backgroundChannel: MethodChannel? = null
 
     override suspend fun doWork(): Result {
         Log.i(LOG_TAG, "Start analysis worker $id")
         createNotificationChannel()
-        val foregroundInfo = createForegroundInfo()
-        if (!isStopped) {
-            setForeground(foregroundInfo)
-            suspendCancellableCoroutine { cont ->
-                workCont = cont
-                cont.invokeOnCancellation {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        val stopReasonString = when (stopReason) {
-                            WorkInfo.STOP_REASON_CANCELLED_BY_APP -> "CANCELLED_BY_APP"
-                            WorkInfo.STOP_REASON_FOREGROUND_SERVICE_TIMEOUT -> "FOREGROUND_SERVICE_TIMEOUT"
-                            else -> "[$stopReason]"
-                        }
-                        Log.i(LOG_TAG, "Analysis worker got cancelled with stopReason=$stopReasonString")
-                    } else {
-                        Log.i(LOG_TAG, "Analysis worker got cancelled")
-                    }
-                    stopDartAnalysisService()
-                    workCont?.resumeWithException(CancellationException())
-                }
-                onStart()
-            }
-            dispose()
-        }
-        return Result.success()
-    }
+        if (isStopped) return Result.success()
 
-    private suspend fun dispose() {
-        Log.i(LOG_TAG, "Clean analysis worker $id")
-        flutterEngine?.let {
-            FlutterUtils.runOnUiThread {
-                it.destroy()
-            }
-            flutterEngine = null
-        }
-    }
-
-    private fun onStart() {
-        runBlocking {
-            FlutterUtils.initFlutterEngine(applicationContext, SHARED_PREFERENCES_KEY, PREF_CALLBACK_HANDLE_KEY) {
-                flutterEngine = it
-            }
-        }
-
+        var cancelled = false
         try {
-            initChannels(applicationContext)
+            setForeground(createForegroundInfo())
+            withContext(Dispatchers.Main) {
+                FlutterUtils.initFlutterEngine(applicationContext, SHARED_PREFERENCES_KEY, PREF_CALLBACK_HANDLE_KEY) {
+                    flutterEngine = it
+                }
+                initChannels(applicationContext)
 
-            val preferences = applicationContext.getSharedPreferences(SHARED_PREFERENCES_KEY, Context.MODE_PRIVATE)
-            val entryIdStrings = preferences.getStringSet(PREF_ENTRY_IDS_KEY, null)
-            startDartAnalysisService(entryIdStrings)
-        } catch (ex: Exception) {
-            Log.e(LOG_TAG, "failed to initialize worker", ex)
-            workCont?.resumeWithException(ex)
+                val preferences = applicationContext.getSharedPreferences(SHARED_PREFERENCES_KEY, Context.MODE_PRIVATE)
+                val entryIds = preferences.getStringSet(PREF_ENTRY_IDS_KEY, null)
+                backgroundChannel?.invokeMethod(
+                    "start", hashMapOf(
+                        "entryIds" to entryIds?.map { Integer.parseUnsignedInt(it) },
+                        "force" to inputData.getBoolean(KEY_FORCE, false),
+                    )
+                )
+            }
+            analysisFinished.await()
+            return Result.success()
+        } catch (ex: CancellationException) {
+            cancelled = true
+            val reason = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) stopReason else WorkInfo.STOP_REASON_UNKNOWN
+            Log.i(LOG_TAG, "Analysis worker $id cancelled with stopReason=$reason")
+            throw ex
+        } finally {
+            defaultScope.cancel()
+            withContext(NonCancellable + Dispatchers.Main) {
+                Log.i(LOG_TAG, "Clean analysis worker $id")
+                try {
+                    if (cancelled) backgroundChannel?.invokeMethod("stop", null)
+                } finally {
+                    backgroundChannel = null
+                    val engine = flutterEngine
+                    flutterEngine = null
+                    engine?.destroy()
+                }
+            }
         }
     }
 
@@ -132,27 +119,6 @@ class AnalysisWorker(context: Context, parameters: WorkerParameters) : Coroutine
         }
     }
 
-    private fun startDartAnalysisService(entryIdStrings: Set<String>?) {
-        runBlocking {
-            FlutterUtils.runOnUiThread {
-                backgroundChannel?.invokeMethod(
-                    "start", hashMapOf(
-                        "entryIds" to entryIdStrings?.map { Integer.parseUnsignedInt(it) }?.toList(),
-                        "force" to inputData.getBoolean(KEY_FORCE, false),
-                    )
-                )
-            }
-        }
-    }
-
-    private fun stopDartAnalysisService() {
-        runBlocking {
-            FlutterUtils.runOnUiThread {
-                backgroundChannel?.invokeMethod("stop", null)
-            }
-        }
-    }
-
     private fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "initialized" -> {
@@ -163,8 +129,8 @@ class AnalysisWorker(context: Context, parameters: WorkerParameters) : Coroutine
             "updateNotification" -> defaultScope.launch { safeSuspend(call, result, ::updateNotification) }
 
             "stop" -> {
-                workCont?.takeIf { it.isActive }?.resume(null)
                 result.success(null)
+                analysisFinished.complete(Unit)
             }
 
             else -> result.notImplemented()

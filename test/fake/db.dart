@@ -14,6 +14,7 @@ import 'package:test/fake.dart';
 class FakeAvesDb extends Fake implements LocalMediaDb {
   static int _lastId = 0;
   Set<DynamicAlbumRow> dynamicAlbumRows = {};
+  Set<VaultDetails> vaultRows = {};
   int addDynamicAlbumsCalls = 0, removeDynamicAlbumsCalls = 0;
 
   @override
@@ -81,7 +82,7 @@ class FakeAvesDb extends Fake implements LocalMediaDb {
   // vaults
 
   @override
-  Future<Set<VaultDetails>> loadAllVaults() => SynchronousFuture({});
+  Future<Set<VaultDetails>> loadAllVaults() => SynchronousFuture(vaultRows);
 
   // trash
 

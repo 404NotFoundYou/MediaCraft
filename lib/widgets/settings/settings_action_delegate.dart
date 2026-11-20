@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:aves/locale/intl.dart';
+import 'package:aves/model/settings/settings.dart';
 import 'package:aves/model/source/collection_source.dart';
 import 'package:aves/ref/mime_types.dart';
 import 'package:aves/services/common/services.dart';
@@ -74,52 +75,57 @@ class SettingsActionDelegate with FeedbackMixin {
     }
   }
 
+  static Map<AppExportItem, Object> getImportContent(Uint8List bytes) {
+    final json = jsonDecode(utf8.decode(bytes));
+    if (json is! Map<String, Object?>) throw const FormatException('Backup must be an object');
+
+    if (!json.containsKey(_exportVersionKey)) {
+      // backward compatibility before versioning
+      return {AppExportItem.settings: Settings.validatedImport(json)};
+    }
+    final version = json[_exportVersionKey];
+    if (version is! int || version != _exportVersion) throw const FormatException('Unsupported backup version');
+
+    final importable = <AppExportItem, Object>{};
+    for (final item in AppExportItem.values) {
+      if (!json.containsKey(item.name)) continue;
+      final value = json[item.name];
+      if (value == null) throw FormatException('Missing backup data for ${item.name}');
+      importable[item] = item == AppExportItem.settings ? Settings.validatedImport(value) : value;
+    }
+    if (importable.isEmpty) throw const FormatException('Backup contains no importable data');
+    return importable;
+  }
+
   Future<void> _import(BuildContext context) async {
     final l10n = context.l10n;
     // specifying the JSON MIME type to restrict openable files is correct in theory,
     // but older devices (e.g. SM-P580, API 27) that do not recognize JSON files as such would filter them out
-    final bytes = await storageService.openFile();
-    if (bytes.isNotEmpty) {
-      try {
-        final allJsonString = utf8.decode(bytes);
-        final allJsonMap = jsonDecode(allJsonString) as Map<String, Object?>;
+    try {
+      final bytes = await storageService.openFile();
+      if (bytes.isEmpty || !context.mounted) return;
+      final importable = getImportContent(bytes);
 
-        final version = allJsonMap[_exportVersionKey] as int?;
-        final importable = <AppExportItem, Object>{};
-        if (version == null) {
-          // backward compatibility before versioning
-          importable[AppExportItem.settings] = allJsonMap;
-        } else {
-          allJsonMap.keys.where((v) => v != _exportVersionKey).forEach((k) {
-            try {
-              importable[AppExportItem.values.byName(k)] = allJsonMap[k] as Object;
-            } catch (error, stack) {
-              debugPrint('failed to identify import app item=$k with error=$error\n$stack');
-            }
-          });
+      final toImport = await showAvesDialog<Set<AppExportItem>>(
+        context: context,
+        builder: (context) => AppExportItemSelectionDialog(
+          title: l10n.settingsActionImportDialogTitle,
+          selectableItems: importable.keys.toSet(),
+        ),
+      );
+      if (toImport == null || toImport.isEmpty || !context.mounted) return;
+
+      final source = context.read<CollectionSource>();
+      await Future.forEach<AppExportItem>(toImport, (item) async {
+        final jsonObject = importable[item];
+        if (jsonObject != null) {
+          await item.import(jsonObject, source);
         }
-
-        final toImport = await showAvesDialog<Set<AppExportItem>>(
-          context: context,
-          builder: (context) => AppExportItemSelectionDialog(
-            title: l10n.settingsActionImportDialogTitle,
-            selectableItems: importable.keys.toSet(),
-          ),
-        );
-        if (toImport == null || toImport.isEmpty) return;
-
-        final source = context.read<CollectionSource>();
-        await Future.forEach<AppExportItem>(toImport, (item) async {
-          final jsonObject = importable[item];
-          if (jsonObject != null) {
-            await item.import(jsonObject, source);
-          }
-        });
-        showFeedback(context, FeedbackType.info, l10n.genericSuccessFeedback);
-      } catch (error, stack) {
-        debugPrint('failed to import app json, error=$error\n$stack');
-        showFeedback(context, FeedbackType.warn, l10n.genericFailureFeedback);
-      }
+      });
+      if (context.mounted) showFeedback(context, FeedbackType.info, l10n.genericSuccessFeedback);
+    } catch (error, stack) {
+      debugPrint('failed to import app json, error=$error\n$stack');
+      if (context.mounted) showFeedback(context, FeedbackType.warn, l10n.genericFailureFeedback);
     }
   }
 }

@@ -79,17 +79,17 @@ class Favourites with ChangeNotifier {
     return jsonMap.isNotEmpty ? jsonMap : null;
   }
 
-  void import(Object jsonMap, CollectionSource source) {
-    if (jsonMap is! Map) {
-      debugPrint('failed to import favourites for jsonMap=$jsonMap');
-      return;
-    }
+  Future<void> import(Object jsonMap, CollectionSource source) async {
+    if (jsonMap is! Map<String, Object?>) throw const FormatException('Favourites backup must be an object');
 
     final visibleEntries = source.visibleEntries;
     final foundEntries = <AvesEntry>{};
     final missedPaths = <String>{};
-    jsonMap.cast<String, List>().forEach((volume, relativePaths) {
-      relativePaths.cast<String?>().forEach((relativePath) {
+    for (final MapEntry(key: volume, value: relativePaths) in jsonMap.entries) {
+      if (relativePaths is! List || !relativePaths.every((path) => path is String)) {
+        throw const FormatException('Invalid favourite paths');
+      }
+      for (final relativePath in relativePaths.cast<String>()) {
         final path = pContext.join(volume, relativePath);
         final entry = visibleEntries.firstWhereOrNull((entry) => entry.path == path);
         if (entry != null) {
@@ -97,15 +97,10 @@ class Favourites with ChangeNotifier {
         } else {
           missedPaths.add(path);
         }
-      });
-
-      if (foundEntries.isNotEmpty) {
-        add(foundEntries);
       }
-      if (missedPaths.isNotEmpty) {
-        debugPrint('failed to import favourites with ${missedPaths.length} missed paths');
-      }
-    });
+    }
+    if (foundEntries.isNotEmpty) await add(foundEntries);
+    if (missedPaths.isNotEmpty) debugPrint('failed to import favourites with ${missedPaths.length} missed paths');
   }
 }
 
