@@ -155,6 +155,29 @@ class DuplicateEngineTest {
     }
 
     @Test
+    fun differentLargePrefixesSkipFullReadsWhileMatchingPrefixesStillRequireFullContent() = runBlocking {
+        val media = ByteArray(1024 * 1024)
+        val samePrefix = media.copyOf().apply { this[lastIndex] = 1 }
+        val distinctPrefix = media.copyOf().apply { this[0] = 1 }
+        val candidates = (1L..4L).map { candidate(it, media.size.toLong()) }
+        val content = candidates.zip(listOf(media, media, samePrefix, distinctPrefix)).toMap()
+        var distinctBytesRead = 0
+        val engine = DuplicateEngine(DuplicateInputSource { candidate ->
+            val input = ByteArrayInputStream(content.getValue(candidate))
+            if (candidate != candidates.last()) input else object : FilterInputStream(input) {
+                override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
+                    super.read(buffer, offset, length).also { if (it > 0) distinctBytesRead += it }
+            }
+        })
+
+        val result = engine.scan(candidates) { _, _, _ -> }
+
+        assertTrue(result.issues.isEmpty())
+        assertEquals(candidates.take(2), result.groups.single().members)
+        assertEquals(16 * 1024, distinctBytesRead, "A distinct prefix should avoid hashing the entire file")
+    }
+
+    @Test
     fun largeDuplicateGroupUsesAtMostThreeScansWorthOfInput() = runBlocking {
         val bytes = ByteArray(8 * 1024 * 1024) { it.toByte() }
         val candidates = (1L..8L).map { candidate(it, bytes.size.toLong()) }
@@ -174,7 +197,10 @@ class DuplicateEngineTest {
 
         assertTrue(result.issues.isEmpty())
         assertEquals(candidates, result.groups.single().members)
-        assertTrue(totalRead <= (3L * candidates.size - 2) * bytes.size, "Scanning identical files should not perform all-pairs comparisons")
+        val exactReadBudget = (3L * candidates.size - 2) * bytes.size
+        val sampleBudget = 16L * 1024 * candidates.size
+        assertTrue(totalRead <= exactReadBudget + sampleBudget, "Prefix sampling must add only one short read per file to the linear comparisons")
+        assertTrue(totalRead < 3L * candidates.size * bytes.size, "Identical large files should use less than three scans worth of input")
     }
 
     @Test

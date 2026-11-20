@@ -22,7 +22,7 @@ class FakeMediaStoreService extends Fake implements MediaStoreService {
   }
 
   @override
-  Future<({List<int> removed, List<int> moved})> checkKnownEntries(Map<int, String?> knownPathById) async {
+  Future<({List<int> removed, List<int> moved})> checkKnownEntries(Map<int, String?> knownPathById, {bool scoped = false}) async {
     if (latency != null) await Future.pause(latency!);
     return (removed: <int>[], moved: <int>[]);
   }

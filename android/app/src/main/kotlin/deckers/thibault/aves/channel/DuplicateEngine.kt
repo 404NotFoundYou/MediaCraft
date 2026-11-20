@@ -4,6 +4,10 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.io.InputStream
 import java.security.MessageDigest
+import java.util.zip.CRC32
+
+private const val PREFIX_SAMPLE_BYTES = 16 * 1024
+private const val MIN_PREFIX_SAMPLE_FILE_BYTES = 1024 * 1024L
 
 internal data class DuplicateCandidate(
     val entryId: Long,
@@ -75,31 +79,43 @@ internal class DuplicateEngine(
                 else -> true
             }
         }
-        val sizeCandidates = uniqueCandidates
-            .groupBy { it.sizeBytes }
-            .values
-            .filter { it.size > 1 }
-            .flatten()
-        val digests = mutableMapOf<DuplicateCandidate, String>()
+        val sizeBuckets = uniqueCandidates.groupBy { it.sizeBytes }.values.filter { it.size > 1 }
+        val sample = ByteArray(PREFIX_SAMPLE_BYTES)
+        val hashCandidates = mutableListOf<DuplicateCandidate>()
+        var processed = 0
+        for (bucket in sizeBuckets) {
+            if (bucket.first().sizeBytes < MIN_PREFIX_SAMPLE_FILE_BYTES) {
+                hashCandidates.addAll(bucket)
+                continue
+            }
+            val byPrefix = mutableMapOf<Long, MutableList<DuplicateCandidate>>()
+            for (candidate in bucket) {
+                currentCoroutineContext().ensureActive()
+                onProgress(processed++, 0, "hashing")
+                val fingerprint = readCandidate(candidate, issues) { input ->
+                    val count = readChunk(input, sample).coerceAtLeast(0)
+                    CRC32().apply { update(sample, 0, count) }.value
+                } ?: continue
+                byPrefix.getOrPut(fingerprint) { mutableListOf() }.add(candidate)
+            }
+            // A prefix match only qualifies a file for full hashing and byte comparison.
+            byPrefix.values.filter { it.size > 1 }.forEach(hashCandidates::addAll)
+        }
 
-        sizeCandidates.forEachIndexed { index, candidate ->
+        val digests = mutableMapOf<DuplicateCandidate, String>()
+        val hashingWork = processed + hashCandidates.size
+        for (candidate in hashCandidates) {
             val coroutineContext = currentCoroutineContext()
             coroutineContext.ensureActive()
-            onProgress(index, sizeCandidates.size, "hashing")
-            try {
-                digests[candidate] = source.open(candidate).use { input ->
-                    digester.digest(input) { coroutineContext.ensureActive() }
-                }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                issues += DuplicateIssue(candidate, "read-failed", e.message ?: e.javaClass.simpleName)
-            }
+            onProgress(processed++, hashingWork, "hashing")
+            val digest = readCandidate(candidate, issues) { input ->
+                digester.digest(input) { coroutineContext.ensureActive() }
+            } ?: continue
+            digests[candidate] = digest
         }
 
         val groups = mutableListOf<DuplicateGroup>()
         val digestBuckets = digests.entries.groupBy { it.key.sizeBytes to it.value }.values.filter { it.size > 1 }
-        var compared = 0
         for (bucket in digestBuckets) {
             val pending = bucket.map { it.key }.toMutableList()
             while (pending.size > 1) {
@@ -109,7 +125,7 @@ internal class DuplicateEngine(
                 val iterator = pending.iterator()
                 while (iterator.hasNext()) {
                     val candidate = iterator.next()
-                    onProgress(sizeCandidates.size + compared++, 0, "verifying")
+                    onProgress(processed++, 0, "verifying")
                     val matches = try {
                         contentEquals(representative, candidate)
                     } catch (e: kotlinx.coroutines.CancellationException) {
@@ -128,9 +144,17 @@ internal class DuplicateEngine(
                 }
             }
         }
-        val totalWork = sizeCandidates.size + compared
-        onProgress(totalWork, totalWork, "completed")
+        onProgress(processed, processed, "completed")
         return DuplicateScanOutcome(groups, issues)
+    }
+
+    private inline fun <T> readCandidate(candidate: DuplicateCandidate, issues: MutableList<DuplicateIssue>, read: (InputStream) -> T): T? = try {
+        source.open(candidate).use(read)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        issues += DuplicateIssue(candidate, "read-failed", e.message ?: e.javaClass.simpleName)
+        null
     }
 
     suspend fun verify(

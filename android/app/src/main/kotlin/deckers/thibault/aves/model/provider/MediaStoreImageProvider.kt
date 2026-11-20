@@ -99,21 +99,27 @@ class MediaStoreImageProvider : ImageProvider() {
         val id = uri.tryParseId()
         val alwaysValid: NewEntryChecker = fun(_: Long, _: Long): Boolean = true
         val onSuccess: NewEntryHandler = fun(entry: FieldMap) { fetched.add(entry) }
+        fun tryFetch(contentUri: Uri, projection: Array<String>, fileMimeType: String? = null): Boolean = try {
+            fetchFrom(context, alwaysValid, onSuccess, contentUri, projection, fileMimeType = fileMimeType)
+        } catch (e: Exception) {
+            Log.e(LOG_TAG, "failed to get entries", e)
+            fetched.isNotEmpty()
+        }
         if (id != null) {
             if (sourceMimeType == null || isImage(sourceMimeType)) {
                 val contentUri = ContentUris.withAppendedId(IMAGE_CONTENT_URI, id)
-                found = fetchFrom(context, alwaysValid, onSuccess, contentUri, IMAGE_PROJECTION)
+                found = tryFetch(contentUri, IMAGE_PROJECTION)
             }
             if (!found && (sourceMimeType == null || isVideo(sourceMimeType))) {
                 val contentUri = ContentUris.withAppendedId(VIDEO_CONTENT_URI, id)
-                found = fetchFrom(context, alwaysValid, onSuccess, contentUri, VIDEO_PROJECTION)
+                found = tryFetch(contentUri, VIDEO_PROJECTION)
             }
         }
         if (!found) {
             // the uri can be a file media URI (e.g. "content://0@media/external/file/30050")
             // without an equivalent image/video if it is shared from a file browser
             // but the file is not publicly visible
-            found = fetchFrom(context, alwaysValid, onSuccess, uri, BASE_PROJECTION, fileMimeType = sourceMimeType)
+            found = tryFetch(uri, BASE_PROJECTION, sourceMimeType)
         }
 
         if (found && fetched.isNotEmpty()) {
@@ -133,8 +139,8 @@ class MediaStoreImageProvider : ImageProvider() {
         }.first
     }
 
-    fun checkKnownEntries(context: Context, knownPathById: Map<Long, String?>): Map<String, List<Long>> {
-        val (removed, moved) = reconcileMediaRows(knownPathById.keys, knownPathById) { selection, args, onRow ->
+    fun checkKnownEntries(context: Context, knownPathById: Map<Long, String?>, scoped: Boolean): Map<String, List<Long>> {
+        val (removed, moved) = reconcileMediaRows(knownPathById.keys, knownPathById, scoped) { selection, args, onRow ->
             readKnownRows(context, true, selection, args, onRow)
         }
         return mapOf("removed" to removed, "moved" to moved)
@@ -198,120 +204,117 @@ class MediaStoreImageProvider : ImageProvider() {
     ): Boolean {
         var found = false
         val orderBy = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
-        try {
-            val cursor = context.contentResolver.query(contentUri, projection, selection, selectionArgs, orderBy)
-            if (cursor != null) {
-                val contentUriContainsId = when (contentUri) {
-                    IMAGE_CONTENT_URI, VIDEO_CONTENT_URI -> false
-                    else -> true
-                }
+        val cursor = checkNotNull(context.contentResolver.query(contentUri, projection, selection, selectionArgs, orderBy)) {
+            "MediaStore query returned no cursor for $contentUri"
+        }
+        cursor.use {
+            val contentUriContainsId = when (contentUri) {
+                IMAGE_CONTENT_URI, VIDEO_CONTENT_URI -> false
+                else -> true
+            }
 
-                // image & video
-                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-                val pathColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
-                val mimeTypeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
-                val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
-                val widthColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.WIDTH)
-                val heightColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.HEIGHT)
-                val dateAddedSecsColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED)
-                val dateModifiedSecsColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
-                val dateTakenColumn = cursor.getColumnIndex(MediaColumns.DATE_TAKEN)
+            // image & video
+            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+            val pathColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
+            val mimeTypeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
+            val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+            val widthColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.WIDTH)
+            val heightColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.HEIGHT)
+            val dateAddedSecsColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED)
+            val dateModifiedSecsColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
+            val dateTakenColumn = cursor.getColumnIndex(MediaColumns.DATE_TAKEN)
 
-                // image & video for API >=29, only for images for API <29
-                val orientationColumn = cursor.getColumnIndex(MediaColumns.ORIENTATION)
+            // image & video for API >=29, only for images for API <29
+            val orientationColumn = cursor.getColumnIndex(MediaColumns.ORIENTATION)
 
-                // video only
-                val durationColumn = cursor.getColumnIndex(MediaColumns.DURATION)
-                val needDuration = projection.contentEquals(VIDEO_PROJECTION)
+            // video only
+            val durationColumn = cursor.getColumnIndex(MediaColumns.DURATION)
+            val needDuration = projection.contentEquals(VIDEO_PROJECTION)
 
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idColumn)
-                    val dateModifiedMillis = cursor.getInt(dateModifiedSecsColumn) * 1000L
-                    if (isValidEntry(id, dateModifiedMillis)) {
-                        // for multiple items, `contentUri` is the root without ID,
-                        // but for single items, `contentUri` already contains the ID
-                        val itemUri = if (contentUriContainsId) contentUri else ContentUris.withAppendedId(contentUri, id)
-                        // `mimeType` can be registered as null for file media URIs with unsupported media types (e.g. TIFF on old devices)
-                        // in that case we try to use the MIME type provided along the URI
-                        val mimeType: String? = cursor.getString(mimeTypeColumn) ?: fileMimeType
-                        var width = cursor.getInt(widthColumn)
-                        var height = cursor.getInt(heightColumn)
-                        val durationMillis = if (durationColumn != -1) cursor.getLong(durationColumn) else 0L
+            while (cursor.moveToNext()) {
+                val id = cursor.getLong(idColumn)
+                val dateModifiedMillis = cursor.getInt(dateModifiedSecsColumn) * 1000L
+                if (isValidEntry(id, dateModifiedMillis)) {
+                    // for multiple items, `contentUri` is the root without ID,
+                    // but for single items, `contentUri` already contains the ID
+                    val itemUri = if (contentUriContainsId) contentUri else ContentUris.withAppendedId(contentUri, id)
+                    // `mimeType` can be registered as null for file media URIs with unsupported media types (e.g. TIFF on old devices)
+                    // in that case we try to use the MIME type provided along the URI
+                    val mimeType: String? = cursor.getString(mimeTypeColumn) ?: fileMimeType
+                    var width = cursor.getInt(widthColumn)
+                    var height = cursor.getInt(heightColumn)
+                    val durationMillis = if (durationColumn != -1) cursor.getLong(durationColumn) else 0L
 
-                        if (mimeType == null) {
-                            Log.w(LOG_TAG, "failed to make entry from uri=$itemUri because of null MIME type")
+                    if (mimeType == null) {
+                        Log.w(LOG_TAG, "failed to make entry from uri=$itemUri because of null MIME type")
+                    } else {
+                        val path = cursor.getString(pathColumn)
+
+                        val isDir = path != null && File(path).isDirectory
+                        if (isDir) {
+                            // some directories are wrongly registered as media (e.g. `.../Android/media/is.xyz.mpv`)
+                            Log.w(LOG_TAG, "failed to make entry from uri=$itemUri because path=$path refers to a directory")
                         } else {
-                            val path = cursor.getString(pathColumn)
+                            var entryFields: FieldMap = hashMapOf(
+                                EntryFields.ORIGIN to SourceEntry.ORIGIN_MEDIA_STORE_CONTENT,
+                                EntryFields.URI to itemUri.toString(),
+                                EntryFields.PATH to path,
+                                EntryFields.SOURCE_MIME_TYPE to mimeType,
+                                EntryFields.WIDTH to width,
+                                EntryFields.HEIGHT to height,
+                                EntryFields.SOURCE_ROTATION_DEGREES to if (orientationColumn != -1) cursor.getInt(orientationColumn) else 0,
+                                EntryFields.SIZE_BYTES to cursor.getLong(sizeColumn),
+                                EntryFields.DATE_ADDED_SECS to cursor.getInt(dateAddedSecsColumn),
+                                EntryFields.DATE_MODIFIED_MILLIS to dateModifiedMillis,
+                                EntryFields.SOURCE_DATE_TAKEN_MILLIS to if (dateTakenColumn != -1) cursor.getLong(dateTakenColumn) else null,
+                                EntryFields.DURATION_MILLIS to durationMillis,
+                                // only for map export
+                                EntryFields.CONTENT_ID to id,
+                            )
 
-                            val isDir = path != null && File(path).isDirectory
-                            if (isDir) {
-                                // some directories are wrongly registered as media (e.g. `.../Android/media/is.xyz.mpv`)
-                                Log.w(LOG_TAG, "failed to make entry from uri=$itemUri because path=$path refers to a directory")
-                            } else {
-                                var entryFields: FieldMap = hashMapOf(
-                                    EntryFields.ORIGIN to SourceEntry.ORIGIN_MEDIA_STORE_CONTENT,
-                                    EntryFields.URI to itemUri.toString(),
-                                    EntryFields.PATH to path,
-                                    EntryFields.SOURCE_MIME_TYPE to mimeType,
-                                    EntryFields.WIDTH to width,
-                                    EntryFields.HEIGHT to height,
-                                    EntryFields.SOURCE_ROTATION_DEGREES to if (orientationColumn != -1) cursor.getInt(orientationColumn) else 0,
-                                    EntryFields.SIZE_BYTES to cursor.getLong(sizeColumn),
-                                    EntryFields.DATE_ADDED_SECS to cursor.getInt(dateAddedSecsColumn),
-                                    EntryFields.DATE_MODIFIED_MILLIS to dateModifiedMillis,
-                                    EntryFields.SOURCE_DATE_TAKEN_MILLIS to if (dateTakenColumn != -1) cursor.getLong(dateTakenColumn) else null,
-                                    EntryFields.DURATION_MILLIS to durationMillis,
-                                    // only for map export
-                                    EntryFields.CONTENT_ID to id,
-                                )
-
-                                if (isHeic(mimeType) || mimeType == MimeTypes.TIFF) {
-                                    // The reported size for some HEIC images is simply incorrect.
-                                    // Some HEIC images are detected as TIFF.
-                                    try {
-                                        StorageUtils.openInputStream(context, itemUri)?.use { input ->
-                                            val options = BitmapFactory.Options().apply {
-                                                inJustDecodeBounds = true
-                                            }
-                                            BitmapFactory.decodeStream(input, null, options)
-                                            val outWidth = options.outWidth
-                                            val outHeight = options.outHeight
-                                            if (outWidth > 0 && outHeight > 0) {
-                                                width = outWidth
-                                                height = outHeight
-                                                entryFields[EntryFields.WIDTH] = width
-                                                entryFields[EntryFields.HEIGHT] = height
-                                            }
+                            if (isHeic(mimeType) || mimeType == MimeTypes.TIFF) {
+                                // The reported size for some HEIC images is simply incorrect.
+                                // Some HEIC images are detected as TIFF.
+                                try {
+                                    StorageUtils.openInputStream(context, itemUri)?.use { input ->
+                                        val options = BitmapFactory.Options().apply {
+                                            inJustDecodeBounds = true
                                         }
-                                    } catch (_: IOException) {
-                                        // ignore
+                                        BitmapFactory.decodeStream(input, null, options)
+                                        val outWidth = options.outWidth
+                                        val outHeight = options.outHeight
+                                        if (outWidth > 0 && outHeight > 0) {
+                                            width = outWidth
+                                            height = outHeight
+                                            entryFields[EntryFields.WIDTH] = width
+                                            entryFields[EntryFields.HEIGHT] = height
+                                        }
                                     }
+                                } catch (_: IOException) {
+                                    // ignore
                                 }
-
-                                if (MimeTypes.isRaw(mimeType)
-                                    || (width <= 0 || height <= 0) && needSize(mimeType)
-                                    || durationMillis == 0L && needDuration
-                                ) {
-                                    // Some images are incorrectly registered in the Media Store,
-                                    // missing some attributes such as width, height, orientation.
-                                    // Also, the reported size of raw images is inconsistent across devices
-                                    // and Android versions (sometimes the raw size, sometimes the decoded size).
-                                    val entry = SourceEntry(entryFields).fillPreCatalogMetadata(context)
-                                    entryFields = entry.toMap()
-                                }
-
-                                getFileModifiedDateMillis(path)?.let { entryFields[EntryFields.DATE_MODIFIED_MILLIS] = it }
-
-                                handleNewEntry(entryFields)
-                                found = true
                             }
+
+                            if (MimeTypes.isRaw(mimeType)
+                                || (width <= 0 || height <= 0) && needSize(mimeType)
+                                || durationMillis == 0L && needDuration
+                            ) {
+                                // Some images are incorrectly registered in the Media Store,
+                                // missing some attributes such as width, height, orientation.
+                                // Also, the reported size of raw images is inconsistent across devices
+                                // and Android versions (sometimes the raw size, sometimes the decoded size).
+                                val entry = SourceEntry(entryFields).fillPreCatalogMetadata(context)
+                                entryFields = entry.toMap()
+                            }
+
+                            getFileModifiedDateMillis(path)?.let { entryFields[EntryFields.DATE_MODIFIED_MILLIS] = it }
+
+                            handleNewEntry(entryFields)
+                            found = true
                         }
                     }
                 }
-                cursor.close()
             }
-        } catch (ex: Exception) {
-            Log.e(LOG_TAG, "failed to get entries", ex)
         }
         return found
     }
@@ -760,6 +763,7 @@ private const val MEDIA_ID_BATCH_SIZE = 500
 internal fun reconcileMediaRows(
     knownIds: Collection<Long>,
     knownPaths: Map<Long, String?>?,
+    scoped: Boolean = false,
     readRows: (String?, Array<String>?, (Long, String?) -> Unit) -> Unit,
 ): Pair<List<Long>, List<Long>> {
     if (knownIds.isEmpty()) return emptyList<Long>() to emptyList()
@@ -772,7 +776,7 @@ internal fun reconcileMediaRows(
             moved.add(id)
         }
     }
-    if (knownPaths != null && knownIds.size > MEDIA_ID_BATCH_SIZE) {
+    if (!scoped && knownPaths != null && knownIds.size > MEDIA_ID_BATCH_SIZE) {
         // A populated startup cache needs one pass, not a round trip per batch.
         readRows(null, null, onRow)
     } else {

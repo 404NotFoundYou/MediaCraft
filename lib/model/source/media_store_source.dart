@@ -240,7 +240,7 @@ class MediaStoreSource extends CollectionSource {
       for (final entry in knownLiveEntries)
         if (entry.contentId case final int id) id: entry.path,
     };
-    final (:removed, :moved) = await mediaStoreService.checkKnownEntries(knownPathByContentId).onError<Object>((error, stack) {
+    final (:removed, :moved) = await mediaStoreService.checkKnownEntries(knownPathByContentId, scoped: scopeDirectory != null).onError<Object>((error, stack) {
       knownEntries.where((entry) => !entry.isDisposed).forEach((entry) => entry.dispose());
       Error.throwWithStackTrace(error, stack);
     });

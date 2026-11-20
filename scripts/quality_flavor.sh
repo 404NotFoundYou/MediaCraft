@@ -15,6 +15,12 @@ esac
 
 project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$project_root"
+for file in pubspec.yaml pubspec.lock; do
+  if ! cmp -s "$file" "flavors/pubspec_libre.${file##*.}"; then
+    echo "$file must match the libre snapshot before running flavor quality checks." >&2
+    exit 1
+  fi
+done
 bash "scripts/apply_flavor_${flavor}.sh"
 bash scripts/verify_flavor.sh "$flavor"
 ./flutterw gen-l10n

@@ -440,16 +440,16 @@ object MultiPage {
 
     private fun getTiffPageInfo(context: Context, uri: Uri, page: Int): TiffBitmapFactory.Options? {
         try {
-            val fd = context.contentResolver.openFileDescriptor(uri, "r")?.detachFd()
-            if (fd == null) {
-                Log.w(LOG_TAG, "failed to get TIFF file descriptor for uri=$uri")
-                return null
-            }
             val options = TiffFetcher.buildOptions().apply {
                 inJustDecodeBounds = true
                 inDirectoryNumber = page
             }
-            TiffBitmapFactory.decodeFileDescriptor(fd, options)
+            val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+            if (pfd == null) {
+                Log.w(LOG_TAG, "failed to get TIFF file descriptor for uri=$uri")
+                return null
+            }
+            TiffFetcher.decode(pfd, options)
             return options
         } catch (e: Exception) {
             Log.w(LOG_TAG, "failed to get TIFF page info for uri=$uri page=$page", e)

@@ -136,7 +136,8 @@ void main() {
     settings.topEntryIds = [old.id];
     final checking = Completer<Map<int, String?>>();
     final reconcile = Completer<({List<int> moved, List<int> removed})>();
-    mediaStore.checkPaths = (paths) {
+    mediaStore.checkPaths = (paths, scoped) {
+      expect(scoped, isTrue, reason: '单相册核对只应查询已知的媒体 ID');
       checking.complete(paths);
       return reconcile.future;
     };
@@ -411,7 +412,7 @@ class _ControlledMediaStoreService extends FakeMediaStoreService {
   Map<String, int>? generation;
   Future<List<String>> Function(Map<String, int?>)? queryChanges;
   Future<List<int>> Function(List<int>)? checkIds;
-  Future<({List<int> moved, List<int> removed})> Function(Map<int, String?>)? checkPaths;
+  Future<({List<int> moved, List<int> removed})> Function(Map<int, String?>, bool)? checkPaths;
   Stream<AvesEntry> Function(Map<int?, int?>, String?)? loadEntries;
   final changeBaselines = <Map<String, int?>>[];
 
@@ -440,7 +441,7 @@ class _ControlledMediaStoreService extends FakeMediaStoreService {
   Future<List<int>> checkObsoleteContentIds(List<int> knownContentIds) => checkIds?.call(knownContentIds) ?? super.checkObsoleteContentIds(knownContentIds);
 
   @override
-  Future<({List<int> moved, List<int> removed})> checkKnownEntries(Map<int, String?> knownPathById) => checkPaths?.call(knownPathById) ?? super.checkKnownEntries(knownPathById);
+  Future<({List<int> moved, List<int> removed})> checkKnownEntries(Map<int, String?> knownPathById, {bool scoped = false}) => checkPaths?.call(knownPathById, scoped) ?? super.checkKnownEntries(knownPathById, scoped: scoped);
 
   @override
   Stream<AvesEntry> getEntries(Map<int?, int?> knownEntries, {String? directory}) => loadEntries?.call(knownEntries, directory) ?? entryStream?.stream ?? super.getEntries(knownEntries, directory: directory);

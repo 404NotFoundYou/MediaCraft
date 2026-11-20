@@ -135,6 +135,31 @@ sed -i 's/aves_services_none/aves_services_baidu/' "$platform_check/.dart_tool/p
 (cd "$platform_check" && PATH="$platform_check/mockbin:$PATH" bash scripts/verify_flavor.sh baidu)
 echo 'PASS stale active services platform rejected'
 
+quality_check="$test_root/quality-check"
+seed_generator "$quality_check"
+cp "$project_root/scripts/quality_flavor.sh" "$quality_check/scripts/"
+for flavor in libre baidu; do
+  printf '#!/usr/bin/env bash\nexit 43\n' > "$quality_check/scripts/apply_flavor_${flavor}.sh"
+done
+for file in pubspec.yaml pubspec.lock; do
+  printf 'wrong-flavor\n' >> "$quality_check/$file"
+  for flavor in libre baidu; do
+    set +e
+    output=$(bash "$quality_check/scripts/quality_flavor.sh" "$flavor" 2>&1)
+    status=$?
+    set -e
+    [ "$status" -eq 1 ]
+    [[ "$output" == "$file must match the libre snapshot before running flavor quality checks." ]]
+  done
+  cp "$quality_check/flavors/pubspec_libre.${file##*.}" "$quality_check/$file"
+done
+set +e
+bash "$quality_check/scripts/quality_flavor.sh" baidu
+status=$?
+set -e
+[ "$status" -eq 43 ]
+echo 'PASS root flavor drift rejected before switching, matching libre config accepted'
+
 sdk_dirty="$test_root/sdk-dirty"
 mkdir -p "$sdk_dirty/scripts" "$sdk_dirty/.tooling/flutter/bin"
 cp "$project_root/scripts/verify_flutter_sdk.sh" "$sdk_dirty/scripts/"

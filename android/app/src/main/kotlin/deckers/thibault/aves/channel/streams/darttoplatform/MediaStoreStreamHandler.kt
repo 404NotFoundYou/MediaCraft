@@ -26,7 +26,6 @@ class MediaStoreStreamHandler(private val context: Context, arguments: Any?) : B
 
     private fun fetchAll() {
         MediaStoreImageProvider().fetchAll(context, knownEntries ?: emptyMap(), directory) { success(it) }
-        endOfStream()
     }
 
     companion object {

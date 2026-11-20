@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 abstract class MediaStoreService {
   Future<List<int>> checkObsoleteContentIds(List<int> knownContentIds);
 
-  Future<({List<int> removed, List<int> moved})> checkKnownEntries(Map<int, String?> knownPathById);
+  Future<({List<int> removed, List<int> moved})> checkKnownEntries(Map<int, String?> knownPathById, {bool scoped = false});
 
   Future<List<String>> getChangedUris(Map<String, int?> sinceGenerationByVolume);
 
@@ -35,10 +35,11 @@ class PlatformMediaStoreService implements MediaStoreService {
   }
 
   @override
-  Future<({List<int> removed, List<int> moved})> checkKnownEntries(Map<int, String?> knownPathById) async {
+  Future<({List<int> removed, List<int> moved})> checkKnownEntries(Map<int, String?> knownPathById, {bool scoped = false}) async {
     if (knownPathById.isEmpty) return (removed: <int>[], moved: <int>[]);
     final result = await _platform.invokeMethod('checkKnownEntries', <String, Object?>{
       'knownPathById': knownPathById,
+      'scoped': scoped,
     }) as Map;
     return (removed: (result['removed'] as List).cast<int>(), moved: (result['moved'] as List).cast<int>());
   }

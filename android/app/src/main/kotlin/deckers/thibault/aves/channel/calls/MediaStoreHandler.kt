@@ -44,7 +44,8 @@ class MediaStoreHandler(private val context: Context) : MethodCallHandler {
             result.error("checkKnownEntries-args", "missing arguments", null)
             return
         }
-        result.success(MediaStoreImageProvider().checkKnownEntries(context, knownPathById))
+        val scoped = call.argument<Boolean>("scoped") == true
+        result.success(MediaStoreImageProvider().checkKnownEntries(context, knownPathById, scoped))
     }
 
     private fun getChangedUris(call: MethodCall, result: MethodChannel.Result) {

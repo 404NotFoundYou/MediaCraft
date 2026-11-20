@@ -28,7 +28,6 @@ import deckers.thibault.aves.storage.StorageUtils
 import deckers.thibault.aves.utils.MimeTypes
 import deckers.thibault.aves.utils.UriUtils.isContentScheme
 import deckers.thibault.aves.utils.UriUtils.tryParseId
-import org.beyka.tiffbitmapfactory.TiffBitmapFactory
 import java.io.IOException
 import androidx.exifinterface.media.ExifInterfaceFork as ExifInterface
 
@@ -260,15 +259,13 @@ class SourceEntry {
 
     private fun fillByTiffDecode(context: Context) {
         try {
-            context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                val fd = pfd.detachFd()
-                val options = TiffFetcher.buildOptions().apply {
-                    inJustDecodeBounds = true
-                }
-                TiffBitmapFactory.decodeFileDescriptor(fd, options)
-                width = options.outWidth
-                height = options.outHeight
+            val options = TiffFetcher.buildOptions().apply {
+                inJustDecodeBounds = true
             }
+            val pfd = context.contentResolver.openFileDescriptor(uri, "r") ?: return
+            TiffFetcher.decode(pfd, options)
+            width = options.outWidth
+            height = options.outHeight
         } catch (_: Exception) {
             // ignore
         }

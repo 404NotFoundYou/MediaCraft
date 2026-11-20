@@ -44,6 +44,25 @@ class MediaStoreReconciliationTest {
     }
 
     @Test
+    fun largeSingleAlbumOnlyQueriesItsIdsAndStillDetectsMovesOutOfTheAlbum() {
+        val knownPaths = (1L..501L).associateWith { "/album/$it.jpg" }
+        val queriedBatches = mutableListOf<List<String>>()
+        val (removed, moved) = reconcileMediaRows(knownPaths.keys, knownPaths, scoped = true) { selection, args, onRow ->
+            val batch = checkNotNull(args)
+            assertEquals("_id IN (${batch.joinToString(",") { "?" }})", selection)
+            queriedBatches.add(batch.toList())
+            batch.map(String::toLong).filterNot { it == 1L }.forEach { id ->
+                onRow(id, if (id == 501L) "/other/$id.jpg" else knownPaths[id])
+            }
+        }
+
+        assertEquals(listOf(500, 1), queriedBatches.map { it.size })
+        assertEquals(knownPaths.keys.map(Long::toString), queriedBatches.flatten())
+        assertEquals(listOf(1L), removed)
+        assertEquals(listOf(501L), moved)
+    }
+
+    @Test
     fun aLaterQueryFailureCannotPublishAnIncompleteDeletionList() {
         assertThrows(IllegalStateException::class.java) {
             reconcileMediaRows((1L..501L).toList(), null) { _, args, onRow ->

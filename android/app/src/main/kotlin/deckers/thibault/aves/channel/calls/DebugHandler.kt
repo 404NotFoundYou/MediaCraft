@@ -398,28 +398,28 @@ class DebugHandler(private val context: Context) : MethodCallHandler {
 
         try {
             val metadataMap = HashMap<String, FieldMap>()
-            var fd = context.contentResolver.openFileDescriptor(uri, "r")?.detachFd()
-            if (fd == null) {
-                result.error("getTiffStructure-fd", "failed to get file descriptor", null)
-                return
-            }
             var options = TiffFetcher.buildOptions().apply {
                 inJustDecodeBounds = true
             }
-            TiffBitmapFactory.decodeFileDescriptor(fd, options)
+            val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+            if (pfd == null) {
+                result.error("getTiffStructure-fd", "failed to get file descriptor", null)
+                return
+            }
+            TiffFetcher.decode(pfd, options)
             metadataMap["0"] = tiffOptionsToMap(options)
             val dirCount = options.outDirectoryCount
             for (page in 1..<dirCount) {
-                fd = context.contentResolver.openFileDescriptor(uri, "r")?.detachFd()
-                if (fd == null) {
-                    result.error("getTiffStructure-fd", "failed to get file descriptor", null)
-                    return
-                }
                 options = TiffFetcher.buildOptions().apply {
                     inJustDecodeBounds = true
                     inDirectoryNumber = page
                 }
-                TiffBitmapFactory.decodeFileDescriptor(fd, options)
+                val pagePfd = context.contentResolver.openFileDescriptor(uri, "r")
+                if (pagePfd == null) {
+                    result.error("getTiffStructure-fd", "failed to get file descriptor", null)
+                    return
+                }
+                TiffFetcher.decode(pagePfd, options)
                 metadataMap["$page"] = tiffOptionsToMap(options)
             }
             result.success(metadataMap)
