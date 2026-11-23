@@ -51,6 +51,22 @@ class SimilarEngineTest {
     }
 
     @Test
+    fun similarImagesAcrossAspectRatioBucketsRemainGrouped() = runBlocking {
+        val first = imageCandidate(1, width = 1024, height = 1000)
+        val second = imageCandidate(2, width = 1076, height = 1000)
+        val result = engine.scan(
+            candidates = listOf(first, second),
+            cached = mapOf(
+                1L to imageFingerprint(first),
+                2L to imageFingerprint(second),
+            ),
+        ) { _, _, _ -> }
+
+        assertEquals(1, result.groups.size)
+        assertEquals(setOf(1L, 2L), result.groups.single().members.map { it.entryId }.toSet())
+    }
+
+    @Test
     fun videoSimilarityRequiresEnoughMatchingFramesAndSimilarDuration() = runBlocking {
         val first = videoCandidate(1, durationMillis = 10_000)
         val second = videoCandidate(2, durationMillis = 10_000)
@@ -83,6 +99,8 @@ class SimilarEngineTest {
         id: Long,
         path: String? = "/media/$id.jpg",
         rotationDegrees: Int = 0,
+        width: Int = 100,
+        height: Int = 100,
     ) = DuplicateCandidate(
         entryId = id,
         uri = "content://media/$id",
@@ -90,8 +108,8 @@ class SimilarEngineTest {
         dateModifiedMillis = 200 + id,
         mimeType = "image/jpeg",
         path = path,
-        width = 100,
-        height = 100,
+        width = width,
+        height = height,
         rotationDegrees = rotationDegrees,
     )
 

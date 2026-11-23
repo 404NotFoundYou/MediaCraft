@@ -9,6 +9,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.floor
+import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.PI
@@ -26,6 +28,8 @@ private const val VIDEO_HIGH_PHASH_DISTANCE = 10
 private const val VIDEO_HIGH_DHASH_DISTANCE = 14
 private const val VIDEO_REVIEW_PHASH_DISTANCE = 14
 private const val VIDEO_REVIEW_DHASH_DISTANCE = 18
+private const val ASPECT_RATIO_BUCKET_WIDTH = .025
+private const val ASPECT_RATIO_BUCKET_RADIUS = 3
 
 internal fun interface SimilarImageLoader {
     fun load(candidate: DuplicateCandidate): Bitmap
@@ -219,23 +223,34 @@ internal class SimilarEngine(
     private fun group(fingerprints: List<SimilarFingerprint>): List<SimilarGroup> {
         val groups = mutableListOf<SimilarGroup>()
         for (kind in listOf("image", "video")) {
-            val remaining = fingerprints.filter { it.kind == kind }
-                .sortedWith(compareByDescending<SimilarFingerprint> { quality(it.candidate) }.thenBy { it.candidate.entryId })
-                .toMutableList()
-            while (remaining.size > 1) {
-                val representative = remaining.removeAt(0)
+            val remaining = arrayListOf<GroupCandidate?>().apply {
+                addAll(
+                    fingerprints.filter { it.kind == kind }
+                        .sortedWith(compareByDescending<SimilarFingerprint> { quality(it.candidate) }.thenBy { it.candidate.entryId })
+                        .map { GroupCandidate(it, aspectRatioBucket(it.candidate)) },
+                )
+            }
+            var activeCount = remaining.size
+            var representativeIndex = 0
+            while (activeCount > 1) {
+                while (remaining[representativeIndex] == null) representativeIndex++
+                val representative = remaining[representativeIndex]!!
+                remaining[representativeIndex] = null
+                activeCount--
                 val matches = mutableListOf<Pair<SimilarFingerprint, SimilarMatch>>()
-                val iterator = remaining.iterator()
+                val iterator = remaining.listIterator(representativeIndex + 1)
                 while (iterator.hasNext()) {
-                    val candidate = iterator.next()
-                    val match = compare(representative, candidate)
+                    val candidate = iterator.next() ?: continue
+                    if (!mayShareAspectRatio(representative.aspectRatioBucket, candidate.aspectRatioBucket)) continue
+                    val match = compare(representative.fingerprint, candidate.fingerprint)
                     if (match != null) {
-                        matches += candidate to match
-                        iterator.remove()
+                        matches += candidate.fingerprint to match
+                        iterator.set(null)
+                        activeCount--
                     }
                 }
                 if (matches.isNotEmpty()) {
-                    val allMatches = listOf(representative to null) + matches
+                    val allMatches = listOf(representative.fingerprint to null) + matches
                     val bestMatch = matches.minBy { it.second.score }
                     groups += SimilarGroup(
                         kind = kind,
@@ -247,6 +262,7 @@ internal class SimilarEngine(
                         members = allMatches.map { it.first.candidate },
                     )
                 }
+                representativeIndex++
             }
         }
         return groups
@@ -337,6 +353,14 @@ internal class SimilarEngine(
         return width.toDouble() / height.toDouble()
     }
 
+    private fun aspectRatioBucket(candidate: DuplicateCandidate): Int? {
+        if (candidate.width <= 0 || candidate.height <= 0) return null
+        return floor(ln(orientedAspectRatio(candidate)) / ASPECT_RATIO_BUCKET_WIDTH).toInt()
+    }
+
+    private fun mayShareAspectRatio(first: Int?, second: Int?): Boolean =
+        first == null || second == null || abs(first - second) <= ASPECT_RATIO_BUCKET_RADIUS
+
     private fun hash(source: Bitmap): Pair<Long, Long> {
         val normalized = normalize(source)
         return try {
@@ -375,8 +399,8 @@ internal class SimilarEngine(
                 for (x in 0 until HASH_SIZE) {
                     for (y in 0 until HASH_SIZE) {
                         sum += grayscale[y * HASH_SIZE + x] *
-                            cos((2 * x + 1) * u * PI / (2 * HASH_SIZE)) *
-                            cos((2 * y + 1) * v * PI / (2 * HASH_SIZE))
+                            DCT_COSINES[u][x] *
+                            DCT_COSINES[v][y]
                     }
                 }
                 dct[u * HASH_BLOCK_SIZE + v] = sum
@@ -420,7 +444,17 @@ internal class SimilarEngine(
         val durationDeltaMillis: Long?,
     )
 
+    private data class GroupCandidate(
+        val fingerprint: SimilarFingerprint,
+        val aspectRatioBucket: Int?,
+    )
+
     companion object {
         private val SAMPLE_POINTS = listOf(.05, .20, .35, .50, .65, .80, .95)
+        private val DCT_COSINES = Array(HASH_BLOCK_SIZE) { frequency ->
+            DoubleArray(HASH_SIZE) { sample ->
+                cos((2 * sample + 1) * frequency * PI / (2 * HASH_SIZE))
+            }
+        }
     }
 }
