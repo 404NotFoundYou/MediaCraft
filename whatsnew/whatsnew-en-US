@@ -1,5 +1,5 @@
-In v0.6.10:
-- Add similar image and video duplicate scanning with reusable fingerprints.
-- Improve perceptual hashing and large-library similarity grouping performance.
-- Show similarity confidence and sampled video frame details during duplicate review.
+In v0.6.11:
+- Retry failed frame reads at the same timestamp during similar video scans and pre-cleanup checks.
+- Read the duration from the video when the media library reports zero.
+- Show the sample number and timestamp when a frame still cannot be read.
 Full changelog available on GitHub

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## <a id="unreleased"></a>[Unreleased]
 
+## <a id="v0.6.11"></a>[v0.6.11] - 2026-11-23
+
+### Fixed
+
+- 修复相似视频扫描和清理前复核在关键帧或缩略帧读取失败时直接跳过视频的问题，现在会在同一采样时刻重试其他取帧方式。
+- 媒体库时长为零时改读视频文件的时长。仍有采样帧无法读取时，提示会标出帧序号和时间，清理前复核会阻止该次清理。
+
 ## <a id="v0.6.10"></a>[v0.6.10] - 2026-11-23
 
 ### Added
