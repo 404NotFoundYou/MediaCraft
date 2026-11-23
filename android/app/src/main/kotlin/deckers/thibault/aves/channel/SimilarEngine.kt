@@ -5,6 +5,9 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.media.MediaMetadataRetriever
+import android.os.Build
+import deckers.thibault.aves.utils.MemoryUtils
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlin.math.abs
@@ -19,6 +22,8 @@ private const val HASH_SIZE = 32
 private const val HASH_BLOCK_SIZE = 8
 // shortcut: 固定七帧采样无法覆盖剪辑片段，需支持片段匹配时升级。
 private const val FRAME_COUNT = 7
+private const val MAX_FALLBACK_FRAME_PIXELS = 4096L * 2160
+private val FRAME_OPTIONS = intArrayOf(MediaMetadataRetriever.OPTION_CLOSEST_SYNC, MediaMetadataRetriever.OPTION_CLOSEST)
 private const val ALGORITHM_VERSION = 2
 private const val IMAGE_HIGH_PHASH_DISTANCE = 8
 private const val IMAGE_HIGH_DHASH_DISTANCE = 10
@@ -37,6 +42,30 @@ internal fun interface SimilarImageLoader {
 
 internal fun interface SimilarVideoLoader {
     fun open(candidate: DuplicateCandidate): MediaMetadataRetriever
+}
+
+internal suspend fun <T : Any> readVideoSample(
+    number: Int,
+    timeMicros: Long,
+    scaled: ((Long, Int) -> T?)?,
+    original: (Long, Int) -> T?,
+): T {
+    var cause: RuntimeException? = null
+    for (read in listOfNotNull(scaled, original)) {
+        for (option in FRAME_OPTIONS) {
+            currentCoroutineContext().ensureActive()
+            try {
+                read(timeMicros, option)?.let { return it }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: SecurityException) {
+                throw e
+            } catch (e: RuntimeException) {
+                cause = e
+            }
+        }
+    }
+    throw IllegalStateException("无法读取视频采样帧（第 $number/$FRAME_COUNT 帧，${timeMicros / 1000} 毫秒）", cause)
 }
 
 internal data class SimilarFingerprint(
@@ -160,7 +189,7 @@ internal class SimilarEngine(
 
     private suspend fun readFingerprint(candidate: DuplicateCandidate, issues: MutableList<DuplicateIssue>): SimilarFingerprint? = try {
         if (candidate.isVideo) readVideoFingerprint(candidate) else readImageFingerprint(candidate)
-    } catch (e: kotlinx.coroutines.CancellationException) {
+    } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         issues += DuplicateIssue(candidate, "similar-read-failed", e.message ?: e.javaClass.simpleName)
@@ -188,18 +217,18 @@ internal class SimilarEngine(
     private suspend fun readVideoFingerprint(candidate: DuplicateCandidate): SimilarFingerprint {
         val retriever = videoLoader.open(candidate)
         return try {
-            val durationMillis = candidate.durationMillis
+            val durationMillis = candidate.durationMillis?.takeIf { it > 0 }
                 ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
             if (durationMillis == null || durationMillis <= 0) throw IllegalStateException("无法读取视频时长")
+            val scaled: ((Long, Int) -> Bitmap?)? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                { time, option -> retriever.getScaledFrameAtTime(time, option, 64, 64) }
+            } else null
             val frameHashes = mutableListOf<Pair<Long, Long>>()
-            for (point in SAMPLE_POINTS) {
-                currentCoroutineContext().ensureActive()
+            for ((index, point) in SAMPLE_POINTS.withIndex()) {
                 val timeMicros = (durationMillis * point * 1000.0).toLong()
-                val frame = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
-                    retriever.getScaledFrameAtTime(timeMicros, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 64, 64)
-                } else {
-                    retriever.getFrameAtTime(timeMicros, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                } ?: throw IllegalStateException("无法读取视频采样帧")
+                val frame = readVideoSample(index + 1, timeMicros, scaled) { time, option ->
+                    if (scaled == null || canReadOriginalFrame(retriever)) retriever.getFrameAtTime(time, option) else null
+                }
                 try {
                     frameHashes += hash(frame)
                 } finally {
@@ -218,6 +247,14 @@ internal class SimilarEngine(
         } finally {
             retriever.release()
         }
+    }
+
+    private fun canReadOriginalFrame(retriever: MediaMetadataRetriever): Boolean {
+        val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: return false
+        val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: return false
+        val pixels = width.toLong() * height
+        // A full-resolution HDR bitmap may need eight bytes per pixel.
+        return width > 0 && height > 0 && pixels <= MAX_FALLBACK_FRAME_PIXELS && MemoryUtils.canAllocate(pixels * 8)
     }
 
     private fun group(fingerprints: List<SimilarFingerprint>): List<SimilarGroup> {
@@ -328,7 +365,7 @@ internal class SimilarEngine(
 
     private fun SimilarFingerprint.withCandidate(candidate: DuplicateCandidate) = copy(
         candidate = candidate.copy(
-            durationMillis = candidate.durationMillis ?: this.candidate.durationMillis,
+            durationMillis = candidate.durationMillis?.takeIf { it > 0 } ?: this.candidate.durationMillis,
         ),
     )
 

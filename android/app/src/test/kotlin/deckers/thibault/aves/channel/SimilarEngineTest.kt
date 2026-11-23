@@ -1,9 +1,13 @@
 package deckers.thibault.aves.channel
 
+import android.media.MediaMetadataRetriever.OPTION_CLOSEST
+import android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 
 class SimilarEngineTest {
     private val engine = SimilarEngine(
@@ -93,6 +97,74 @@ class SimilarEngineTest {
         ) { _, _, _ -> }
 
         assertTrue(durationMismatch.groups.isEmpty())
+    }
+
+    @Test
+    fun aWorkingSyncFrameDoesNotDecodeExtraFrames() = runBlocking {
+        val frame = readVideoSample(1, 500_000, scaled = { time, option ->
+            assertEquals(500_000L, time)
+            assertEquals(OPTION_CLOSEST_SYNC, option)
+            "sync"
+        }, original = { _, _ -> error("unnecessary full-size decode") })
+        assertEquals("sync", frame)
+    }
+
+    @Test
+    fun aMissingKeyframeCanUseThePictureAtTheSameTime() = runBlocking {
+        val options = mutableListOf<Int>()
+        val frame = readVideoSample(4, 5_000_000, scaled = { time, option ->
+            assertEquals(5_000_000L, time)
+            options += option
+            if (option == OPTION_CLOSEST) "middle" else null
+        }, original = { _, _ -> error("scaled frame was available") })
+        assertEquals(listOf(OPTION_CLOSEST_SYNC, OPTION_CLOSEST), options)
+        assertEquals("middle", frame)
+    }
+
+    @Test
+    fun aBrokenScaledDecoderFallsBackToTheSameTimeAtOriginalSize() = runBlocking {
+        val frame = readVideoSample(4, 5_000_000, scaled = { _, _ -> throw IllegalStateException("decoder failed") }, original = { time, option ->
+            assertEquals(5_000_000L, time)
+            assertEquals(OPTION_CLOSEST_SYNC, option)
+            "original"
+        })
+        assertEquals("original", frame)
+    }
+
+    @Test
+    fun missingFramesReportThePositionInsteadOfSubstitutingACover() {
+        val positions = mutableListOf<Long>()
+        val failure = assertThrows<IllegalStateException> {
+            runBlocking {
+                readVideoSample<Any>(7, 9_500_000, scaled = null) { time, _ -> positions.add(time); null }
+            }
+        }
+        assertEquals(listOf(9_500_000L, 9_500_000L), positions)
+        assertEquals("无法读取视频采样帧（第 7/7 帧，9500 毫秒）", failure.message)
+    }
+
+    @Test
+    fun cancellationAndLostPermissionStopDecoderRetries() {
+        for (failure in listOf(CancellationException("scan cancelled"), SecurityException("access revoked"))) {
+            var attempts = 0
+            val thrown = assertThrows<RuntimeException> {
+                runBlocking {
+                    readVideoSample<Any>(1, 500_000, scaled = { _, _ -> attempts++; throw failure }, original = { _, _ -> error("should not retry") })
+                }
+            }
+            assertEquals(failure, thrown)
+            assertEquals(1, attempts)
+        }
+    }
+
+    @Test
+    fun cachedSamplesKeepTheRecoveredDurationWhenTheCatalogReportsZero() = runBlocking {
+        val known = videoCandidate(1, durationMillis = 10_000)
+        val result = engine.scan(
+            candidates = listOf(known.copy(durationMillis = 0)),
+            cached = mapOf(1L to videoFingerprint(known, List(7) { "0000000000000000" })),
+        ) { _, _, _ -> }
+        assertEquals(10_000L, result.fingerprints.single().candidate.durationMillis)
     }
 
     private fun imageCandidate(
