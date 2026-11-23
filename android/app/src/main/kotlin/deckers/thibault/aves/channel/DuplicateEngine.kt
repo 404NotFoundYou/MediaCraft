@@ -14,6 +14,15 @@ internal data class DuplicateCandidate(
     val uri: String,
     val sizeBytes: Long,
     val dateModifiedMillis: Long?,
+    val mimeType: String? = null,
+    val path: String? = null,
+    val pageId: Int? = null,
+    val width: Int = 0,
+    val height: Int = 0,
+    val durationMillis: Long? = null,
+    val rotationDegrees: Int = 0,
+    val isFlipped: Boolean = false,
+    val isVideo: Boolean = false,
 )
 
 internal data class DuplicateIssue(

@@ -11,6 +11,7 @@ class SqfliteLocalMediaDbSchema {
   static const vaultTable = 'vaults';
   static const trashTable = 'trash';
   static const videoPlaybackTable = 'videoPlayback';
+  static const similarFingerprintTable = 'similarFingerprints';
   static const debugTable = 'debug';
 
   static const allTables = [
@@ -24,6 +25,7 @@ class SqfliteLocalMediaDbSchema {
     vaultTable,
     trashTable,
     videoPlaybackTable,
+    similarFingerprintTable,
     debugTable,
   ];
 
@@ -138,6 +140,24 @@ class SqfliteLocalMediaDbSchema {
           'CREATE TABLE $videoPlaybackTable('
           'id INTEGER PRIMARY KEY'
           ', resumeTimeMillis INTEGER'
+          ')',
+        );
+      case similarFingerprintTable:
+        return db.execute(
+          'CREATE TABLE $similarFingerprintTable('
+          'id INTEGER PRIMARY KEY'
+          ', uri TEXT NOT NULL'
+          ', sizeBytes INTEGER NOT NULL'
+          ', dateModifiedMillis INTEGER'
+          ', algorithmVersion INTEGER NOT NULL'
+          ', kind TEXT NOT NULL'
+          ', width INTEGER NOT NULL'
+          ', height INTEGER NOT NULL'
+          ', durationMillis INTEGER'
+          ', imagePHash TEXT'
+          ', imageDHash TEXT'
+          ', videoPHashes TEXT'
+          ', videoDHashes TEXT'
           ')',
         );
       case debugTable:

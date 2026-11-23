@@ -18,6 +18,7 @@ class LocalMediaDbUpgrader {
   static const vaultTable = SqfliteLocalMediaDbSchema.vaultTable;
   static const trashTable = SqfliteLocalMediaDbSchema.trashTable;
   static const videoPlaybackTable = SqfliteLocalMediaDbSchema.videoPlaybackTable;
+  static const similarFingerprintTable = SqfliteLocalMediaDbSchema.similarFingerprintTable;
   static const debugTable = SqfliteLocalMediaDbSchema.debugTable;
 
   // warning: "ALTER TABLE ... RENAME COLUMN ..." is not supported
@@ -60,6 +61,8 @@ class LocalMediaDbUpgrader {
           await _upgradeFrom16(db);
         case 17:
           await SqfliteLocalMediaDbSchema.createLiveDuplicatesIndex(db);
+        case 18:
+          await SqfliteLocalMediaDbSchema.createTable(db, similarFingerprintTable);
       }
       oldVersion++;
     }

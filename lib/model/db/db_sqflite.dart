@@ -5,6 +5,7 @@ import 'package:aves/model/db/db.dart';
 import 'package:aves/model/db/db_sqflite_schema.dart';
 import 'package:aves/model/db/db_sqflite_upgrade.dart';
 import 'package:aves/model/dynamic_albums.dart';
+import 'package:aves/model/duplicates/similar_fingerprint.dart';
 import 'package:aves/model/entry/entry.dart';
 import 'package:aves/model/favourites.dart';
 import 'package:aves/model/filters/filters.dart';
@@ -34,6 +35,7 @@ class SqfliteLocalMediaDb implements LocalMediaDb {
   static const vaultTable = SqfliteLocalMediaDbSchema.vaultTable;
   static const trashTable = SqfliteLocalMediaDbSchema.trashTable;
   static const videoPlaybackTable = SqfliteLocalMediaDbSchema.videoPlaybackTable;
+  static const similarFingerprintTable = SqfliteLocalMediaDbSchema.similarFingerprintTable;
   static const debugTable = SqfliteLocalMediaDbSchema.debugTable;
 
   static const _entryInsertSliceMaxCount = 10000; // number of entries
@@ -49,7 +51,7 @@ class SqfliteLocalMediaDb implements LocalMediaDb {
       await path,
       onCreate: (db, version) => SqfliteLocalMediaDbSchema.createLatestVersion(db),
       onUpgrade: LocalMediaDbUpgrader.upgradeDb,
-      version: 18,
+      version: 19,
     );
 
     final maxIdRows = await _db.rawQuery('SELECT MAX(id) AS maxId FROM $entryTable');
@@ -84,6 +86,7 @@ class SqfliteLocalMediaDb implements LocalMediaDb {
       final whereArgs = [id];
       if (_dataTypes.contains(EntryDataType.basic)) {
         batch.delete(entryTable, where: where, whereArgs: whereArgs);
+        batch.delete(similarFingerprintTable, where: where, whereArgs: whereArgs);
       }
       if (_dataTypes.contains(EntryDataType.catalog)) {
         batch.delete(dateTakenTable, where: where, whereArgs: whereArgs);
@@ -121,11 +124,37 @@ class SqfliteLocalMediaDb implements LocalMediaDb {
     await _db.insert(debugTable, {'message': message});
   }
 
+  // similar media fingerprints
+
+  @override
+  Future<Set<SimilarFingerprint>> loadSimilarFingerprints(Set<int> ids) => _getByIds(ids, similarFingerprintTable, SimilarFingerprint.fromDatabaseMap);
+
+  @override
+  Future<void> saveSimilarFingerprints(Set<SimilarFingerprint> fingerprints) async {
+    if (fingerprints.isEmpty) return;
+
+    final batch = _db.batch();
+    for (final fingerprint in fingerprints) {
+      batch.insert(
+        similarFingerprintTable,
+        fingerprint.toDatabaseMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  @override
+  Future<void> clearSimilarFingerprints() async {
+    await _db.delete(similarFingerprintTable, where: '1');
+  }
+
   // entries
 
   @override
   Future<void> clearEntries() async {
     final count = await _db.delete(entryTable, where: '1');
+    await _db.delete(similarFingerprintTable, where: '1');
     debugPrint('$runtimeType clearEntries deleted $count rows');
   }
 

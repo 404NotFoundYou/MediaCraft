@@ -16,6 +16,8 @@ import 'package:material_ui/material_ui.dart';
 
 enum DuplicateScanScope { all, photos, videos }
 
+enum DuplicateScanMode { exact, similar }
+
 typedef DuplicateMoveAction = Future<bool> Function(
   BuildContext context, {
   required Set<AvesEntry> entries,
@@ -48,6 +50,7 @@ class DuplicatePage extends StatefulWidget {
 }
 
 class _DuplicatePageState extends State<DuplicatePage> {
+  DuplicateScanMode _mode = DuplicateScanMode.exact;
   DuplicateScanScope _scope = DuplicateScanScope.all;
   StreamSubscription<DuplicateScanEvent>? _scanSubscription;
   DuplicateScanProgress? _progress;
@@ -89,36 +92,46 @@ class _DuplicatePageState extends State<DuplicatePage> {
       _result = null;
       _selection = null;
     });
-    _scanSubscription = widget.service
-        .scan(_scanEntries)
-        .listen(
-          (event) {
-            if (!mounted) return;
-            switch (event) {
-              case DuplicateScanProgress():
-                setState(() => _progress = event);
-              case DuplicateScanCompleted():
-                setState(() {
-                  _scanning = false;
-                  _result = event.result;
-                  _selection = DuplicateSelection(event.result.groups);
-                });
-            }
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            if (!mounted) return;
+    final scan = _mode == DuplicateScanMode.exact ? widget.service.scan(_scanEntries) : widget.service.scanSimilar(_scanEntries);
+    _scanSubscription = scan.listen(
+      (event) {
+        if (!mounted) return;
+        switch (event) {
+          case DuplicateScanProgress():
+            setState(() => _progress = event);
+          case DuplicateScanCompleted():
             setState(() {
               _scanning = false;
-              _scanError = error;
+              _result = event.result;
+              _selection = DuplicateSelection(event.result.groups);
             });
-          },
-          onDone: () {
-            if (mounted && _scanning) setState(() => _scanning = false);
-          },
-        );
+        }
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!mounted) return;
+        setState(() {
+          _scanning = false;
+          _scanError = error;
+        });
+      },
+      onDone: () {
+        if (mounted && _scanning) setState(() => _scanning = false);
+      },
+    );
   }
 
   void _cancelScan() => unawaited(widget.service.cancel());
+
+  void _changeMode(DuplicateScanMode mode) {
+    if (_mode == mode) return;
+    setState(() {
+      _mode = mode;
+      _progress = null;
+      _result = null;
+      _selection = null;
+      _scanError = null;
+    });
+  }
 
   List<AvesEntry> _entriesFor(DuplicateGroup group) => group.members.map((member) => widget.source.getEntryById(member.entryId)).whereType<AvesEntry>().where((entry) => !entry.trashed).toList(growable: false);
 
@@ -170,7 +183,7 @@ class _DuplicatePageState extends State<DuplicatePage> {
       builder: (context) => AlertDialog(
         title: const Text('确认清理重复项'),
         content: Text(
-          '将把 ${selectedEntriesSnapshot.length} 个完全重复文件（${formatFileSize(settings.avesLocale, selectedBytesSnapshot)}）移入回收站。'
+          '将把 ${selectedEntriesSnapshot.length} 个${_mode == DuplicateScanMode.exact ? '完全重复文件' : '相似媒体'}（${formatFileSize(settings.avesLocale, selectedBytesSnapshot)}）移入回收站。'
           '\n每组至少保留一份。实际处理结果以操作报告为准；取消确认不会处理文件，清理后可从回收站尝试恢复。',
         ),
         actions: [
@@ -236,7 +249,9 @@ class _DuplicatePageState extends State<DuplicatePage> {
         verificationIssues.add(DuplicateIssue(entryId: keeperId, uri: '', code: 'selection-changed', message: '分组 ${group.id} 的保留项或待处理项已变化'));
         continue;
       }
-      final verification = await widget.service.verifySelection(group: group, keeper: keeperMember, deleteMembers: deleteMembers);
+      final verification = _mode == DuplicateScanMode.exact
+          ? await widget.service.verifySelection(group: group, keeper: keeperMember, deleteMembers: deleteMembers)
+          : await widget.service.verifySimilarSelection(group: group, keeper: keeperMember, deleteMembers: deleteMembers);
       if (!verification.valid) {
         if (verification.issues.isEmpty) {
           verificationIssues.add(DuplicateIssue(entryId: -1, uri: '', code: 'verification-failed', message: '分组 ${group.id} 未通过最终字节复核'));
@@ -265,6 +280,8 @@ class _DuplicatePageState extends State<DuplicatePage> {
       if (expected == null || current == null) return '媒体 $id 已不在本次扫描结果中，请重新扫描。';
       if (current.trashed) return '媒体 ${current.uri} 已进入回收站，请重新扫描。';
       if (current.uri != expected.uri) return '媒体 $id 的位置已经变化，请重新扫描。';
+      if (current.sizeBytes != expected.sizeBytes) return '媒体 ${current.uri} 的大小已经变化，请重新扫描。';
+      if (current.dateModifiedMillis != expected.dateModifiedMillis) return '媒体 ${current.uri} 的修改时间已经变化，请重新扫描。';
     }
     return null;
   }
@@ -333,10 +350,12 @@ class _DuplicatePageState extends State<DuplicatePage> {
 
   Widget _buildBody() {
     final controls = _ScanControls(
+      mode: _mode,
       scope: _scope,
       scanning: _scanning,
       submitting: _submitting,
       progress: _progress,
+      onModeChanged: _changeMode,
       onScopeChanged: (scope) => setState(() => _scope = scope),
       onScan: _startScan,
       onCancel: _cancelScan,
@@ -345,13 +364,13 @@ class _DuplicatePageState extends State<DuplicatePage> {
     if (_scanError != null) {
       return withControls(_Message(icon: Icons.error_outline, text: '扫描失败：$_scanError'));
     }
-    if (_scanning) return withControls(const _Message(icon: Icons.fact_check_outlined, text: '正在核对文件内容。你可以随时取消，扫描本身不会删除文件。'));
+    if (_scanning) return withControls(_Message(icon: Icons.fact_check_outlined, text: _mode == DuplicateScanMode.exact ? '正在核对文件内容。你可以随时取消，扫描本身不会删除文件。' : '正在分析图片和视频指纹。你可以随时取消，扫描本身不会删除文件。'));
     final result = _result;
     if (result == null) {
       return withControls(
-        const _Message(
+        _Message(
           icon: Icons.content_copy,
-          text: '相同的内容，留下一份就好。\n\n扫描后逐组复核，每组默认保留首份，待清理项由你手动勾选。只有最终复核通过后才会移入回收站。',
+          text: _mode == DuplicateScanMode.exact ? '相同的内容，留下一份就好。\n\n扫描后逐组复核，每组默认保留首份，待清理项由你手动勾选。只有最终复核通过后才会移入回收站。' : '画面高度相似的媒体会归入候选组。\n\n相似结果需要逐组复核，待清理项由你手动勾选。只有最终复核通过后才会移入回收站。',
         ),
       );
     }
@@ -365,9 +384,9 @@ class _DuplicatePageState extends State<DuplicatePage> {
     }
     if (result.groups.isEmpty && result.issues.isEmpty) {
       return withControls(
-        const _Message(
+        _Message(
           icon: Icons.check_circle_outline,
-          text: '未发现完全重复的照片或视频。',
+          text: _mode == DuplicateScanMode.exact ? '未发现完全重复的照片或视频。' : '未发现相似的照片或视频。',
         ),
       );
     }
@@ -378,9 +397,9 @@ class _DuplicatePageState extends State<DuplicatePage> {
         child: Column(
           crossAxisAlignment: .start,
           children: [
-            Text('${result.groups.length} 组完全重复媒体', style: Theme.of(context).textTheme.titleLarge),
+            Text(_mode == DuplicateScanMode.exact ? '${result.groups.length} 组完全重复媒体' : '${result.groups.length} 组相似媒体', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
-            const Text('绿色行是保留项，右侧复选框是待清理项。保留项始终不会被勾选。'),
+            Text(_mode == DuplicateScanMode.exact ? '绿色行是保留项，右侧复选框是待清理项。保留项始终不会被勾选。' : '相似度用于辅助判断，绿色行是保留项，右侧复选框是待清理项。保留项始终不会被勾选。'),
           ],
         ),
       ),
@@ -411,6 +430,7 @@ class _DuplicatePageState extends State<DuplicatePage> {
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: _DuplicateGroupCard(
             group: group,
+            similar: _mode == DuplicateScanMode.similar,
             entries: _entriesFor(group),
             keeperId: _selection?.keepers[group.id],
             selectedIds: _selection?.selected[group.id] ?? const {},
@@ -430,18 +450,22 @@ class _DuplicatePageState extends State<DuplicatePage> {
 
 class _ScanControls extends StatelessWidget {
   const new({
+    required this.mode,
     required this.scope,
     required this.scanning,
     required this.submitting,
     required this.progress,
+    required this.onModeChanged,
     required this.onScopeChanged,
     required this.onScan,
     required this.onCancel,
   });
+  final DuplicateScanMode mode;
   final DuplicateScanScope scope;
   final bool scanning;
   final bool submitting;
   final DuplicateScanProgress? progress;
+  final ValueChanged<DuplicateScanMode> onModeChanged;
   final ValueChanged<DuplicateScanScope> onScopeChanged;
   final VoidCallback onScan;
   final VoidCallback onCancel;
@@ -452,6 +476,8 @@ class _ScanControls extends StatelessWidget {
     final stageLabel = switch (p?.stage) {
       'hashing' => '读取文件',
       'verifying' => '核对内容',
+      'similar-fingerprinting' => '生成媒体指纹',
+      'similar-completed' => '相似分组完成',
       'completed' => '扫描完成',
       _ => '准备扫描',
     };
@@ -469,6 +495,24 @@ class _ScanControls extends StatelessWidget {
               const SizedBox(height: 8),
               Text('仅扫描已授权、可访问的本机媒体。读取失败的项目会单独列出。', style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 12),
+              SegmentedButton<DuplicateScanMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: DuplicateScanMode.exact,
+                    label: Text('完全重复'),
+                    icon: Icon(Icons.copy_outlined),
+                  ),
+                  ButtonSegment(
+                    value: DuplicateScanMode.similar,
+                    label: Text('视觉相似'),
+                    icon: Icon(Icons.auto_awesome_motion_outlined),
+                  ),
+                ],
+                selected: {mode},
+                showSelectedIcon: false,
+                onSelectionChanged: busy ? null : (values) => onModeChanged(values.single),
+              ),
+              const SizedBox(height: 10),
               SegmentedButton<DuplicateScanScope>(
                 segments: const [
                   ButtonSegment(
@@ -524,6 +568,7 @@ class _ScanControls extends StatelessWidget {
 class _DuplicateGroupCard extends StatelessWidget {
   const new({
     required this.group,
+    required this.similar,
     required this.entries,
     required this.keeperId,
     required this.selectedIds,
@@ -532,6 +577,7 @@ class _DuplicateGroupCard extends StatelessWidget {
     required this.onSelectionChanged,
   });
   final DuplicateGroup group;
+  final bool similar;
   final List<AvesEntry> entries;
   final int? keeperId;
   final Set<int> selectedIds;
@@ -559,11 +605,11 @@ class _DuplicateGroupCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '完全重复·${entries.length} 份',
+              similar ? '${group.highConfidence ? '高度相似' : '可能相似'}·${entries.length} 份' : '完全重复·${entries.length} 份',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             Text(
-              '每份 ${formatFileSize(settings.avesLocale, group.sizeBytes)}，请保留一份并手动勾选其余项。',
+              similar ? _similarSummary(group) : '每份 ${formatFileSize(settings.avesLocale, group.sizeBytes)}，请保留一份并手动勾选其余项。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
@@ -589,6 +635,14 @@ class _DuplicateGroupCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _similarSummary(DuplicateGroup group) {
+    final score = group.similarityScore == null ? '未知' : '${(group.similarityScore! * 100).round()}%';
+    if (group.kind == 'video' && group.matchedFrames != null && group.totalFrames != null) {
+      return '$score 相似，${group.matchedFrames}/${group.totalFrames} 个采样帧匹配，请手动确认后处理。';
+    }
+    return '$score 相似，请手动确认后处理。';
   }
 }
 

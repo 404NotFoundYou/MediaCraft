@@ -6,6 +6,7 @@ import 'package:aves/model/filters/filters.dart';
 import 'package:aves/model/metadata/address.dart';
 import 'package:aves/model/metadata/catalog.dart';
 import 'package:aves/model/metadata/trash.dart';
+import 'package:aves/model/duplicates/similar_fingerprint.dart';
 import 'package:aves/model/vaults/details.dart';
 import 'package:aves/model/viewer/video_playback.dart';
 
@@ -145,4 +146,12 @@ abstract class LocalMediaDb {
   Future<List<String>> loadAllDebugLog();
 
   Future<void> addDebugLog(String message);
+
+  // similar media fingerprints
+
+  Future<Set<SimilarFingerprint>> loadSimilarFingerprints(Set<int> ids);
+
+  Future<void> saveSimilarFingerprints(Set<SimilarFingerprint> fingerprints);
+
+  Future<void> clearSimilarFingerprints();
 }

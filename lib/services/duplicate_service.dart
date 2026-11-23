@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:aves/model/duplicates/duplicate_models.dart';
+import 'package:aves/model/duplicates/similar_fingerprint.dart';
 import 'package:aves/model/entry/entry.dart';
+import 'package:aves/services/common/services.dart';
 import 'package:aves/services/common/channel.dart';
 import 'package:flutter/services.dart';
 
@@ -40,6 +42,33 @@ class DuplicateService {
     final controller = StreamController<DuplicateScanEvent>();
     _scanController = controller;
     unawaited(_runScan(candidates, inputIssues, controller));
+    return controller.stream;
+  }
+
+  Stream<DuplicateScanEvent> scanSimilar(Iterable<AvesEntry> entries) {
+    if (_scanController != null) {
+      throw StateError('A duplicate scan is already running');
+    }
+    final candidates = <DuplicateMember>[];
+    final inputIssues = <DuplicateIssue>[];
+    for (final entry in entries) {
+      final sizeBytes = entry.sizeBytes;
+      if (sizeBytes == null || sizeBytes < 0) {
+        inputIssues.add(
+          DuplicateIssue(
+            entryId: entry.id,
+            uri: entry.uri,
+            code: 'invalid-size',
+            message: '媒体大小未知，无法进行相似检测',
+          ),
+        );
+      } else {
+        candidates.add(DuplicateMember.fromEntry(entry));
+      }
+    }
+    final controller = StreamController<DuplicateScanEvent>();
+    _scanController = controller;
+    unawaited(_runSimilarScan(candidates, inputIssues, controller));
     return controller.stream;
   }
 
@@ -84,6 +113,49 @@ class DuplicateService {
     return DuplicateVerification.fromMap(result as Map);
   }
 
+  Future<DuplicateVerification> verifySimilarSelection({
+    required DuplicateGroup group,
+    required DuplicateMember keeper,
+    required Iterable<DuplicateMember> deleteMembers,
+  }) async {
+    final members = <DuplicateMember>[keeper, ...deleteMembers];
+    final distinctEntryIds = members.map((member) => member.entryId).toSet();
+    final distinctUris = members.map((member) => member.uri).toSet();
+    if (group.kind == 'exact' ||
+        members.length < 2 ||
+        distinctEntryIds.length != members.length ||
+        distinctUris.length != members.length ||
+        members.any(
+          (member) => !group.members.any(
+            (candidate) => candidate.entryId == member.entryId && candidate.uri == member.uri,
+          ),
+        )) {
+      return const DuplicateVerification(
+        valid: false,
+        issues: [
+          DuplicateIssue(
+            entryId: -1,
+            uri: '',
+            code: 'invalid-selection',
+            message: '保留项或待删除项不属于该相似组',
+          ),
+        ],
+      );
+    }
+    final result = await _channel.invokeMethod(
+      'verifySimilarSelection',
+      <String, Object?>{
+        'expectedKind': group.kind,
+        'expectedHighConfidence': group.highConfidence,
+        'expectedScore': group.similarityScore,
+        'expectedMatchedFrames': group.matchedFrames,
+        'expectedTotalFrames': group.totalFrames,
+        'members': members.map((member) => member.toMap()).toList(growable: false),
+      },
+    );
+    return DuplicateVerification.fromMap(result as Map);
+  }
+
   Future<void> _runScan(
     List<DuplicateMember> candidates,
     List<DuplicateIssue> inputIssues,
@@ -100,6 +172,39 @@ class DuplicateService {
             groups: platformResult.groups,
             issues: [...inputIssues, ...platformResult.issues],
             cancelled: platformResult.cancelled,
+          ),
+        ),
+      );
+    } catch (error, stack) {
+      controller.addError(error, stack);
+    } finally {
+      if (identical(_scanController, controller)) _scanController = null;
+      await controller.close();
+    }
+  }
+
+  Future<void> _runSimilarScan(
+    List<DuplicateMember> candidates,
+    List<DuplicateIssue> inputIssues,
+    StreamController<DuplicateScanEvent> controller,
+  ) async {
+    try {
+      final cached = await localMediaDb.loadSimilarFingerprints(candidates.map((candidate) => candidate.entryId).toSet());
+      final result = await _channel.invokeMethod('scanSimilar', <String, Object?>{
+        'members': candidates.map((member) => member.toMap()).toList(growable: false),
+        'cachedFingerprints': cached.where((fingerprint) => fingerprint.algorithmVersion == similarMediaFingerprintAlgorithmVersion).map((fingerprint) => fingerprint.toMap()).toList(growable: false),
+      });
+      final platformResult = DuplicateScanResult.fromMap(result as Map);
+      if (platformResult.fingerprints.isNotEmpty) {
+        await localMediaDb.saveSimilarFingerprints(platformResult.fingerprints.toSet());
+      }
+      controller.add(
+        DuplicateScanCompleted(
+          DuplicateScanResult(
+            groups: platformResult.groups,
+            issues: [...inputIssues, ...platformResult.issues],
+            cancelled: platformResult.cancelled,
+            fingerprints: platformResult.fingerprints,
           ),
         ),
       );
