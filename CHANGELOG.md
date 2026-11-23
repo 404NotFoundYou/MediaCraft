@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## <a id="unreleased"></a>[Unreleased]
 
+## <a id="v0.6.10"></a>[v0.6.10] - 2026-11-23
+
+### Added
+
+- 新增图片与视频的视觉相似媒体扫描，支持相似度分组、视频采样帧信息和可复用指纹缓存。
+
+### Performance
+
+- 优化感知哈希计算和大图库相似分组，减少重复三角函数计算和必然不匹配的宽高比比较。
+
+### Verification
+
+- 完成 Flutter 全量测试、静态分析和 Android Libre 单元测试。
+
 ## <a id="v0.6.9"></a>[v0.6.9] - 2026-11-20
 
 ### Fixed

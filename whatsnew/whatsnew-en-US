@@ -1,5 +1,5 @@
-In v0.6.9:
-- Improve recovery when exports fail, background analysis is cancelled, or settings are imported.
-- Improve media scanning, database upgrades, Android media streams, and Baidu map state handling.
-- Remove the unused ExoPlayer plugin and strengthen flavor validation.
+In v0.6.10:
+- Add similar image and video duplicate scanning with reusable fingerprints.
+- Improve perceptual hashing and large-library similarity grouping performance.
+- Show similarity confidence and sampled video frame details during duplicate review.
 Full changelog available on GitHub
