@@ -132,7 +132,6 @@ class const WallpaperButtons({
       if (videoController != null) {
         final bytes = await videoController.captureFrame();
         if (bytes != null) {
-          needOrientation = rotationDegrees != 0 || isFlipped;
           needCrop = true;
           provider = MemoryImage(bytes);
         }

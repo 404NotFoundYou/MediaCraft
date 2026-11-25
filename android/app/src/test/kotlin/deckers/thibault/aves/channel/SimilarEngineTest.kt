@@ -38,7 +38,7 @@ class SimilarEngineTest {
     fun cachedHashesKeepCurrentMediaMetadataForReview() = runBlocking {
         val first = imageCandidate(1, path = "/current/first.jpg", rotationDegrees = 90)
         val second = imageCandidate(2, path = "/current/second.jpg")
-        val staleFirst = first.copy(path = null, rotationDegrees = 0)
+        val staleFirst = first.copy(path = null)
         val staleSecond = second.copy(path = null)
         val result = engine.scan(
             candidates = listOf(first, second),
@@ -167,6 +167,52 @@ class SimilarEngineTest {
         assertEquals(10_000L, result.fingerprints.single().candidate.durationMillis)
     }
 
+    @Test
+    fun editedMetadataAndCorruptSamplesCannotReuseOldFingerprints() = runBlocking {
+        val previous = videoCandidate(1, 10000)
+        val cached = videoFingerprint(previous, List(7) { "0123456789abcdef" })
+        for (changed in listOf(previous.copy(pageId = 2), previous.copy(width = 12), previous.copy(height = 15), previous.copy(durationMillis = 9000),
+            previous.copy(isFlipped = true), previous.copy(rotationDegrees = 90), previous.copy(mimeType = "video/webm"))) {
+            val result = engine.scan(listOf(changed), mapOf(1L to cached)) { _, _, _ -> }
+            assertEquals("similar-read-failed", result.issues.single().code)
+            assertTrue(result.fingerprints.isEmpty())
+        }
+        for (bad in listOf(cached.copy(videoDHashes = listOf("broken")), cached.copy(videoPHashes = emptyList()))) {
+            assertTrue(engine.scan(listOf(previous), mapOf(1L to bad)) { _, _, _ -> }.fingerprints.isEmpty())
+        }
+    }
+
+    @Test
+    fun metricIndexFindsExactlyTheBruteForceHammingNeighbors() {
+        val random = java.util.Random(42)
+        val hashes = List(512) { random.nextLong() }
+        val index = HashIndex()
+        hashes.forEachIndexed { i, value -> index.add(value, i) }
+        for (hash in hashes.take(50)) {
+            val query = hash xor 0x7711L
+            val found = mutableSetOf<Int>()
+            index.find(query, 12, found)
+            assertEquals(hashes.indices.filter { java.lang.Long.bitCount(hashes[it] xor query) <= 12 }.toSet(), found)
+        }
+    }
+
+    @Test
+    fun trimmedVideoShowsAlignedTimestampsButStaticFramesDoNotProveContainment() = runBlocking {
+        val long = videoCandidate(1, 24000)
+        val short = videoCandidate(2, 10000)
+        val random = java.util.Random(7)
+        val timeline = List(12) { "%016x".format(random.nextLong()) }
+        suspend fun scan(hashes: List<String>): List<SimilarGroup> {
+            fun fp(c: DuplicateCandidate, clip: List<String>) = videoFingerprint(c, List(7) { "0000000000000000" }).copy(clipPHashes = clip, clipDHashes = clip)
+            return engine.scan(listOf(long, short), mapOf(1L to fp(long, hashes), 2L to fp(short, hashes.subList(3, 8)))) { _, _, _ -> }.groups
+        }
+        val group = scan(timeline).single()
+        assertTrue(group.fragment && !group.highConfidence)
+        val frame = group.evidence.values.single().first()
+        assertEquals(setOf(6000L, 0L), setOf(frame.referenceMillis, frame.memberMillis))
+        assertTrue(scan(List(12) { "0000000000000000" }).isEmpty())
+    }
+
     private fun imageCandidate(
         id: Long,
         path: String? = "/media/$id.jpg",
@@ -187,7 +233,7 @@ class SimilarEngineTest {
 
     private fun imageFingerprint(candidate: DuplicateCandidate) = SimilarFingerprint(
         candidate = candidate,
-        algorithmVersion = 2,
+        algorithmVersion = ALGORITHM_VERSION,
         kind = "image",
         imagePHash = "0000000000000000",
         imageDHash = "0000000000000000",
@@ -210,7 +256,7 @@ class SimilarEngineTest {
 
     private fun videoFingerprint(candidate: DuplicateCandidate, hashes: List<String>) = SimilarFingerprint(
         candidate = candidate,
-        algorithmVersion = 2,
+        algorithmVersion = ALGORITHM_VERSION,
         kind = "video",
         imagePHash = null,
         imageDHash = null,

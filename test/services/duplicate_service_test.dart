@@ -18,11 +18,17 @@ void main() {
   test('unknown media size is reported instead of silently skipped', () async {
     final entry = FakeMediaStoreService.newImage('DCIM', 'unknown-size')..sizeBytes = null;
     List<dynamic>? platformMembers;
+    List<dynamic>? issues;
     messenger.setMockMethodCallHandler(channel, (call) async {
-      platformMembers = (call.arguments as Map)['members'] as List;
+      if (call.method == 'scan') {
+        platformMembers = (call.arguments as Map)['members'] as List;
+        issues = (call.arguments as Map)['issues'] as List;
+        return 'job';
+      }
+      expect(call.method, 'scanStatus');
       return <String, Object?>{
         'groups': <Object?>[],
-        'issues': <Object?>[],
+        'issues': issues,
         'cancelled': false,
       };
     });

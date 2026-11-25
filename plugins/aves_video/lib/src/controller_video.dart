@@ -158,6 +158,7 @@ abstract class AvesVideoController(
 
   List<MediaTrackSummary> get tracks;
 
+  /// Returns an encoded image with display orientation already applied to its pixels.
   Future<Uint8List?> captureFrame();
 
   Future<void> mute(bool muted);

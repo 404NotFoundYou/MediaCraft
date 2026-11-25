@@ -40,6 +40,9 @@ class SqfliteLocalMediaDb implements LocalMediaDb {
 
   static const _entryInsertSliceMaxCount = 10000; // number of entries
   static const _queryCursorBufferSize = 1000; // number of rows
+  static const _idQuerySize = 900;
+  static String _placeholders(int count) => List.filled(count, '?').join(',');
+  bool _hasSearchIndex = false;
   static int _lastId = 0;
 
   @override
@@ -51,9 +54,10 @@ class SqfliteLocalMediaDb implements LocalMediaDb {
       await path,
       onCreate: (db, version) => SqfliteLocalMediaDbSchema.createLatestVersion(db),
       onUpgrade: LocalMediaDbUpgrader.upgradeDb,
-      version: 19,
+      version: 20,
     );
 
+    _hasSearchIndex = (await _db.rawQuery("SELECT 1 FROM sqlite_master WHERE name = 'entrySearch' AND type = 'table'")).isNotEmpty;
     final maxIdRows = await _db.rawQuery('SELECT MAX(id) AS maxId FROM $entryTable');
     _lastId = (maxIdRows.firstOrNull?['maxId'] as int?) ?? 0;
   }
@@ -233,11 +237,21 @@ class SqfliteLocalMediaDb implements LocalMediaDb {
 
   @override
   Future<Set<AvesEntry>> searchLiveEntries(String query, {int? limit}) async {
+    if (_hasSearchIndex && RegExp(r'[^%_]{3}').hasMatch(query)) {
+      final pattern = '%$query%';
+      final rows = await _db.rawQuery(
+        'SELECT * FROM $entryTable WHERE trashed = 0 AND id IN ('
+        'SELECT rowid FROM entrySearch WHERE title LIKE ? UNION SELECT rowid FROM entrySearch WHERE path LIKE ?) '
+        'ORDER BY sourceDateTakenMillis DESC, id ASC LIMIT ?',
+        [pattern, pattern, limit ?? -1],
+      );
+      return rows.map(AvesEntry.fromMap).toSet();
+    }
     final rows = await _db.query(
       entryTable,
       where: '(title LIKE ? OR path LIKE ?) AND trashed = ?',
       whereArgs: ['%$query%', '%$query%', 0],
-      orderBy: 'sourceDateTakenMillis DESC',
+      orderBy: 'sourceDateTakenMillis DESC, id ASC',
       limit: limit,
     );
     return rows.map(AvesEntry.fromMap).toSet();
@@ -245,20 +259,17 @@ class SqfliteLocalMediaDb implements LocalMediaDb {
 
   @override
   Future<Set<AvesEntry>> searchLiveDuplicates(int origin, Set<AvesEntry>? entries) async {
-    String where = 'origin = ? AND trashed = ?';
-    if (entries != null) {
-      // TODO TLAD [perf] split queries when `IN` parameter is large
-      where += ' AND contentId IN (${entries.map((v) => v.contentId).join(',')})';
+    final duplicates = <AvesEntry>{};
+    final ids = entries?.map((entry) => entry.contentId).nonNulls.toSet();
+    final Iterable<List<int>?> chunks = ids == null ? const [null] : ids.slices(_idQuerySize);
+    for (final slice in chunks) {
+      final filter = slice == null ? '' : ' AND contentId IN (${_placeholders(slice.length)})';
+      final rows = await _db.rawQuery(
+        'SELECT *, MAX(id) AS id FROM $entryTable WHERE origin = ? AND trashed = ?$filter GROUP BY contentId HAVING COUNT(id) > 1',
+        [origin, 0, ...?slice],
+      );
+      duplicates.addAll(rows.map(AvesEntry.fromMap));
     }
-    final rows = await _db.rawQuery(
-      'SELECT *, MAX(id) AS id'
-      ' FROM $entryTable'
-      ' WHERE $where'
-      ' GROUP BY contentId'
-      ' HAVING COUNT(id) > 1',
-      [origin, 0],
-    );
-    final duplicates = rows.map(AvesEntry.fromMap).toSet();
     if (duplicates.isNotEmpty) {
       debugPrint('$runtimeType found duplicates=$duplicates');
     }
@@ -760,12 +771,9 @@ class SqfliteLocalMediaDb implements LocalMediaDb {
 
   Future<Set<T>> _getByIds<T>(Set<int> ids, String table, T Function(Map<String, Object?> row) mapRow) async {
     final result = <T>{};
-    if (ids.isNotEmpty) {
-      // TODO TLAD [perf] split queries when `IN` parameter is large
-      final cursor = await _db.queryCursor(table, where: 'id IN (${ids.join(',')})', bufferSize: _queryCursorBufferSize);
-      while (await cursor.moveNext()) {
-        result.add(mapRow(cursor.current));
-      }
+    for (final slice in ids.slices(_idQuerySize)) {
+      final rows = await _db.query(table, where: 'id IN (${_placeholders(slice.length)})', whereArgs: slice);
+      result.addAll(rows.map(mapRow));
     }
     return result;
   }

@@ -35,8 +35,6 @@ Future<void> _init() async {
   initPlatformServices();
   await androidFileUtils.init();
   await localMediaDb.init();
-  await androidFileUtils.init();
-  await localMediaDb.init();
   await device.init();
   await mobileServices.init();
   await settings.init(monitorPlatformSettings: false, shouldSanitize: false);

@@ -1,4 +1,4 @@
-const similarMediaFingerprintAlgorithmVersion = 2;
+const similarMediaFingerprintAlgorithmVersion = 3;
 
 class const SimilarFingerprint({
   required final int entryId,
@@ -10,6 +10,12 @@ class const SimilarFingerprint({
   required final int width,
   required final int height,
   required final int? durationMillis,
+  final int rotationDegrees = 0,
+  final bool isFlipped = false,
+  final int? pageId,
+  final String? mimeType,
+  final List<String> clipPHashes = const [],
+  final List<String> clipDHashes = const [],
   required final String? imagePHash,
   required final String? imageDHash,
   required final List<String> videoPHashes,
@@ -25,9 +31,15 @@ class const SimilarFingerprint({
     width: map['width'] as int? ?? 0,
     height: map['height'] as int? ?? 0,
     durationMillis: map['durationMillis'] as int?,
+    rotationDegrees: map['rotationDegrees'] as int? ?? 0,
+    isFlipped: map['isFlipped'] as bool? ?? false,
+    pageId: map['pageId'] as int?,
+    mimeType: map['mimeType'] as String?,
     imagePHash: map['imagePHash'] as String?,
     imageDHash: map['imageDHash'] as String?,
+    clipPHashes: (map['clipPHashes'] as List? ?? const []).cast<String>().toList(growable: false),
     videoPHashes: (map['videoPHashes'] as List? ?? const []).cast<String>().toList(growable: false),
+    clipDHashes: (map['clipDHashes'] as List? ?? const []).cast<String>().toList(growable: false),
     videoDHashes: (map['videoDHashes'] as List? ?? const []).cast<String>().toList(growable: false),
   );
 
@@ -41,9 +53,15 @@ class const SimilarFingerprint({
     'width': width,
     'height': height,
     'durationMillis': durationMillis,
+    'rotationDegrees': rotationDegrees,
+    'isFlipped': isFlipped,
+    'pageId': pageId,
+    'mimeType': mimeType,
     'imagePHash': imagePHash,
     'imageDHash': imageDHash,
+    'clipPHashes': clipPHashes,
     'videoPHashes': videoPHashes,
+    'clipDHashes': clipDHashes,
     'videoDHashes': videoDHashes,
   };
 
@@ -57,9 +75,15 @@ class const SimilarFingerprint({
     'width': width,
     'height': height,
     'durationMillis': durationMillis,
+    'rotationDegrees': rotationDegrees,
+    'isFlipped': isFlipped ? 1 : 0,
+    'pageId': pageId,
+    'mimeType': mimeType,
     'imagePHash': imagePHash,
     'imageDHash': imageDHash,
+    'clipPHashes': clipPHashes.join(','),
     'videoPHashes': videoPHashes.join(','),
+    'clipDHashes': clipDHashes.join(','),
     'videoDHashes': videoDHashes.join(','),
   };
 
@@ -73,9 +97,15 @@ class const SimilarFingerprint({
     width: map['width'] as int? ?? 0,
     height: map['height'] as int? ?? 0,
     durationMillis: map['durationMillis'] as int?,
+    rotationDegrees: map['rotationDegrees'] as int? ?? 0,
+    isFlipped: (map['isFlipped'] as int? ?? 0) != 0,
+    pageId: map['pageId'] as int?,
+    mimeType: map['mimeType'] as String?,
     imagePHash: map['imagePHash'] as String?,
     imageDHash: map['imageDHash'] as String?,
+    clipPHashes: _splitHashes(map['clipPHashes'] as String?),
     videoPHashes: _splitHashes(map['videoPHashes'] as String?),
+    clipDHashes: _splitHashes(map['clipDHashes'] as String?),
     videoDHashes: _splitHashes(map['videoDHashes'] as String?),
   );
 

@@ -63,6 +63,11 @@ class LocalMediaDbUpgrader {
           await SqfliteLocalMediaDbSchema.createLiveDuplicatesIndex(db);
         case 18:
           await SqfliteLocalMediaDbSchema.createTable(db, similarFingerprintTable);
+        case 19:
+          // Only derived fingerprints are disposable. Earlier schemas did not record orientation.
+          await db.execute('DROP TABLE IF EXISTS $similarFingerprintTable');
+          await SqfliteLocalMediaDbSchema.createTable(db, similarFingerprintTable);
+          await SqfliteLocalMediaDbSchema.createSearchIndex(db);
       }
       oldVersion++;
     }

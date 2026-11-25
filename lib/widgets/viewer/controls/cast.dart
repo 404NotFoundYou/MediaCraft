@@ -34,7 +34,9 @@ mixin CastMixin {
     final ip = await NetworkInfo().getWifiIP();
     if (ip == null) return;
 
-    Set<String>? supportedMimeTypes;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    Future<Set<String>?>? capabilities;
+    final warned = <String>{};
 
     final handler = const Pipeline().addHandler((request) async {
       debugPrint('cast: received request for id=${request.url}');
@@ -48,15 +50,13 @@ mixin CastMixin {
         return Response.notFound('no resource for url=${request.url}');
       }
 
-      if (supportedMimeTypes == null) {
-        // do not call `GetProtocolInfo` before serving files,
-        // as it somehow makes `Play` time out (but not `SetAVTransportURI`)
-        supportedMimeTypes = await renderer.getSinkSupportedMimeTypes();
-        debugPrint('cast: supported MIME types=$supportedMimeTypes');
+      // Query on the first HTTP request; some renderers time out on Play if queried earlier.
+      final supported = await (capabilities ??= renderer.getSinkSupportedMimeTypes());
+      if (!acceptsCastMime(supported, entry.mimeType)) {
+        final message = '${renderer.info.friendlyName} 不支持 ${entry.mimeType}，请选择其他文件或投屏设备。';
+        if (warned.add(entry.mimeType) && messenger?.mounted == true) messenger!.showSnackBar(SnackBar(content: Text(message)));
+        return Response(415, body: message);
       }
-
-      // TODO TLAD [cast] transcode when MIME type is not supported by renderer
-
       return await _sendEntry(entry);
     });
     _mediaServer = await shelf_io.serve(handler, ip, 8080);
@@ -136,7 +136,7 @@ mixin CastMixin {
         type: _toPlayType(entry.mimeType),
       );
       debugPrint('cast: play entry=$entry');
-      unawaited(renderer.play());
+      await renderer.play();
     } catch (error, stack) {
       if (error is HttpException) {
         debugPrint('failed to cast with error=$error\n$stack');
@@ -196,13 +196,15 @@ extension ExtraDLNADevice on DLNADevice {
     );
 
     if (result != null) {
-      final doc = XmlDocument.parse(result);
-      final sink = UpnpProtocolInfo(doc.findAllElements('Sink').first.innerText);
-      final source = UpnpProtocolInfo(doc.findAllElements('Source').first.innerText);
-      return {
-        'sink': sink,
-        'source': source,
-      };
+      final XmlDocument doc;
+      try {
+        doc = XmlDocument.parse(result);
+      } on XmlException {
+        return null;
+      }
+      final sink = doc.findAllElements('Sink').firstOrNull;
+      final source = doc.findAllElements('Source').firstOrNull;
+      return {if (sink != null) 'sink': UpnpProtocolInfo(sink.innerText), if (source != null) 'source': UpnpProtocolInfo(source.innerText)};
     }
 
     return null;
@@ -220,4 +222,13 @@ extension ExtraDLNADevice on DLNADevice {
     }
     return null;
   }
+}
+
+bool acceptsCastMime(Set<String>? supported, String mime) {
+  if (supported == null || supported.isEmpty) return true;
+  final type = mime.split(';').first.trim().toLowerCase();
+  return supported.any((raw) {
+    final value = raw.split(';').first.trim().toLowerCase();
+    return value == '*' || value == '*/*' || value == '${type.split('/').first}/*' || MimeTypes.refersToSameType(type, value);
+  });
 }

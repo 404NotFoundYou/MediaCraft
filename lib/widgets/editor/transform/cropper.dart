@@ -462,31 +462,9 @@ class _CropperState extends State<Cropper> with SingleTickerProviderStateMixin {
   }
 
   EdgeInsets _getBoundariesPadding(double scale) {
-    // TODO TLAD [crop] handle orientation
-    if (transformation.orientation != .normal) {
-      return const EdgeInsets.all(double.infinity);
-    }
-    // TODO TLAD [crop] handle straightening
-    if (transformation.straightenDegrees != 0) {
-      return const EdgeInsets.all(double.infinity);
-    }
-
-    final viewState = _getViewState();
-    if (viewState != null) {
-      final viewportSize = viewState.viewportSize;
-      final contentSize = viewState.contentSize;
-      if (viewportSize != null && contentSize != null) {
-        final fullRegion = CropRegion.fromRect(Offset.zero & contentSize);
-        final fullOutline = _containingOutlineFromRegion(viewState, fullRegion);
-        final cropOutline = _outlineNotifier.value;
-
-        final paddingWidth = max(0.0, (min(fullOutline.width, viewportSize.width) - cropOutline.width) / 2);
-        final paddingHeight = max(0.0, (min(fullOutline.height, viewportSize.height) - cropOutline.height) / 2);
-        return EdgeInsets.symmetric(vertical: paddingHeight, horizontal: paddingWidth);
-      }
-    }
-
-    return EdgeInsets.zero;
+    final boundaries = magnifierController.scaleBoundaries;
+    if (boundaries == null || scale <= 0) return EdgeInsets.zero;
+    return cropPanPadding(boundaries.contentSize, boundaries.viewportSize, _outlineNotifier.value, transformation.matrix, scale);
   }
 
   ViewState? _getViewState() {
@@ -588,16 +566,6 @@ class _CropperState extends State<Cropper> with SingleTickerProviderStateMixin {
       bottomLeft: transform(outline.bottomLeft),
     );
     return clampedRegion;
-  }
-
-  Rect _containingOutlineFromRegion(ViewState viewState, CropRegion region) {
-    final regionToOutlineMatrix = _getRegionToOutlineMatrix(viewState);
-    final points = region.corners.map(regionToOutlineMatrix.transformOffset).toList();
-    final dxSet = points.map((v) => v.dx).toSet();
-    final dySet = points.map((v) => v.dy).toSet();
-    final topLeft = Offset(dxSet.reduce(min), dySet.reduce(min));
-    final bottomRight = Offset(dxSet.reduce(max), dySet.reduce(max));
-    return Rect.fromPoints(topLeft, bottomRight);
   }
 
   Rect _containedOutlineFromRegion(ViewState viewState, CropRegion region) {
@@ -785,3 +753,17 @@ class _CropperState extends State<Cropper> with SingleTickerProviderStateMixin {
 }
 
 enum _RatioStrategy { keepArea, contain, pinTopLeft, pinTopRight, pinBottomRight, pinBottomLeft, pinLeft, pinTop, pinRight, pinBottom }
+
+// Magnifier clamps translations in unrotated screen axes. Project the crop corners
+// back into those axes, including any off-centre crop, before computing slack.
+@visibleForTesting
+EdgeInsets cropPanPadding(Size image, Size viewport, Rect crop, Matrix4 transform, double scale) {
+  if (crop.isEmpty || image.isEmpty || viewport.isEmpty) return EdgeInsets.zero;
+  final inverse = Matrix4.inverted(transform);
+  final centre = viewport.center(Offset.zero);
+  final projected = MatrixUtils.transformRect(inverse, crop.shift(-centre));
+  final view = MatrixUtils.transformRect(inverse, (Offset.zero & viewport).shift(-centre));
+  final halfWidth = min(image.width * scale, view.width) / 2;
+  final halfHeight = min(image.height * scale, view.height) / 2;
+  return EdgeInsets.fromLTRB(max(0, halfWidth - projected.right), max(0, halfHeight - projected.bottom), max(0, halfWidth + projected.left), max(0, halfHeight + projected.top));
+}

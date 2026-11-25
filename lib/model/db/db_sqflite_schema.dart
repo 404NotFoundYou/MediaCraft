@@ -32,11 +32,28 @@ class SqfliteLocalMediaDbSchema {
   static Future<void> createLatestVersion(Database db) async {
     await Future.forEach(allTables, (table) => createTable(db, table));
     await createLiveDuplicatesIndex(db);
+    await createSearchIndex(db);
   }
 
   static Future<void> createLiveDuplicatesIndex(Database db) => db.execute(
     'CREATE INDEX IF NOT EXISTS entry_content_id_origin_trashed ON $entryTable (contentId, origin, trashed)',
   );
+
+  static Future<void> createSearchIndex(Database db) async {
+    await db.execute('CREATE INDEX IF NOT EXISTS entry_live_date ON $entryTable (trashed, sourceDateTakenMillis DESC, id)');
+    try {
+      await db.execute("CREATE VIRTUAL TABLE entrySearch USING fts5(title, path, tokenize='trigram', detail=none)");
+    } on DatabaseException catch (error) {
+      final message = error.toString().toLowerCase();
+      if (message.contains('no such module') || message.contains('no such tokenizer')) return;
+      rethrow;
+    }
+    const upsert = 'INSERT OR REPLACE INTO entrySearch(rowid,title,path) VALUES(new.id,new.title,new.path)';
+    await db.execute('CREATE TRIGGER entry_search_insert AFTER INSERT ON $entryTable BEGIN $upsert; END');
+    await db.execute('CREATE TRIGGER entry_search_update AFTER UPDATE OF id,title,path ON $entryTable BEGIN DELETE FROM entrySearch WHERE rowid=old.id; $upsert; END');
+    await db.execute('CREATE TRIGGER entry_search_delete AFTER DELETE ON $entryTable BEGIN DELETE FROM entrySearch WHERE rowid=old.id; END');
+    await db.execute('INSERT INTO entrySearch(rowid,title,path) SELECT id,title,path FROM $entryTable');
+  }
 
   static Future<void> createTable(Database db, String table) {
     switch (table) {
@@ -154,6 +171,12 @@ class SqfliteLocalMediaDbSchema {
           ', width INTEGER NOT NULL'
           ', height INTEGER NOT NULL'
           ', durationMillis INTEGER'
+          ', rotationDegrees INTEGER NOT NULL'
+          ', isFlipped INTEGER NOT NULL'
+          ', pageId INTEGER'
+          ', mimeType TEXT'
+          ', clipPHashes TEXT'
+          ', clipDHashes TEXT'
           ', imagePHash TEXT'
           ', imageDHash TEXT'
           ', videoPHashes TEXT'

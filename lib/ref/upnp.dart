@@ -20,7 +20,7 @@ class UpnpProtocolInfo {
   late final Set<UpnpProtocolInfoEntry> entries;
 
   new(String text) {
-    entries = text.split(',').where((v) => v.isNotEmpty).map(UpnpProtocolInfoEntry.new).toSet();
+    entries = text.split(',').map((v) => v.trim()).where((v) => v.split(':').length >= 4).map(UpnpProtocolInfoEntry.new).toSet();
   }
 }
 

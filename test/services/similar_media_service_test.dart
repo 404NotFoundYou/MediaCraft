@@ -19,7 +19,11 @@ void main() {
   test('相似扫描使用独立通道并返回相似分组', () async {
     String? calledMethod;
     messenger.setMockMethodCallHandler(channel, (call) async {
-      calledMethod = call.method;
+      if (call.method == 'scanSimilar') {
+        calledMethod = call.method;
+        return 'job';
+      }
+      expect(call.method, 'scanStatus');
       return <String, Object?>{
         'groups': [
           {

@@ -12,67 +12,72 @@ final duplicateService = DuplicateService();
 class DuplicateService {
   static const _channel = AvesMethodChannel('deckers.thibault/aves/duplicates');
 
-  StreamController<DuplicateScanEvent>? _scanController;
+  Completer<String>? _starting;
+  String? _jobId;
 
-  new() {
-    _channel.setMethodCallHandler(_onPlatformCall);
-  }
+  Stream<DuplicateScanEvent> scan(Iterable<AvesEntry> entries, {bool onlyNew = false}) => _start(entries, false, onlyNew);
 
-  Stream<DuplicateScanEvent> scan(Iterable<AvesEntry> entries) {
-    if (_scanController != null) {
-      throw StateError('A duplicate scan is already running');
-    }
-    final candidates = <DuplicateMember>[];
-    final inputIssues = <DuplicateIssue>[];
-    for (final entry in entries) {
-      final sizeBytes = entry.sizeBytes;
-      if (sizeBytes == null || sizeBytes < 0) {
-        inputIssues.add(
-          DuplicateIssue(
-            entryId: entry.id,
-            uri: entry.uri,
-            code: 'invalid-size',
-            message: '媒体大小未知，无法进行完全重复检测',
-          ),
-        );
-      } else {
-        candidates.add(DuplicateMember.fromEntry(entry));
+  Stream<DuplicateScanEvent> scanSimilar(Iterable<AvesEntry> entries, {bool onlyNew = false}) => _start(entries, true, onlyNew);
+
+  Stream<DuplicateScanEvent> _start(Iterable<AvesEntry> entries, bool similar, bool onlyNew) async* {
+    final starting = Completer<String>();
+    if (_starting != null) throw StateError('正在启动扫描');
+    _starting = starting;
+    // Cancellation can arrive while the database is loading the cached fingerprints.
+    starting.future.ignore();
+    try {
+      final candidates = <DuplicateMember>[];
+      final issues = <Map<String, Object?>>[];
+      for (final entry in entries) {
+        if (entry.sizeBytes == null || entry.sizeBytes! < 0) {
+          issues.add({'entryId': entry.id, 'uri': entry.uri, 'code': 'invalid-size', 'message': '媒体大小未知'});
+        } else {
+          candidates.add(DuplicateMember.fromEntry(entry));
+        }
       }
+      final cached = similar ? await localMediaDb.loadSimilarFingerprints(candidates.map((v) => v.entryId).toSet()) : const <SimilarFingerprint>{};
+      final id = await _channel.invokeMethod<String>(similar ? 'scanSimilar' : 'scan', {
+        'members': candidates.map((member) => member.toMap()).toList(),
+        'issues': issues,
+        'onlyNew': onlyNew,
+        if (similar) 'cachedFingerprints': cached.where((fp) => fp.algorithmVersion == similarMediaFingerprintAlgorithmVersion).map((fp) => fp.toMap()).toList(),
+      });
+      if (id == null) throw StateError('扫描任务未创建');
+      _jobId = id;
+      starting.complete(id);
+    } catch (error, stack) {
+      starting.completeError(error, stack);
+      rethrow;
+    } finally {
+      _starting = null;
     }
-    final controller = StreamController<DuplicateScanEvent>();
-    _scanController = controller;
-    unawaited(_runScan(candidates, inputIssues, controller));
-    return controller.stream;
+    yield* watch(_jobId!);
   }
 
-  Stream<DuplicateScanEvent> scanSimilar(Iterable<AvesEntry> entries) {
-    if (_scanController != null) {
-      throw StateError('A duplicate scan is already running');
-    }
-    final candidates = <DuplicateMember>[];
-    final inputIssues = <DuplicateIssue>[];
-    for (final entry in entries) {
-      final sizeBytes = entry.sizeBytes;
-      if (sizeBytes == null || sizeBytes < 0) {
-        inputIssues.add(
-          DuplicateIssue(
-            entryId: entry.id,
-            uri: entry.uri,
-            code: 'invalid-size',
-            message: '媒体大小未知，无法进行相似检测',
-          ),
-        );
-      } else {
-        candidates.add(DuplicateMember.fromEntry(entry));
+  Future<List<Map>> history() async => (await _channel.invokeListMethod<Map>('scanHistory')) ?? [];
+
+  Stream<DuplicateScanEvent> watch(String id) async* {
+    _jobId = id;
+    while (true) {
+      final data = await _channel.invokeMapMethod('scanStatus', {'id': id});
+      if (data == null) throw StateError('读取扫描状态失败');
+      if (data.containsKey('groups')) {
+        final result = DuplicateScanResult.fromMap(data);
+        if (!result.cancelled && result.fingerprints.isNotEmpty) await localMediaDb.saveSimilarFingerprints(result.fingerprints.toSet());
+        yield DuplicateScanCompleted(result);
+        return;
       }
+      yield DuplicateScanProgress(processed: data['processed'] as int, total: data['total'] as int, stage: data['stage'] as String);
+      await Future<void>.delayed(const Duration(milliseconds: 500));
     }
-    final controller = StreamController<DuplicateScanEvent>();
-    _scanController = controller;
-    unawaited(_runSimilarScan(candidates, inputIssues, controller));
-    return controller.stream;
   }
 
-  Future<void> cancel() => _channel.invokeMethod('cancel');
+  Future<void> cancel() async {
+    final id = _starting == null ? _jobId : await _starting!.future;
+    if (id != null) await _channel.invokeMethod('cancel', {'id': id});
+  }
+
+  Future<Uint8List?> preview(DuplicateMember member, int timeMillis) => _channel.invokeMethod<Uint8List>('samplePreview', {'member': member.toMap(), 'timeMillis': timeMillis});
 
   Future<DuplicateVerification> verifySelection({
     required DuplicateGroup group,
@@ -121,7 +126,8 @@ class DuplicateService {
     final members = <DuplicateMember>[keeper, ...deleteMembers];
     final distinctEntryIds = members.map((member) => member.entryId).toSet();
     final distinctUris = members.map((member) => member.uri).toSet();
-    if (group.kind == 'exact' ||
+    if (group.fragment ||
+        group.kind == 'exact' ||
         members.length < 2 ||
         distinctEntryIds.length != members.length ||
         distinctUris.length != members.length ||
@@ -154,77 +160,5 @@ class DuplicateService {
       },
     );
     return DuplicateVerification.fromMap(result as Map);
-  }
-
-  Future<void> _runScan(
-    List<DuplicateMember> candidates,
-    List<DuplicateIssue> inputIssues,
-    StreamController<DuplicateScanEvent> controller,
-  ) async {
-    try {
-      final result = await _channel.invokeMethod('scan', <String, Object?>{
-        'members': candidates.map((member) => member.toMap()).toList(growable: false),
-      });
-      final platformResult = DuplicateScanResult.fromMap(result as Map);
-      controller.add(
-        DuplicateScanCompleted(
-          DuplicateScanResult(
-            groups: platformResult.groups,
-            issues: [...inputIssues, ...platformResult.issues],
-            cancelled: platformResult.cancelled,
-          ),
-        ),
-      );
-    } catch (error, stack) {
-      controller.addError(error, stack);
-    } finally {
-      if (identical(_scanController, controller)) _scanController = null;
-      await controller.close();
-    }
-  }
-
-  Future<void> _runSimilarScan(
-    List<DuplicateMember> candidates,
-    List<DuplicateIssue> inputIssues,
-    StreamController<DuplicateScanEvent> controller,
-  ) async {
-    try {
-      final cached = await localMediaDb.loadSimilarFingerprints(candidates.map((candidate) => candidate.entryId).toSet());
-      final result = await _channel.invokeMethod('scanSimilar', <String, Object?>{
-        'members': candidates.map((member) => member.toMap()).toList(growable: false),
-        'cachedFingerprints': cached.where((fingerprint) => fingerprint.algorithmVersion == similarMediaFingerprintAlgorithmVersion).map((fingerprint) => fingerprint.toMap()).toList(growable: false),
-      });
-      final platformResult = DuplicateScanResult.fromMap(result as Map);
-      if (platformResult.fingerprints.isNotEmpty) {
-        await localMediaDb.saveSimilarFingerprints(platformResult.fingerprints.toSet());
-      }
-      controller.add(
-        DuplicateScanCompleted(
-          DuplicateScanResult(
-            groups: platformResult.groups,
-            issues: [...inputIssues, ...platformResult.issues],
-            cancelled: platformResult.cancelled,
-            fingerprints: platformResult.fingerprints,
-          ),
-        ),
-      );
-    } catch (error, stack) {
-      controller.addError(error, stack);
-    } finally {
-      if (identical(_scanController, controller)) _scanController = null;
-      await controller.close();
-    }
-  }
-
-  Future<void> _onPlatformCall(MethodCall call) async {
-    if (call.method != 'scanProgress') return;
-    final args = call.arguments as Map;
-    _scanController?.add(
-      DuplicateScanProgress(
-        processed: args['processed'] as int,
-        total: args['total'] as int,
-        stage: args['stage'] as String,
-      ),
-    );
   }
 }

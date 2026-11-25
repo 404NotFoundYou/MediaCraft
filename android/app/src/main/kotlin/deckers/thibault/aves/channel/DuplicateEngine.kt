@@ -70,6 +70,8 @@ internal class DuplicateEngine(
 ) {
     suspend fun scan(
         candidates: List<DuplicateCandidate>,
+        cachedDigest: (DuplicateCandidate) -> String? = { null },
+        saveDigest: (DuplicateCandidate, String) -> Unit = { _, _ -> },
         onProgress: (processed: Int, total: Int, stage: String) -> Unit,
     ): DuplicateScanOutcome {
         val issues = mutableListOf<DuplicateIssue>()
@@ -89,10 +91,25 @@ internal class DuplicateEngine(
             }
         }
         val sizeBuckets = uniqueCandidates.groupBy { it.sizeBytes }.values.filter { it.size > 1 }
+        val groups = mutableListOf<DuplicateGroup>()
         val sample = ByteArray(PREFIX_SAMPLE_BYTES)
         val hashCandidates = mutableListOf<DuplicateCandidate>()
         var processed = 0
         for (bucket in sizeBuckets) {
+            if (bucket.size == 2 && digester is Sha256Digester && bucket.none { cachedDigest(it) != null } && bucket.first().sizeBytes < MIN_PREFIX_SAMPLE_FILE_BYTES) {
+                onProgress(processed, 0, "verifying")
+                try {
+                    val (first, second) = bucket
+                    val pair = compareAndDigest(first, second)
+                    saveDigest(first, pair.firstDigest)
+                    saveDigest(second, pair.secondDigest)
+                    if (pair.equal) groups += DuplicateGroup(first.sizeBytes, pair.firstDigest, bucket)
+                    processed += 2
+                    continue
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) {
+                    // Read each candidate separately below to attribute the failing URI.
+                }
+            }
             if (bucket.first().sizeBytes < MIN_PREFIX_SAMPLE_FILE_BYTES) {
                 hashCandidates.addAll(bucket)
                 continue
@@ -117,13 +134,12 @@ internal class DuplicateEngine(
             val coroutineContext = currentCoroutineContext()
             coroutineContext.ensureActive()
             onProgress(processed++, hashingWork, "hashing")
-            val digest = readCandidate(candidate, issues) { input ->
+            val digest = cachedDigest(candidate) ?: readCandidate(candidate, issues) { input ->
                 digester.digest(input) { coroutineContext.ensureActive() }
-            } ?: continue
+            }?.also { saveDigest(candidate, it) } ?: continue
             digests[candidate] = digest
         }
 
-        val groups = mutableListOf<DuplicateGroup>()
         val digestBuckets = digests.entries.groupBy { it.key.sizeBytes to it.value }.values.filter { it.size > 1 }
         for (bucket in digestBuckets) {
             val pending = bucket.map { it.key }.toMutableList()

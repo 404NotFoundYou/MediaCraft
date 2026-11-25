@@ -91,6 +91,8 @@ class DuplicateGroup {
   final bool highConfidence;
   final double? similarityScore;
   final int? matchedFrames;
+  final bool fragment;
+  final Map<int, List<({int reference, int member, bool matched})>> frames;
   final int? totalFrames;
   final int? durationDeltaMillis;
 
@@ -103,6 +105,8 @@ class DuplicateGroup {
     this.highConfidence = false,
     this.similarityScore,
     this.matchedFrames,
+    this.fragment = false,
+    this.frames = const {},
     this.totalFrames,
     this.durationDeltaMillis,
   });
@@ -116,6 +120,12 @@ class DuplicateGroup {
     highConfidence: map['highConfidence'] as bool? ?? false,
     similarityScore: (map['similarityScore'] as num?)?.toDouble(),
     matchedFrames: map['matchedFrames'] as int?,
+    fragment: map['fragment'] as bool? ?? false,
+    frames: (map['frames'] as Map? ?? {}).map(
+      (id, rows) => MapEntry(id as int, [
+        for (final row in rows as List) (reference: row[0] as int, member: row[1] as int, matched: row[2] as bool),
+      ]),
+    ),
     totalFrames: map['totalFrames'] as int?,
     durationDeltaMillis: map['durationDeltaMillis'] as int?,
   );

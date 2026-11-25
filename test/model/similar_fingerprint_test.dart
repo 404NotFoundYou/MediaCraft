@@ -13,6 +13,12 @@ void main() {
       width: 1920,
       height: 1080,
       durationMillis: 9876,
+      rotationDegrees: 270,
+      pageId: 3,
+      isFlipped: true,
+      mimeType: 'video/mp4',
+      clipPHashes: ['0123456789abcdef'],
+      clipDHashes: ['abcdef0123456789'],
       imagePHash: null,
       imageDHash: null,
       videoPHashes: ['0000000000000001', '0000000000000002'],
@@ -23,6 +29,7 @@ void main() {
       SimilarFingerprint.fromMap(fingerprint.toMap()).toDatabaseMap(),
     );
 
+    expect(restored.toMap(), fingerprint.toMap());
     expect(restored.entryId, fingerprint.entryId);
     expect(restored.uri, fingerprint.uri);
     expect(restored.sizeBytes, fingerprint.sizeBytes);

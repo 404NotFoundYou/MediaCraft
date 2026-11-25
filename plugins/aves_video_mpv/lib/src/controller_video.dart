@@ -8,6 +8,7 @@ import 'package:aves_video_mpv/aves_video_mpv.dart';
 import 'package:aves_video_mpv/src/tracks.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img;
 import 'package:material_ui/material_ui.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -438,9 +439,13 @@ class MpvVideoController(
   Future<void> setSpeed(double speed) => _mkPlayer.setRate(speed * slowMotionFactor);
 
   @override
-  Future<Uint8List?> captureFrame() {
-    // TODO TLAD rotate screenshot according to video rotation
-    return _mkPlayer.screenshot();
+  Future<Uint8List?> captureFrame() async {
+    final rotation = (_mkPlayer.state.videoParams.rotate ?? entry.rotationDegrees) % 360;
+    if (rotation == 0) return _mkPlayer.screenshot();
+    // Capture losslessly before orienting so the saved JPEG is encoded only once.
+    final bytes = await _mkPlayer.screenshot(format: 'image/png');
+    if (bytes == null) return null;
+    return compute(orientCapturedFrame, (bytes, rotation));
   }
 
   @override
@@ -589,4 +594,11 @@ class MpvVideoController(
   static const Set<String> _subtitleExtensions = {'.srt', '.sub', '.vtt'};
 
   static bool _isSubtitle(String path) => _subtitleExtensions.contains(_pContext.extension(path));
+}
+
+@visibleForTesting
+Uint8List orientCapturedFrame((Uint8List, int) capture) {
+  final frame = img.decodePng(capture.$1);
+  if (frame == null) throw const FormatException('无法解码视频截图');
+  return img.encodeJpg(img.copyRotate(frame, angle: capture.$2), quality: 95);
 }

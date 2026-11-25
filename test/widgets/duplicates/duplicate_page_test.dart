@@ -234,7 +234,10 @@ class _FakeDuplicateService extends DuplicateService {
   int verificationCalls = 0;
 
   @override
-  Stream<DuplicateScanEvent> scan(Iterable<AvesEntry> entries) {
+  Future<List<Map>> history() async => [];
+
+  @override
+  Stream<DuplicateScanEvent> scan(Iterable<AvesEntry> entries, {bool onlyNew = false}) {
     scanCalls++;
     return Stream.value(DuplicateScanCompleted(result));
   }

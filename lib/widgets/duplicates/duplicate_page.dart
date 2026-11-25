@@ -1,4 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:aves/services/common/services.dart';
+import 'package:aves/widgets/duplicates/duplicate_options.dart';
+import 'package:aves/widgets/duplicates/duplicate_frames.dart';
 
 import 'package:aves/model/entry/entry.dart';
 import 'package:aves/model/entry/extensions/props.dart';
@@ -60,16 +65,35 @@ class _DuplicatePageState extends State<DuplicatePage> {
   bool _submitting = false;
   DuplicateSelection? _selection;
 
+  DuplicateFilters _filters = const DuplicateFilters();
+  int _generation = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_restoreLatest());
+  }
+
+  Future<void> _restoreLatest() async {
+    final generation = _generation;
+    try {
+      final history = await widget.service.history();
+      if (mounted && generation == _generation && history.isNotEmpty) await _openJob(history.first);
+    } catch (error) {
+      if (mounted && generation == _generation) setState(() => _scanError = error);
+    }
+  }
+
   @override
   void dispose() {
     _scanSubscription?.cancel();
-    if (_scanning) unawaited(widget.service.cancel());
+    _generation++;
     super.dispose();
   }
 
   Iterable<AvesEntry> get _scanEntries {
     final entries = widget.source.visibleEntries.where(
-      (entry) => !entry.trashed,
+      (entry) => !entry.trashed && _filters.accepts(entry),
     );
     return switch (_scope) {
       DuplicateScanScope.all => entries.where(
@@ -83,8 +107,20 @@ class _DuplicatePageState extends State<DuplicatePage> {
   }
 
   Future<void> _startScan() async {
-    if (_submitting) return;
+    if (_scanning || _submitting) return;
+    final scan = _mode == DuplicateScanMode.exact ? widget.service.scan(_scanEntries, onlyNew: _filters.onlyNew) : widget.service.scanSimilar(_scanEntries, onlyNew: _filters.onlyNew);
+    await _listen(scan);
+  }
+
+  Future<void> _openJob(Map job) async {
+    _mode = job['mode'] == 'scan' ? DuplicateScanMode.exact : DuplicateScanMode.similar;
+    await _listen(widget.service.watch(job['id'] as String));
+  }
+
+  Future<void> _listen(Stream<DuplicateScanEvent> scan) async {
+    final generation = ++_generation;
     await _scanSubscription?.cancel();
+    if (!mounted || generation != _generation) return;
     setState(() {
       _scanning = true;
       _scanError = null;
@@ -92,7 +128,6 @@ class _DuplicatePageState extends State<DuplicatePage> {
       _result = null;
       _selection = null;
     });
-    final scan = _mode == DuplicateScanMode.exact ? widget.service.scan(_scanEntries) : widget.service.scanSimilar(_scanEntries);
     _scanSubscription = scan.listen(
       (event) {
         if (!mounted) return;
@@ -102,8 +137,8 @@ class _DuplicatePageState extends State<DuplicatePage> {
           case DuplicateScanCompleted():
             setState(() {
               _scanning = false;
-              _result = event.result;
-              _selection = DuplicateSelection(event.result.groups);
+              _result = _visibleResult(event.result);
+              _selection = DuplicateSelection(_result!.groups);
             });
         }
       },
@@ -120,10 +155,84 @@ class _DuplicatePageState extends State<DuplicatePage> {
     );
   }
 
-  void _cancelScan() => unawaited(widget.service.cancel());
+  Future<void> _cancelScan() async {
+    try {
+      await widget.service.cancel();
+    } catch (error) {
+      if (mounted) await _showOperationError('取消失败', '$error');
+    }
+  }
+
+  DuplicateScanResult _visibleResult(DuplicateScanResult result) {
+    final visible = {
+      for (final entry in widget.source.visibleEntries)
+        if (!entry.trashed) entry.id: entry.uri,
+    };
+    return DuplicateScanResult(cancelled: result.cancelled, groups: result.groups.where((g) => g.members.every((m) => visible[m.entryId] == m.uri)).toList(), issues: result.issues.where((i) => visible[i.entryId] == i.uri).toList());
+  }
+
+  Future<void> _menu(String action) async {
+    try {
+      if (action == 'history') {
+        final jobs = await widget.service.history();
+        if (!mounted) return;
+        final chosen = await showDialog<Map>(
+          context: context,
+          builder: (context) => SimpleDialog(
+            title: const Text('最近五次扫描'),
+            children: [
+              if (jobs.isEmpty) const ListTile(title: Text('暂无扫描记录')),
+              for (final job in jobs)
+                SimpleDialogOption(onPressed: () => Navigator.pop(context, job), child: Text('${job['mode'] == 'scan' ? '完全重复' : '视觉相似'} · ${DateTime.fromMillisecondsSinceEpoch(job['created'] as int).toString().split('.').first}')),
+            ],
+          ),
+        );
+        if (chosen != null && mounted) await _openJob(chosen);
+      } else if (action == 'filters') {
+        final value = await chooseDuplicateFilters(context, _filters, widget.source.visibleEntries.map((e) => e.directory).nonNulls);
+        if (mounted && value != null) {
+          setState(() {
+            _generation++;
+            _filters = value;
+            _result = null;
+            _selection = null;
+            _scanError = null;
+          });
+        }
+      } else if (action == 'json' || action == 'csv') {
+        final report = duplicateReport(_visibleResult(_result!), csv: action == 'csv');
+        final saved = await storageService.createFile(basename: 'MediaCraft-${DateTime.now().millisecondsSinceEpoch}.$action', mimeType: action == 'csv' ? 'text/csv' : 'application/json', bytes: utf8.encode(report));
+        if (mounted && saved != null) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(saved ? '已导出扫描报告' : '导出失败')));
+      } else {
+        final policy = DuplicateKeeper.values.byName(action);
+        var folder = '';
+        if (policy == DuplicateKeeper.directory) {
+          final folders = widget.source.visibleEntries.map((v) => v.directory).nonNulls.toSet().toList()..sort();
+          final selected = await showDialog<String>(
+            context: context,
+            builder: (context) => SimpleDialog(
+              title: const Text('优先保留目录'),
+              children: [for (final path in folders) SimpleDialogOption(onPressed: () => Navigator.pop(context, path), child: Text(path))],
+            ),
+          );
+          if (selected == null || !mounted) return;
+          folder = selected;
+        }
+        setState(() {
+          for (final group in _result!.groups.where((g) => !g.fragment)) {
+            final keeper = policy.choose(_entriesFor(group), folder);
+            if (keeper != null) _selection?.keep(group.id, keeper);
+          }
+        });
+      }
+    } catch (error) {
+      if (mounted) await _showOperationError('操作未完成', '$error');
+    }
+  }
 
   void _changeMode(DuplicateScanMode mode) {
     if (_mode == mode) return;
+    _generation++;
     setState(() {
       _mode = mode;
       _progress = null;
@@ -133,11 +242,12 @@ class _DuplicatePageState extends State<DuplicatePage> {
     });
   }
 
-  List<AvesEntry> _entriesFor(DuplicateGroup group) => group.members.map((member) => widget.source.getEntryById(member.entryId)).whereType<AvesEntry>().where((entry) => !entry.trashed).toList(growable: false);
+  List<AvesEntry> _entriesFor(DuplicateGroup group) =>
+      group.members.map((member) => widget.source.getEntryById(member.entryId)).whereType<AvesEntry>().where((entry) => !entry.trashed && widget.source.visibleEntries.contains(entry)).toList(growable: false);
 
   Set<AvesEntry> get _selectedEntries {
     final ids = _selection?.selectedIds ?? const <int>{};
-    return ids.map(widget.source.getEntryById).whereType<AvesEntry>().where((entry) => !entry.trashed).toSet();
+    return ids.map(widget.source.getEntryById).whereType<AvesEntry>().where((entry) => !entry.trashed && widget.source.visibleEntries.contains(entry)).toSet();
   }
 
   Future<void> _reviewAndDelete() async {
@@ -278,6 +388,17 @@ class _DuplicatePageState extends State<DuplicatePage> {
       final expected = expectedMembers[id];
       final current = widget.source.getEntryById(id);
       if (expected == null || current == null) return '媒体 $id 已不在本次扫描结果中，请重新扫描。';
+      if (!widget.source.visibleEntries.contains(current)) return '媒体已隐藏或不再可访问，请重新扫描。';
+      if (_mode == DuplicateScanMode.similar &&
+          (current.width != expected.width ||
+              current.height != expected.height ||
+              current.rotationDegrees != expected.rotationDegrees ||
+              current.isFlipped != expected.isFlipped ||
+              current.pageId != expected.pageId ||
+              current.mimeType != expected.mimeType ||
+              ((current.durationMillis ?? 0) > 0 && current.durationMillis != expected.durationMillis))) {
+        return '媒体的画面信息已变化，请重新扫描。';
+      }
       if (current.trashed) return '媒体 ${current.uri} 已进入回收站，请重新扫描。';
       if (current.uri != expected.uri) return '媒体 $id 的位置已经变化，请重新扫描。';
       if (current.sizeBytes != expected.sizeBytes) return '媒体 ${current.uri} 的大小已经变化，请重新扫描。';
@@ -301,7 +422,23 @@ class _DuplicatePageState extends State<DuplicatePage> {
     final selectedEntries = showActions ? _selectedEntries : const <AvesEntry>{};
     final selectedSize = showActions ? formatFileSize(settings.avesLocale, selectedEntries.fold(0, (sum, entry) => sum + (entry.sizeBytes ?? 0))) : '';
     return AvesScaffold(
-      appBar: AppBar(title: const Text('重复媒体清理')),
+      appBar: AppBar(
+        title: const Text('重复媒体清理'),
+        actions: [
+          IconButton(tooltip: '筛选扫描范围', onPressed: _scanning || _submitting ? null : () => _menu('filters'), icon: const Icon(Icons.filter_alt_outlined)),
+          PopupMenuButton<String>(
+            enabled: !_scanning && !_submitting,
+            tooltip: '扫描记录与选项',
+            onSelected: _menu,
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'history', child: Text('扫描历史')),
+              if (_result?.cancelled == false) ...[const PopupMenuItem(value: 'json', child: Text('导出 JSON')), const PopupMenuItem(value: 'csv', child: Text('导出 CSV'))],
+              if (showActions)
+                for (final policy in DuplicateKeeper.values) PopupMenuItem(value: policy.name, child: Text('保留策略 · ${policy.label}')),
+            ],
+          ),
+        ],
+      ),
       body: SafeArea(
         bottom: false,
         child: _buildBody(),
@@ -356,7 +493,12 @@ class _DuplicatePageState extends State<DuplicatePage> {
       submitting: _submitting,
       progress: _progress,
       onModeChanged: _changeMode,
-      onScopeChanged: (scope) => setState(() => _scope = scope),
+      onScopeChanged: (scope) => setState(() {
+        _generation++;
+        _scope = scope;
+        _result = null;
+        _selection = null;
+      }),
       onScan: _startScan,
       onCancel: _cancelScan,
     );
@@ -434,7 +576,8 @@ class _DuplicatePageState extends State<DuplicatePage> {
             entries: _entriesFor(group),
             keeperId: _selection?.keepers[group.id],
             selectedIds: _selection?.selected[group.id] ?? const {},
-            enabled: !_submitting,
+            enabled: !_submitting && !group.fragment,
+            onFrames: () => showDuplicateFrames(context, group, widget.service),
             onKeeperChanged: (id) => setState(() {
               _selection?.keep(group.id, id);
             }),
@@ -474,6 +617,9 @@ class _ScanControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = progress;
     final stageLabel = switch (p?.stage) {
+      'queued' => '等待后台扫描',
+      'similar-exact' => '排除字节完全相同的文件',
+      'similar-grouping' => '比对媒体指纹',
       'hashing' => '读取文件',
       'verifying' => '核对内容',
       'similar-fingerprinting' => '生成媒体指纹',
@@ -569,6 +715,7 @@ class _DuplicateGroupCard extends StatelessWidget {
   const new({
     required this.group,
     required this.similar,
+    required this.onFrames,
     required this.entries,
     required this.keeperId,
     required this.selectedIds,
@@ -578,6 +725,7 @@ class _DuplicateGroupCard extends StatelessWidget {
   });
   final DuplicateGroup group;
   final bool similar;
+  final VoidCallback onFrames;
   final List<AvesEntry> entries;
   final int? keeperId;
   final Set<int> selectedIds;
@@ -613,6 +761,7 @@ class _DuplicateGroupCard extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
+            if (group.frames.values.any((frames) => frames.isNotEmpty)) TextButton.icon(onPressed: onFrames, icon: const Icon(Icons.movie_outlined), label: const Text('查看采样帧对照')),
             RadioGroup<int>(
               groupValue: keeperId,
               onChanged: (id) {
@@ -638,6 +787,7 @@ class _DuplicateGroupCard extends StatelessWidget {
   }
 
   String _similarSummary(DuplicateGroup group) {
+    if (group.fragment) return '检测到相似片段，可对照采样时间查看长短版本。此组仅供查看。';
     final score = group.similarityScore == null ? '未知' : '${(group.similarityScore! * 100).round()}%';
     if (group.kind == 'video' && group.matchedFrames != null && group.totalFrames != null) {
       return '$score 相似，${group.matchedFrames}/${group.totalFrames} 个采样帧匹配，请手动确认后处理。';

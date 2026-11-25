@@ -165,7 +165,7 @@ open class MainActivity : FlutterFragmentActivity() {
         MethodChannel(messenger, DebugHandler.CHANNEL).setMethodCallHandler(DebugHandler(this))
         MethodChannel(messenger, DeviceHandler.CHANNEL).setMethodCallHandler(DeviceHandler(this))
         MethodChannel(messenger, DuplicateHandler.CHANNEL).also { channel ->
-            duplicateHandler = DuplicateHandler(this, channel)
+            duplicateHandler = DuplicateHandler(this)
             channel.setMethodCallHandler(duplicateHandler)
         }
         MethodChannel(messenger, EmbeddedDataHandler.CHANNEL).setMethodCallHandler(EmbeddedDataHandler(this))
