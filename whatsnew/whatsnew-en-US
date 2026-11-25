@@ -1,6 +1,5 @@
-In v0.6.12:
-- Resume background duplicate scans, filter media, choose keepers and export reports.
-- Compare video samples side by side and review possible matches between clips and longer videos.
-- Refresh stale media fingerprints and speed up large-library scans and searches.
-- Fix video capture orientation, cropping bounds and unsupported cast formats.
+In v0.6.13:
+- Scan similar videos with fewer frame reads and reuse cached fingerprints across scans.
+- Open scan history without loading fingerprints for the entire library.
+- Speed up incremental scans and short system search queries.
 Full changelog available on GitHub
