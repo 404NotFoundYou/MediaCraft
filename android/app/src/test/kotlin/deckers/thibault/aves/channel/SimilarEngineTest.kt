@@ -20,7 +20,7 @@ class SimilarEngineTest {
         val first = imageCandidate(1)
         val second = imageCandidate(2)
         val third = imageCandidate(3)
-        val result = engine.scan(
+        val result = scanCached(
             candidates = listOf(first, second, third),
             cached = mapOf(
                 1L to imageFingerprint(first),
@@ -40,7 +40,7 @@ class SimilarEngineTest {
         val second = imageCandidate(2, path = "/current/second.jpg")
         val staleFirst = first.copy(path = null)
         val staleSecond = second.copy(path = null)
-        val result = engine.scan(
+        val result = scanCached(
             candidates = listOf(first, second),
             cached = mapOf(
                 1L to imageFingerprint(staleFirst),
@@ -58,7 +58,7 @@ class SimilarEngineTest {
     fun similarImagesAcrossAspectRatioBucketsRemainGrouped() = runBlocking {
         val first = imageCandidate(1, width = 1024, height = 1000)
         val second = imageCandidate(2, width = 1076, height = 1000)
-        val result = engine.scan(
+        val result = scanCached(
             candidates = listOf(first, second),
             cached = mapOf(
                 1L to imageFingerprint(first),
@@ -75,7 +75,7 @@ class SimilarEngineTest {
         val first = videoCandidate(1, durationMillis = 10_000)
         val second = videoCandidate(2, durationMillis = 10_000)
         val fourFrameMatch = listOf("0000000000000000", "0000000000000000", "0000000000000000", "0000000000000000", "ffffffffffffffff", "ffffffffffffffff", "ffffffffffffffff")
-        val result = engine.scan(
+        val result = scanCached(
             candidates = listOf(first, second),
             cached = mapOf(
                 1L to videoFingerprint(first, List(7) { "0000000000000000" }),
@@ -88,7 +88,7 @@ class SimilarEngineTest {
         assertEquals(7, result.groups.single().totalFrames)
         assertTrue(!result.groups.single().highConfidence)
 
-        val durationMismatch = engine.scan(
+        val durationMismatch = scanCached(
             candidates = listOf(first, second.copy(durationMillis = 14_000)),
             cached = mapOf(
                 1L to videoFingerprint(first, List(7) { "0000000000000000" }),
@@ -160,7 +160,7 @@ class SimilarEngineTest {
     @Test
     fun cachedSamplesKeepTheRecoveredDurationWhenTheCatalogReportsZero() = runBlocking {
         val known = videoCandidate(1, durationMillis = 10_000)
-        val result = engine.scan(
+        val result = scanCached(
             candidates = listOf(known.copy(durationMillis = 0)),
             cached = mapOf(1L to videoFingerprint(known, List(7) { "0000000000000000" })),
         ) { _, _, _ -> }
@@ -173,12 +173,12 @@ class SimilarEngineTest {
         val cached = videoFingerprint(previous, List(7) { "0123456789abcdef" })
         for (changed in listOf(previous.copy(pageId = 2), previous.copy(width = 12), previous.copy(height = 15), previous.copy(durationMillis = 9000),
             previous.copy(isFlipped = true), previous.copy(rotationDegrees = 90), previous.copy(mimeType = "video/webm"))) {
-            val result = engine.scan(listOf(changed), mapOf(1L to cached)) { _, _, _ -> }
+            val result = scanCached(listOf(changed), mapOf(1L to cached)) { _, _, _ -> }
             assertEquals("similar-read-failed", result.issues.single().code)
             assertTrue(result.fingerprints.isEmpty())
         }
         for (bad in listOf(cached.copy(videoDHashes = listOf("broken")), cached.copy(videoPHashes = emptyList()))) {
-            assertTrue(engine.scan(listOf(previous), mapOf(1L to bad)) { _, _, _ -> }.fingerprints.isEmpty())
+            assertTrue(scanCached(listOf(previous), mapOf(1L to bad)) { _, _, _ -> }.fingerprints.isEmpty())
         }
     }
 
@@ -204,7 +204,7 @@ class SimilarEngineTest {
         val timeline = List(12) { "%016x".format(random.nextLong()) }
         suspend fun scan(hashes: List<String>): List<SimilarGroup> {
             fun fp(c: DuplicateCandidate, clip: List<String>) = videoFingerprint(c, List(7) { "0000000000000000" }).copy(clipPHashes = clip, clipDHashes = clip)
-            return engine.scan(listOf(long, short), mapOf(1L to fp(long, hashes), 2L to fp(short, hashes.subList(3, 8)))) { _, _, _ -> }.groups
+            return scanCached(listOf(long, short), mapOf(1L to fp(long, hashes), 2L to fp(short, hashes.subList(3, 8)))) { _, _, _ -> }.groups
         }
         val group = scan(timeline).single()
         assertTrue(group.fragment && !group.highConfidence)
@@ -212,6 +212,57 @@ class SimilarEngineTest {
         assertEquals(setOf(6000L, 0L), setOf(frame.referenceMillis, frame.memberMillis))
         assertTrue(scan(List(12) { "0000000000000000" }).isEmpty())
     }
+
+    @Test
+    fun unknownDimensionsStillFindKnownAndUnknownRepresentatives() = runBlocking {
+        for ((a, b) in listOf(0 to 100, 100 to 0, 0 to 0)) {
+            val first = imageCandidate(1, width = a).copy(sizeBytes = 100_000)
+            val second = imageCandidate(2, height = b)
+            val fingerprints = listOf(first, second).map(::imageFingerprint)
+            val group = engine.group(fingerprints) { _, _, _ -> }.single()
+            assertEquals(listOf(1L, 2L), group.members.map { it.entryId })
+        }
+    }
+
+    @Test
+    fun clipSamplingSkipsImpossiblePairsAndKeepsOffsetClipsWithDisjointWholeVideoHashes() = runBlocking {
+        fun video(id: Long, duration: Long) = videoFingerprint(videoCandidate(id, duration), List(7) { "%016x".format(-id) })
+        val short = video(1, 10_000)
+        val long = video(2, 24_000)
+        val portrait = video(3, 18_000).let { it.copy(candidate = it.candidate.copy(rotationDegrees = 90)) }
+        for (other in listOf(video(4, 11_999), video(5, 3_600_000), portrait)) {
+            assertTrue(engine.clipCandidates(listOf(short, other)).isEmpty())
+        }
+        assertEquals(setOf(1L, 2L), engine.clipCandidates(listOf(short, long, portrait)))
+        val timeline = List(12) { "%016x".format(java.util.Random(17L + it).nextLong()) }
+        val full = long.copy(clipPHashes = timeline, clipDHashes = timeline, videoPHashes = List(7) { "0000000000000000" })
+        assertEquals(setOf(1L), engine.clipCandidates(listOf(short, full)))
+        val segment = short.copy(clipPHashes = timeline.subList(3, 8), clipDHashes = timeline.subList(3, 8))
+        assertTrue(engine.group(listOf(full, segment)) { _, _, _ -> }.single().fragment)
+    }
+
+    @Test
+    fun clipPrefilterRetainsEveryFeasibleDurationPairIncludingUnknownDimensions() {
+        val random = java.util.Random(32)
+        repeat(100) {
+            val videos = List(20) { i ->
+                val d = 1L + random.nextInt(1500) * 500L
+                val c = videoCandidate(i.toLong(), d).copy(width = listOf(0, 1080, 1920)[random.nextInt(3)])
+                videoFingerprint(c, emptyList())
+            }
+            val expected = videos.filter { a -> videos.any { b ->
+                val short = minOf(a.candidate.durationMillis!!, b.candidate.durationMillis!!)
+                val long = maxOf(a.candidate.durationMillis, b.candidate.durationMillis)
+                (a.candidate.width == 0 || b.candidate.width == 0 || a.candidate.width == b.candidate.width) &&
+                    long - short > maxOf(2000L, long / 50) && short > 3 * clipStepMillis(long)
+            } }.mapTo(mutableSetOf()) { it.candidate.entryId }
+            assertEquals(expected, engine.clipCandidates(videos))
+        }
+    }
+
+    private suspend fun scanCached(candidates: List<DuplicateCandidate>, cached: Map<Long, SimilarFingerprint>,
+        excludedEntryIds: Set<Long> = emptySet(), onProgress: (Int, Int, String) -> Unit): SimilarScanOutcome =
+        engine.scan(candidates, { cached }, excludedEntryIds, onProgress = onProgress)
 
     private fun imageCandidate(
         id: Long,

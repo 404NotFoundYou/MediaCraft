@@ -56,6 +56,9 @@ class SearchSuggestionsProvider : ContentProvider() {
                 val searchShortcutIcon = context.resourceUri(if (supportAdaptiveIcon) R.mipmap.ic_shortcut_search else R.drawable.ic_shortcut_search)
                 matrixCursor.addRow(arrayOf(null, null, null, searchShortcutTitle, null, searchShortcutIcon))
 
+                // Some launchers bypass the minimum length declared in searchable.xml.
+                if (query.trim().length < 3) return matrixCursor
+
                 runBlocking {
                     getSuggestions(context, query).forEach {
                         val data = it["data"]

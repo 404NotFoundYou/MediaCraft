@@ -98,16 +98,19 @@ internal class DuplicateEngine(
         for (bucket in sizeBuckets) {
             if (bucket.size == 2 && digester is Sha256Digester && bucket.none { cachedDigest(it) != null } && bucket.first().sizeBytes < MIN_PREFIX_SAMPLE_FILE_BYTES) {
                 onProgress(processed, 0, "verifying")
-                try {
-                    val (first, second) = bucket
-                    val pair = compareAndDigest(first, second)
+                val (first, second) = bucket
+                val pair = try { compareAndDigest(first, second) } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // Read each candidate separately below to attribute the failing URI.
+                    null
+                }
+                if (pair != null) {
                     saveDigest(first, pair.firstDigest)
                     saveDigest(second, pair.secondDigest)
                     if (pair.equal) groups += DuplicateGroup(first.sizeBytes, pair.firstDigest, bucket)
                     processed += 2
                     continue
-                } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) {
-                    // Read each candidate separately below to attribute the failing URI.
                 }
             }
             if (bucket.first().sizeBytes < MIN_PREFIX_SAMPLE_FILE_BYTES) {

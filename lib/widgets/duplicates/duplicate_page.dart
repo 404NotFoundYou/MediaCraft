@@ -619,6 +619,7 @@ class _ScanControls extends StatelessWidget {
     final stageLabel = switch (p?.stage) {
       'queued' => '等待后台扫描',
       'similar-exact' => '排除字节完全相同的文件',
+      'similar-clips' => '补充片段采样帧',
       'similar-grouping' => '比对媒体指纹',
       'hashing' => '读取文件',
       'verifying' => '核对内容',

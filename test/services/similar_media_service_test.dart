@@ -20,6 +20,7 @@ void main() {
     String? calledMethod;
     messenger.setMockMethodCallHandler(channel, (call) async {
       if (call.method == 'scanSimilar') {
+        expect(call.arguments, isNot(contains('cachedFingerprints')));
         calledMethod = call.method;
         return 'job';
       }
@@ -58,7 +59,8 @@ void main() {
           },
         ],
         'issues': <Object?>[],
-        'fingerprints': <Object?>[],
+        // Older history reports can include a cache payload. Displaying a report ignores it.
+        'fingerprints': ['legacy cache'],
         'cancelled': false,
       };
     });

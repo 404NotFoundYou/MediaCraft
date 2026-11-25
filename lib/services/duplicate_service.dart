@@ -1,9 +1,7 @@
 import 'dart:async';
 
 import 'package:aves/model/duplicates/duplicate_models.dart';
-import 'package:aves/model/duplicates/similar_fingerprint.dart';
 import 'package:aves/model/entry/entry.dart';
-import 'package:aves/services/common/services.dart';
 import 'package:aves/services/common/channel.dart';
 import 'package:flutter/services.dart';
 
@@ -23,7 +21,7 @@ class DuplicateService {
     final starting = Completer<String>();
     if (_starting != null) throw StateError('正在启动扫描');
     _starting = starting;
-    // Cancellation can arrive while the database is loading the cached fingerprints.
+    // Cancellation can arrive before the worker ID is returned.
     starting.future.ignore();
     try {
       final candidates = <DuplicateMember>[];
@@ -35,12 +33,10 @@ class DuplicateService {
           candidates.add(DuplicateMember.fromEntry(entry));
         }
       }
-      final cached = similar ? await localMediaDb.loadSimilarFingerprints(candidates.map((v) => v.entryId).toSet()) : const <SimilarFingerprint>{};
       final id = await _channel.invokeMethod<String>(similar ? 'scanSimilar' : 'scan', {
         'members': candidates.map((member) => member.toMap()).toList(),
         'issues': issues,
         'onlyNew': onlyNew,
-        if (similar) 'cachedFingerprints': cached.where((fp) => fp.algorithmVersion == similarMediaFingerprintAlgorithmVersion).map((fp) => fp.toMap()).toList(),
       });
       if (id == null) throw StateError('扫描任务未创建');
       _jobId = id;
@@ -63,7 +59,6 @@ class DuplicateService {
       if (data == null) throw StateError('读取扫描状态失败');
       if (data.containsKey('groups')) {
         final result = DuplicateScanResult.fromMap(data);
-        if (!result.cancelled && result.fingerprints.isNotEmpty) await localMediaDb.saveSimilarFingerprints(result.fingerprints.toSet());
         yield DuplicateScanCompleted(result);
         return;
       }

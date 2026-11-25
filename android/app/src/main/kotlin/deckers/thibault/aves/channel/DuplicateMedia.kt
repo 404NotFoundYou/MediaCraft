@@ -10,12 +10,13 @@ import deckers.thibault.aves.storage.StorageUtils
 import deckers.thibault.aves.utils.BitmapUtils.applyExifOrientation
 import deckers.thibault.aves.utils.MimeTypes.needRotationAfterGlide
 
-internal class DuplicateMedia(context: Context) {
+internal class DuplicateMedia(context: Context, onVideoSample: (Boolean) -> Unit = {}) {
     val engine = DuplicateEngine(source = DuplicateInputSource { candidate ->
         context.contentResolver.openInputStream(Uri.parse(candidate.uri))
             ?: throw IllegalStateException("无法打开媒体")
     })
     val similarEngine = SimilarEngine(
+        onVideoSample = onVideoSample,
         imageLoader = SimilarImageLoader { candidate -> loadImage(context, candidate) },
         videoLoader = SimilarVideoLoader { candidate ->
             StorageUtils.openMetadataRetriever(
@@ -119,7 +120,6 @@ internal fun SimilarScanOutcome.toMap(cancelled: Boolean): Map<String, Any?> = m
         )
     },
     "issues" to issues.map { it.toMap() },
-    "fingerprints" to fingerprints.map { it.toMap() },
     "cancelled" to cancelled,
 )
 

@@ -1,6 +1,5 @@
 import 'package:aves/model/entry/entry.dart';
 import 'package:aves/model/entry/extensions/props.dart';
-import 'package:aves/model/duplicates/similar_fingerprint.dart';
 
 class DuplicateMember {
   final int entryId;
@@ -156,20 +155,17 @@ class DuplicateScanResult {
   final List<DuplicateGroup> groups;
   final List<DuplicateIssue> issues;
   final bool cancelled;
-  final List<SimilarFingerprint> fingerprints;
 
   const new({
     required this.groups,
     required this.issues,
     required this.cancelled,
-    this.fingerprints = const [],
   });
 
   factory fromMap(Map map) => DuplicateScanResult(
     groups: (map['groups'] as List).map((v) => DuplicateGroup.fromMap(v as Map)).toList(growable: false),
     issues: (map['issues'] as List).map((v) => DuplicateIssue.fromMap(v as Map)).toList(growable: false),
     cancelled: map['cancelled'] as bool? ?? false,
-    fingerprints: (map['fingerprints'] as List? ?? const []).map((v) => SimilarFingerprint.fromMap(v as Map)).toList(growable: false),
   );
 }
 

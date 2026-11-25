@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.SystemClock
 import android.util.AtomicFile
 import android.util.Log
+import androidx.core.database.sqlite.transaction
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -71,7 +72,7 @@ internal class DuplicateScanFiles(private val context: Context) {
         val dir = folder(id)
         val work = manager.getWorkInfoById(UUID.fromString(id)).get()
         if (work?.state == WorkInfo.State.CANCELLED) return mapOf("groups" to emptyList<Any>(), "issues" to emptyList<Any>(), "cancelled" to true)
-        if (File(dir, "result").isFile) return File(dir, "result").readMap()
+        if (File(dir, "result").isFile) return File(dir, "result").readMap().minus("fingerprints")
         check(work != null && !work.state.isFinished) { work?.outputData?.getString("error") ?: "扫描未能完成，请重新扫描" }
         return work.progress.keyValueMap.takeIf { it.isNotEmpty() } ?: mapOf("stage" to "queued", "processed" to 0, "total" to 0)
     }
@@ -89,7 +90,11 @@ class DuplicateScanWorker(context: Context, params: WorkerParameters) : Coroutin
             check(info["version"] == ALGORITHM_VERSION) { "算法已更新，请重新扫描" }
             val request = File(dir, "request").readMap()
             val mode = info["mode"] as String
-            val media = DuplicateMedia(applicationContext)
+            var fullFrames = 0
+            var clipFrames = 0
+            var checkpointBatches = 0
+            var fingerprintBatches = 0
+            val media = DuplicateMedia(applicationContext) { clip -> if (clip) clipFrames++ else fullFrames++ }
             val candidates = (request["members"] as List<*>).map { parseCandidate(it as Map<*, *>) }
             val throttle = DuplicateScanProgressThrottle(450, SystemClock::elapsedRealtime)
             var stageStarted = SystemClock.elapsedRealtime()
@@ -106,12 +111,25 @@ class DuplicateScanWorker(context: Context, params: WorkerParameters) : Coroutin
             SQLiteDatabase.openOrCreateDatabase(File(files.root, "cache.db"), null).use { db ->
                 db.execSQL("CREATE TABLE IF NOT EXISTS digests (id INTEGER PRIMARY KEY, uri TEXT, size INTEGER, modified INTEGER, digest TEXT)")
                 db.execSQL("CREATE TABLE IF NOT EXISTS seen (mode TEXT, id INTEGER, uri TEXT, PRIMARY KEY(mode,id))")
+                val pending = File(dir, "pending-result")
+                val report = File(dir, "result")
+                // Publish only after the seen IDs commit. A killed worker can finish the rename on restart.
+                db.execSQL("CREATE TABLE IF NOT EXISTS lastReport (slot INTEGER PRIMARY KEY, job TEXT)")
+                if (pending.isFile && db.rawQuery("SELECT 1 FROM lastReport WHERE slot=1 AND job=?", arrayOf(id.toString())).use { it.moveToFirst() }) {
+                    check(pending.renameTo(report)) { "无法恢复扫描报告" }
+                    return@use
+                }
                 fun digest(c: DuplicateCandidate): String? {
                     val modified = c.dateModifiedMillis?.takeIf { it > 0 } ?: return null
                     return db.rawQuery("SELECT digest FROM digests WHERE id=? AND uri=? AND size=? AND modified=?", arrayOf("${c.entryId}", c.uri, "${c.sizeBytes}", "$modified")).use { if (it.moveToFirst()) it.getString(0) else null }
                 }
-                fun saveDigest(c: DuplicateCandidate, digest: String) {
-                    if ((c.dateModifiedMillis ?: 0) > 0) db.execSQL("INSERT OR REPLACE INTO digests VALUES(?,?,?,?,?)", arrayOf<Any?>(c.entryId, c.uri, c.sizeBytes, c.dateModifiedMillis, digest))
+                val digestWrites = ScanWriteBatch<Pair<DuplicateCandidate, String>> { items ->
+                    db.transaction {
+                        for ((c, hash) in items) execSQL("INSERT OR REPLACE INTO digests VALUES(?,?,?,?,?)", arrayOf<Any?>(c.entryId, c.uri, c.sizeBytes, c.dateModifiedMillis, hash))
+                    }
+                }
+                fun saveDigest(c: DuplicateCandidate, hash: String) {
+                    if ((c.dateModifiedMillis ?: 0) > 0) digestWrites.add(c to hash)
                 }
                 val argsIssues = (request["issues"] as? List<*>).orEmpty()
                 val result = if (mode == "scan") {
@@ -119,17 +137,40 @@ class DuplicateScanWorker(context: Context, params: WorkerParameters) : Coroutin
                 } else {
                     SQLiteDatabase.openOrCreateDatabase(File(dir, "checkpoint.db"), null).use { checkpoint ->
                         checkpoint.execSQL("CREATE TABLE IF NOT EXISTS items(id INTEGER PRIMARY KEY, failed INTEGER, data BLOB)")
-                        val cached = (request["cachedFingerprints"] as? List<*>).orEmpty().associate { val fp = parseFingerprint(it as Map<*, *>); fp.candidate.entryId to fp }.toMutableMap()
                         val failed = mutableMapOf<Long, Map<*, *>>()
-                        checkpoint.rawQuery("SELECT id,failed,data FROM items", null).use { rows ->
-                            while (rows.moveToNext()) {
-                                val map = decode(rows.getBlob(2))
-                                if (rows.getInt(1) == 1) failed[rows.getLong(0)] = map else cached[rows.getLong(0)] = parseFingerprint(map)
-                            }
+                        checkpoint.rawQuery("SELECT id,data FROM items WHERE failed=1", null).use { rows ->
+                            while (rows.moveToNext()) failed[rows.getLong(0)] = decode(rows.getBlob(1))
                         }
-                        fun checkpoint(id: Long, failed: Int, value: Map<*, *>) = checkpoint.execSQL("INSERT OR REPLACE INTO items VALUES(?,?,?)", arrayOf(id, failed, encode(value)))
-                        val visual = media.similarEngine.scan(candidates, cached, failed.keys,
-                            onFingerprint = { checkpoint(it.candidate.entryId, 0, it.toMap()) }, onIssue = { checkpoint(it.candidate.entryId, 1, it.toMap()) }, onProgress = ::progress)
+                        val changed = mutableSetOf<Long>()
+                        val writes = ScanWriteBatch<Array<Any>> { items ->
+                            checkpoint.transaction { for (item in items) execSQL("INSERT OR REPLACE INTO items VALUES(?,?,?)", item) }
+                        }
+                        val catalogPath = applicationContext.getDatabasePath("metadata.db").path
+                        val visual = SQLiteDatabase.openDatabase(catalogPath, null, SQLiteDatabase.OPEN_READWRITE).use { catalog ->
+                            fun loadCached(batch: List<DuplicateCandidate>): Map<Long, SimilarFingerprint> {
+                                val ids = batch.map { it.entryId.toString() }.toTypedArray()
+                                val cached = catalog.readFingerprints(ids)
+                                checkpoint.rawQuery("SELECT id,data FROM items WHERE failed=0 AND id IN (${placeholders(ids.size)})", ids).use { rows ->
+                                    while (rows.moveToNext()) {
+                                        val id = rows.getLong(0)
+                                        changed.add(id)
+                                        cached[id] = parseFingerprint(decode(rows.getBlob(1)))
+                                    }
+                                }
+                                return cached
+                            }
+                            val scan = media.similarEngine.scan(candidates, ::loadCached, failed.keys,
+                                onFingerprint = { changed.add(it.candidate.entryId); writes.add(arrayOf(it.candidate.entryId, 0, encode(it.toMap()))) },
+                                onIssue = { writes.add(arrayOf(it.candidate.entryId, 1, encode(it.toMap()))) }, onProgress = ::progress)
+                            writes.flush()
+                            checkpointBatches = writes.commits
+                            for (batch in scan.fingerprints.asSequence().filter { it.candidate.entryId in changed }.chunked(32)) {
+                                currentCoroutineContext().ensureActive()
+                                catalog.saveFingerprints(batch)
+                                fingerprintBatches++
+                            }
+                            scan
+                        }
                         var groups = visual.groups
                         val bySize = candidates.groupBy { it.sizeBytes }.filterValues { it.size > 1 }
                         val checked = mutableSetOf<Long>()
@@ -145,10 +186,12 @@ class DuplicateScanWorker(context: Context, params: WorkerParameters) : Coroutin
                             exact.groups.flatMap { it.members }.mapTo(excluded) { it.entryId }
                             groups = media.similarEngine.group(visual.fingerprints.filterNot { it.candidate.entryId in excluded }, ::progress)
                         }
-                        val mapped = visual.copy(groups = groups, issues = issues.distinct()).toMap(false)
-                        mapped + ("issues" to (issues.map { it.toMap() } + failed.values))
+                        visual.copy(groups = groups, issues = issues.distinct()).toMap(false).toMutableMap().apply {
+                            if (failed.isNotEmpty()) put("issues", (get("issues") as List<*>) + failed.values)
+                        }
                     }
                 }.toMutableMap()
+                digestWrites.flush()
                 val issues = argsIssues + (result["issues"] as List<*>)
                 result["issues"] = issues
                 val invalid = issues.mapNotNull { ((it as Map<*, *>)["entryId"] as? Number)?.toLong() }.toSet()
@@ -156,15 +199,25 @@ class DuplicateScanWorker(context: Context, params: WorkerParameters) : Coroutin
                 db.beginTransaction()
                 try {
                     if (request["onlyNew"] == true) {
-                        val known = db.rawQuery("SELECT id,uri FROM seen WHERE mode=?", arrayOf(mode)).use { rows -> buildMap { while (rows.moveToNext()) put(rows.getLong(0), rows.getString(1)) } }
-                        val fresh = successful.filter { known[it.entryId] != it.uri }.mapTo(mutableSetOf()) { it.entryId }
+                        val fresh = mutableSetOf<Long>()
+                        for (batch in successful.chunked(900)) {
+                            val args = arrayOf(mode, *batch.map { it.entryId.toString() }.toTypedArray())
+                            val known = db.rawQuery("SELECT id,uri FROM seen WHERE mode=? AND id IN (${placeholders(batch.size)})", args).use { rows ->
+                                buildMap { while (rows.moveToNext()) put(rows.getLong(0), rows.getString(1)) }
+                            }
+                            for (item in batch) if (known[item.entryId] != item.uri) fresh.add(item.entryId)
+                        }
                         result["groups"] = (result["groups"] as List<*>).filter { group -> ((group as Map<*, *>)["members"] as List<*>).any { ((it as Map<*, *>)["entryId"] as Number).toLong() in fresh } }
                     }
                     successful.forEach { db.execSQL("INSERT OR REPLACE INTO seen VALUES(?,?,?)", arrayOf<Any>(mode, it.entryId, it.uri)) }
                     currentCoroutineContext().ensureActive()
-                    File(dir, "result").writeMap(result)
+                    pending.writeMap(result)
+                    db.execSQL("INSERT OR REPLACE INTO lastReport VALUES(1,?)", arrayOf(id.toString()))
                     db.setTransactionSuccessful()
                 } finally { db.endTransaction() }
+                check(pending.renameTo(report)) { "无法保存扫描报告" }
+                Log.d("DuplicateScan", "finished candidates=${candidates.size} fullFrames=$fullFrames clipFrames=$clipFrames checkpointBatches=$checkpointBatches " +
+                    "fingerprintBatches=$fingerprintBatches digestBatches=${digestWrites.commits} resultBytes=${report.length()}")
             }
             File(dir, "request").delete()
             SQLiteDatabase.deleteDatabase(File(dir, "checkpoint.db"))

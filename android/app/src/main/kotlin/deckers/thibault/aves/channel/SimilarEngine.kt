@@ -109,10 +109,11 @@ internal data class SimilarScanOutcome(
 internal class SimilarEngine(
     private val imageLoader: SimilarImageLoader,
     private val videoLoader: SimilarVideoLoader,
+    private val onVideoSample: (clip: Boolean) -> Unit = {},
 ) {
     suspend fun scan(
         candidates: List<DuplicateCandidate>,
-        cached: Map<Long, SimilarFingerprint>,
+        loadCached: (List<DuplicateCandidate>) -> Map<Long, SimilarFingerprint>,
         excludedEntryIds: Set<Long> = emptySet(),
         onFingerprint: (SimilarFingerprint) -> Unit = {},
         onIssue: (DuplicateIssue) -> Unit = {},
@@ -139,16 +140,20 @@ internal class SimilarEngine(
         val fingerprints = mutableListOf<SimilarFingerprint>()
         var processed = 0
         onProgress(0, uniqueCandidates.size, "similar-fingerprinting")
-        for (candidate in uniqueCandidates) {
+        for (batch in uniqueCandidates.chunked(256)) {
             currentCoroutineContext().ensureActive()
-            val fingerprint = cached[candidate.entryId]?.takeIf { isReusable(candidate, it) }
-                ?.withCandidate(candidate)
-                ?: readFingerprint(candidate, issues)?.also(onFingerprint)
-            if (fingerprint == null) onIssue(issues.last())
-            if (fingerprint != null) fingerprints += fingerprint
-            onProgress(++processed, uniqueCandidates.size, "similar-fingerprinting")
+            val cached = loadCached(batch)
+            for (candidate in batch) {
+                currentCoroutineContext().ensureActive()
+                val fingerprint = cached[candidate.entryId]?.takeIf { isReusable(candidate, it) }
+                    ?.withCandidate(candidate)
+                    ?: readFingerprint(candidate, issues)?.also(onFingerprint)
+                if (fingerprint == null) onIssue(issues.last()) else fingerprints += fingerprint
+                onProgress(++processed, uniqueCandidates.size, "similar-fingerprinting")
+            }
         }
 
+        completeClips(fingerprints, issues, onFingerprint, onIssue, onProgress)
         currentCoroutineContext().ensureActive()
         val groups = group(fingerprints, onProgress)
         onProgress(processed, uniqueCandidates.size, "similar-completed")
@@ -177,6 +182,7 @@ internal class SimilarEngine(
             currentCoroutineContext().ensureActive()
             readFingerprint(candidate, issues)?.let(fingerprints::add)
         }
+        if (issues.isEmpty()) completeClips(fingerprints, issues)
         if (issues.isNotEmpty()) return issues
         if (fingerprints.size != candidates.size || fingerprints.any { it.kind != expectedKind }) {
             return listOf(DuplicateIssue(candidates.first(), "kind-changed", "媒体类型已变化，请重新扫描"))
@@ -240,32 +246,8 @@ internal class SimilarEngine(
             val durationMillis = candidate.durationMillis?.takeIf { it > 0 }
                 ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
             if (durationMillis == null || durationMillis <= 0) throw IllegalStateException("无法读取视频时长")
-            val hashes = mutableListOf<Pair<Long, Long>>()
-            val samples = mutableMapOf<Long, Pair<Long, Long>>()
-            suspend fun sample(timeMicros: Long, index: Int, total: Int): Pair<Long, Long> = samples.getOrPut(timeMicros) {
-                val frame = frameAt(retriever, timeMicros, index, total)
-                try { hash(frame) } finally { frame.recycle() }
-            }
-            for ((index, point) in SAMPLE_POINTS.withIndex()) {
-                hashes += sample((durationMillis * point * 1000).toLong(), index + 1, FRAME_COUNT)
-            }
-            val clips = mutableListOf<Pair<Long, Long>>()
-            val step = clipStepMillis(durationMillis)
-            val count = ((durationMillis - 1) / step + 1).toInt()
-            if (count >= 4) {
-                for (index in 0 until count) {
-                    try {
-                        clips += sample(index * step * 1000, index + 1, count)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: SecurityException) {
-                        throw e
-                    } catch (_: IllegalStateException) {
-                        // Optional clip evidence must never stand in for one of the seven full-video samples.
-                        clips.clear()
-                        break
-                    }
-                }
+            val hashes = SAMPLE_POINTS.mapIndexed { index, point ->
+                sampleHash(retriever, (durationMillis * point * 1000).toLong(), index + 1, FRAME_COUNT, clip = false)
             }
             SimilarFingerprint(
                 candidate = candidate.copy(durationMillis = durationMillis),
@@ -275,13 +257,102 @@ internal class SimilarEngine(
                 imageDHash = null,
                 videoPHashes = hashes.map { it.first.toHexHash() },
                 videoDHashes = hashes.map { it.second.toHexHash() },
-                clipPHashes = clips.map { it.first.toHexHash() },
-                clipDHashes = clips.map { it.second.toHexHash() },
             )
         } finally {
             retriever.release()
         }
     }
+
+    private suspend fun sampleHash(retriever: MediaMetadataRetriever, time: Long, index: Int, count: Int, clip: Boolean): Pair<Long, Long> {
+        val frame = frameAt(retriever, time, index, count)
+        return try {
+            onVideoSample(clip)
+            hash(frame)
+        } finally { frame.recycle() }
+    }
+
+    private suspend fun readClips(fp: SimilarFingerprint): SimilarFingerprint {
+        val duration = fp.candidate.durationMillis!!
+        val step = clipStepMillis(duration)
+        val count = ((duration - 1) / step + 1).toInt()
+        val fullTimes = SAMPLE_POINTS.map { (duration * it * 1000).toLong() }
+        val retriever = videoLoader.open(fp.candidate)
+        try {
+            val clips = (0 until count).map { index ->
+                currentCoroutineContext().ensureActive()
+                val time = index * step * 1000
+                val full = fullTimes.indexOf(time)
+                if (full >= 0) fp.videoPHashes[full] to fp.videoDHashes[full] else {
+                    val (p, d) = try { sampleHash(retriever, time, index + 1, count, clip = true) } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: IllegalStateException) {
+                        // A missing optional frame cannot invalidate the seven full-video samples.
+                        return fp
+                    }
+                    p.toHexHash() to d.toHexHash()
+                }
+            }
+            return fp.copy(clipPHashes = clips.map { it.first }, clipDHashes = clips.map { it.second })
+        } finally { retriever.release() }
+    }
+
+    private suspend fun completeClips(
+        fingerprints: MutableList<SimilarFingerprint>, issues: MutableList<DuplicateIssue>,
+        onFingerprint: (SimilarFingerprint) -> Unit = {}, onIssue: (DuplicateIssue) -> Unit = {},
+        onProgress: (Int, Int, String) -> Unit = { _, _, _ -> },
+    ) {
+        val pending = clipCandidates(fingerprints)
+        var processed = 0
+        val iterator = fingerprints.listIterator()
+        while (iterator.hasNext()) {
+            currentCoroutineContext().ensureActive()
+            val fp = iterator.next()
+            if (fp.candidate.entryId !in pending) continue
+            onProgress(processed++, pending.size, "similar-clips")
+            val filled = try { readClips(fp) } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val issue = DuplicateIssue(fp.candidate, "similar-read-failed", e.message ?: e.javaClass.simpleName)
+                issues += issue
+                onIssue(issue)
+                iterator.remove()
+                continue
+            }
+            if (filled !== fp) {
+                iterator.set(filled)
+                onFingerprint(filled)
+            }
+        }
+    }
+
+    internal fun clipCandidates(fingerprints: List<SimilarFingerprint>): Set<Long> {
+        val videos = fingerprints.filter { it.kind == "video" && it.candidate.durationMillis!! > 3 * clipStepMillis(it.candidate.durationMillis) }
+        if (videos.size < 2 || videos.all { it.clipPHashes.isNotEmpty() }) return emptySet()
+        val byRatio = videos.groupBy { aspectRatioBucket(it.candidate) }.mapValues { (_, items) -> items.map { it.candidate.durationMillis!! }.sorted() }
+        val all = if (byRatio.containsKey(null)) byRatio.values.flatten().sorted() else emptyList()
+        return videos.filter { fp ->
+            if (fp.clipPHashes.isNotEmpty()) return@filter false
+            val duration = fp.candidate.durationMillis!!
+            val ratio = aspectRatioBucket(fp.candidate)
+            val lists = if (ratio == null) listOf(all) else neighboringBuckets(byRatio, ratio)
+            // The short video needs four timestamps at the longer video's sampling interval.
+            // Its seven whole-video hashes can all miss an offset clip, so they cannot rule one out.
+            lists.any { durations ->
+                val minShort = 3 * clipStepMillis(duration)
+                val shortIndex = durations.binarySearch { if (it <= minShort) -1 else 1 }.inv()
+                val shortest = durations.getOrNull(shortIndex)
+                val longIndex = durations.binarySearch { if (it - duration > durationTolerance(it)) 1 else -1 }.inv()
+                val shortestLonger = durations.getOrNull(longIndex)
+                (shortest != null && duration - shortest > durationTolerance(duration)) ||
+                    (shortestLonger != null && duration > 3 * clipStepMillis(shortestLonger))
+            }
+        }.mapTo(mutableSetOf()) { it.candidate.entryId }
+    }
+
+    private fun durationTolerance(duration: Long) = maxOf(2_000L, duration / 50)
+
+    private fun <T> neighboringBuckets(buckets: Map<Int?, T>, ratio: Int): List<T> =
+        (ratio - ASPECT_RATIO_BUCKET_RADIUS..ratio + ASPECT_RATIO_BUCKET_RADIUS).mapNotNull { buckets[it] } + listOfNotNull(buckets[null])
 
     private suspend fun frameAt(retriever: MediaMetadataRetriever, timeMicros: Long, number: Int, total: Int): Bitmap {
         val scaled: ((Long, Int) -> Bitmap?)? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -324,7 +395,9 @@ internal class SimilarEngine(
             val reps = mutableListOf<SimilarFingerprint>()
             val buckets = mutableMapOf<Int?, HashIndex>()
             val matches = mutableMapOf<Int, MutableList<Pair<SimilarFingerprint, SimilarMatch>>>()
-            for (item in fingerprints.filter { it.kind == kind }.sortedWith(compareByDescending<SimilarFingerprint> { quality(it.candidate) }.thenBy { it.candidate.entryId })) {
+            val items = fingerprints.filter { it.kind == kind }.sortedWith(compareByDescending<SimilarFingerprint> { quality(it.candidate) }.thenBy { it.candidate.entryId })
+            val all = if (items.any { aspectRatioBucket(it.candidate) == null } && items.any { aspectRatioBucket(it.candidate) != null }) HashIndex() else null
+            for (item in items) {
                 currentCoroutineContext().ensureActive()
                 onProgress(processed++, fingerprints.size, "similar-grouping")
                 val ratio = aspectRatioBucket(item.candidate)
@@ -332,12 +405,12 @@ internal class SimilarEngine(
                 val keys = if (kind == "image") listOf(item.imagePHash!!) else item.videoPHashes.take(4) + item.clipPHashes
                 val hashes = keys.map { it.parseHash() }.toSet()
                 val possible = sortedSetOf<Int>()
-                val indexes = if (ratio == null) buckets.values else ((ratio - ASPECT_RATIO_BUCKET_RADIUS..ratio + ASPECT_RATIO_BUCKET_RADIUS).mapNotNull { buckets[it] } + listOfNotNull(buckets[null]))
+                val indexes = if (ratio == null) listOfNotNull(all ?: buckets[null]) else neighboringBuckets(buckets, ratio)
                 for (index in indexes) for (hash in hashes) index.find(hash, if (kind == "image") IMAGE_REVIEW_PHASH_DISTANCE else VIDEO_REVIEW_PHASH_DISTANCE, possible)
                 val pair = possible.firstNotNullOfOrNull { i -> compare(reps[i], item)?.let { i to it } }
                 if (pair == null) {
                     val index = buckets.getOrPut(ratio) { HashIndex() }
-                    hashes.forEach { index.add(it, reps.size) }
+                    hashes.forEach { index.add(it, reps.size); all?.add(it, reps.size) }
                     reps += item
                 } else matches.getOrPut(pair.first) { mutableListOf() }.add(item to pair.second)
             }
@@ -380,7 +453,7 @@ internal class SimilarEngine(
         val firstDuration = first.candidate.durationMillis
         val secondDuration = second.candidate.durationMillis
         val durationDelta = if (firstDuration != null && secondDuration != null) abs(firstDuration - secondDuration) else null
-        if (durationDelta != null && durationDelta > maxOf(2_000L, max(firstDuration ?: 0L, secondDuration ?: 0L) * 2 / 100)) return compareClip(first, second)
+        if (durationDelta != null && durationDelta > durationTolerance(max(firstDuration ?: 0L, secondDuration ?: 0L))) return compareClip(first, second)
 
         val frameCount = min(first.videoPHashes.size, second.videoPHashes.size)
         if (frameCount == 0 || frameCount != FRAME_COUNT) return null

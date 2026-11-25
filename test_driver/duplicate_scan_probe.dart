@@ -1,10 +1,12 @@
 // Opt-in Android smoke test. Use a disposable Libre debug installation only.
-// Place a short H.264 moving.mp4 and an audio-only MP4 in the app's external files directory.
+// External files: moving.mp4 (12 s), audio-only.mp4, long.mp4 (24 s, changing scenes), short.mp4 (6..16 s cut).
+// After READY, kill the worker process once checkpoint.db contains at least 32 rows, then relaunch.
 import 'dart:async';
 import 'dart:io';
 
 import 'package:aves/model/db/db_sqflite.dart';
 import 'package:aves/model/db/db_sqflite_schema.dart';
+import 'package:aves/model/duplicates/similar_fingerprint.dart';
 import 'package:aves/services/common/services.dart';
 import 'package:aves/utils/android_file_utils.dart';
 import 'package:flutter/material.dart';
@@ -87,16 +89,19 @@ Future<void> probe() async {
   final fixture = Directory('/storage/emulated/0/Android/data/com.mediacraft.app.libre.debug/files');
   final marker = File('${fixture.path}/qa-job');
   try {
+    initPlatformServices();
+    await androidFileUtils.init();
+    await localMediaDb.init();
     if (await marker.exists()) {
       final id = (await marker.readAsString()).trim();
       check(((await _channel.invokeListMethod<Map>('scanHistory'))!).any((j) => j['id'] == id), 'lost task');
       final result = await waitJob(id);
-      check((result['fingerprints'] as List).length == 24 && (result['issues'] as List).isEmpty, 'resume lost data');
+      final saved = await localMediaDb.loadSimilarFingerprints({for (var i = 0; i < 80; i++) 100 + i});
+      check(!result.containsKey('fingerprints') && (result['issues'] as List).isEmpty && (result['groups'] as List).isEmpty, 'resume lost result');
+      check(saved.length == 80 && saved.every((fp) => fp.videoPHashes.length == 7 && fp.clipPHashes.isEmpty), 'resume lost fingerprints');
       debugPrint('SCAN_QA PASS restored worker after restart $id');
       return;
     }
-    initPlatformServices();
-    await androidFileUtils.init();
     await databaseProbe(dir);
     final moving = File('${fixture.path}/moving.mp4');
     final audio = File('${fixture.path}/audio-only.mp4');
@@ -123,15 +128,40 @@ Future<void> probe() async {
       'expectedDigest': group['digest'],
     }))!;
     check(verify['valid'] == true, 'byte verification');
-    check(((await waitJob(await enqueue('scan', [first, second], onlyNew: true)))['groups'] as List).isEmpty, 'incremental shown twice');
+    final wide = [
+      first,
+      for (var i = 0; i < 905; i++) {...first, 'entryId': 1000 + i, 'uri': 'content://smoke/$i', 'sizeBytes': 1000000 + i},
+      second,
+    ];
+    final filtered = await waitJob(await enqueue('scan', wide, onlyNew: true));
+    check((filtered['groups'] as List).isEmpty && (filtered['issues'] as List).isEmpty, 'known group crossed query batches');
+    final replaced = member(2, await moving.copy('${dir.path}/replaced.mp4'));
+    check(((await waitJob(await enqueue('scan', [first, replaced], onlyNew: true)))['groups'] as List).length == 1, 'reused ID with a new URI was hidden');
     final similar = await waitJob(await enqueue('scanSimilar', [first, second, member(3, audio)]));
     check((similar['groups'] as List).isEmpty, 'exact duplicates presented as visual');
     check(((similar['issues'] as List).single as Map)['entryId'] == 3, 'audio-only missing from failures');
-    check((((similar['fingerprints'] as List).first as Map)['videoPHashes'] as List).length == 7, 'incomplete video fingerprint');
+    check(!similar.containsKey('fingerprints'), 'history carried the fingerprint cache');
+    final cached = await localMediaDb.loadSimilarFingerprints({1, 2});
+    check(cached.length == 2 && cached.every((fp) => fp.videoPHashes.length == 7 && fp.clipPHashes.isEmpty), 'same-duration clip reads or incomplete cache');
+    // A v0.6.12-format row is reusable even when reading its URI would fail.
+    final missing = {...first, 'entryId': 7, 'uri': '${first['uri']}.missing', 'path': '${first['path']}.missing'};
+    await localMediaDb.saveSimilarFingerprints({SimilarFingerprint.fromMap({...cached.first.toMap(), ...missing, 'durationMillis': cached.first.durationMillis})});
+    check(((await waitJob(await enqueue('scanSimilar', [missing])))['issues'] as List).isEmpty, 'legacy cache not reused');
+    final changed = {...missing, 'dateModifiedMillis': 1};
+    check(((await waitJob(await enqueue('scanSimilar', [changed])))['issues'] as List).length == 1, 'stale cache reused');
+    final clips = [member(8, File('${fixture.path}/long.mp4')), member(9, File('${fixture.path}/short.mp4'))];
+    for (var run = 0; run < 2; run++) {
+      final report = await waitJob(await enqueue('scanSimilar', clips));
+      final match = (report['groups'] as List).single as Map;
+      check(match['fragment'] == true && match['highConfidence'] == false, 'offset clip must be review only');
+      final aligned = ((match['frames'] as Map).values.single as List).first as List;
+      check(aligned.take(2).toSet().containsAll({0, 6000}), 'wrong clip alignment: $aligned');
+      check(!report.containsKey('fingerprints'), 'clip result contains cache');
+    }
     final preview = await _channel.invokeMethod<Uint8List>('samplePreview', {'member': first, 'timeMillis': 1000});
     check(preview != null && preview.length > 100, 'preview missing');
     debugPrint('SCAN_QA PASS byte verification, incremental, seven frames, contact sheet, audio-only');
-    final members = [for (var i = 0; i < 24; i++) member(100 + i, await moving.copy('${fixture.path}/qa-copy-$i.mp4'))];
+    final members = [for (var i = 0; i < 80; i++) member(100 + i, await moving.copy('${fixture.path}/qa-copy-$i.mp4'))];
     final job = await enqueue('scanSimilar', members);
     await marker.writeAsString(job, flush: true);
     debugPrint('SCAN_QA READY restart $job');
